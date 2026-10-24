@@ -23,15 +23,16 @@ int main(int argc,char** argv){
     std::string issue;if(!ayt::testmedia::generateClip((root/"clip.mp4").string(),true,200,64,48,25,issue))return 5;
 #endif
     server.Post("/v1/chat/completions",[&](const auto& request,auto& response){
-        ++calls;std::string output;int delay=0;{
+        ++calls;std::string output;int delay=0,httpStatus=200;{
             std::lock_guard lock(mutex);{std::ofstream capture(root/"last-request.json",std::ios::binary);capture<<request.body;}{std::ofstream history(root/"requests.jsonl",std::ios::binary|std::ios::app);history<<request.body<<'\n';}
             const auto planText=read(root/"plan.json");if(planText.empty())output=read(root/"response.json");else try{
-                if(planText!=lastPlan){lastPlan=planText;planAt=0;}auto plan=Json::parse(planText);const auto& sequence=plan.at("responses");const auto index=std::min(planAt++,sequence.size()-1);auto item=sequence.at(index);delay=item.value("delay_ms",0);Json variables={{"event_id",""},{"last_source_id",""},{"last_memory_id",""}};
+                if(planText!=lastPlan){lastPlan=planText;planAt=0;}auto plan=Json::parse(planText);const auto& sequence=plan.at("responses");const auto index=std::min(planAt++,sequence.size()-1);auto item=sequence.at(index);delay=item.value("delay_ms",0);httpStatus=item.value("http_status",200);Json variables={{"event_id",""},{"last_source_id",""},{"last_memory_id",""}};
                 const auto body=Json::parse(request.body);for(const auto& message:body.at("messages")){if(!message.at("content").is_string())continue;try{const auto content=Json::parse(message.at("content").get<std::string>());if(content.contains("event_id"))variables["event_id"]=content.at("event_id");if(content.contains("tool_results"))for(const auto& result:content.at("tool_results")){if(result.contains("source_id"))variables["last_source_id"]=result.at("source_id");if(result.value("ok",false)&&result.contains("result")&&result.at("result").is_object()&&result.at("result").contains("id"))variables["last_memory_id"]=result.at("result").at("id");}}catch(...){}}
                 auto value=item.at("response");substitute(value,variables);output=value.is_string()?value.get<std::string>():value.dump();
             }catch(...){response.status=500;response.set_content("fixture_plan_invalid","text/plain");return;}
         }
         if(delay)std::this_thread::sleep_for(std::chrono::milliseconds(std::clamp(delay,0,30000)));
+        if(httpStatus!=200){response.status=httpStatus;response.set_content(R"({"error":{"code":"fixture_transient"}})","application/json");return;}
         auto envelope=nlohmann::json{{"id","fixture-request"},{"model","fixture-model"},{"choices",nlohmann::json::array({{{"message",{{"role","assistant"},{"content",output}}},{"finish_reason","stop"}}})}};
         response.set_content(envelope.dump(),"application/json");
     });

@@ -99,7 +99,12 @@ struct Application::Impl {
     std::vector<JobInfo> jobs() const {std::vector<JobInfo> values;if(queue->inspect(values)!=QueueStatus::Ok)throw std::runtime_error("queue_inspect");return values;}
     bool busy() const {
         if(!journalHealthy||worker->running()) return true;
-        for(const auto& j:jobs()) if(j.state==JobState::Running||(j.state==JobState::Pending&&j.spec.id!="solitude.timer"&&j.spec.dueAtMs<=serviceNowMs())) return true;
+        for(const auto& j:jobs()) {
+            const bool immediate=j.spec.id=="chat"||j.spec.id=="event"||j.spec.id=="operator.tool"||j.spec.id=="solitude.once";
+            // A retry's short backoff is still the same unfinished request. Do
+            // not let the next input overwrite its stable queue slot.
+            if(j.state==JobState::Running||(j.state==JobState::Pending&&(immediate||(j.spec.id!="solitude.timer"&&j.spec.dueAtMs<=serviceNowMs()))))return true;
+        }
         return false;
     }
     JobSpec spec(const std::string& slot,const std::string& kind,Json payload,std::int64_t due) const {
@@ -416,7 +421,11 @@ struct Application::Impl {
             }
             selectedProfile.model.mockOutput=mock.dump();
         }
-        const auto started=std::chrono::steady_clock::now();const auto result=selectedProfile.model.protocol==ayt::inference::Protocol::Mock?ayt::inference::invoke(selectedProfile.model,req):invokeTurn(selectedProfile,req,context,trace,traceId,requestId.empty()?claim.job.spec.id+"-"+std::to_string(claim.job.runToken):requestId);
+        // Attempts reset for each new/rescheduled occurrence, while the fencing
+        // token increases on every claim. Their difference is stable on retries.
+        const auto occurrence=claim.job.runToken-claim.job.attempts+1;
+        const auto turnIdentity=requestId.empty()?claim.job.spec.id+"-"+std::to_string(occurrence):requestId;trace["turn_identity"]=turnIdentity;
+        const auto started=std::chrono::steady_clock::now();const auto result=selectedProfile.model.protocol==ayt::inference::Protocol::Mock?ayt::inference::invoke(selectedProfile.model,req):invokeTurn(selectedProfile,req,context,trace,traceId,turnIdentity);
         trace["elapsed_ms"]=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-started).count();
         trace["provider_request_id"]=result.providerRequestId;trace["provider_status"]=static_cast<int>(result.status);
         if(result.usage.inputTokens)trace["input_tokens"]=*result.usage.inputTokens;if(result.usage.outputTokens)trace["output_tokens"]=*result.usage.outputTokens;

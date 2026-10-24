@@ -10,7 +10,7 @@ function Rejected([string]$Path,$Data,[int]$Expected){$r=Invoke-WebRequest -Uri 
 function Start-Backend{$script:service=Start-Process -FilePath $Executable -ArgumentList ('--config "'+$configPath+'" --ready-file "'+$readyPath+'"') -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $root 'service.log') -RedirectStandardError (Join-Path $root 'error.log');Wait-For {if($script:service.HasExited){throw 'backend exited'};if(Test-Path $readyPath){try{return (Get-Content $readyPath -Raw|ConvertFrom-Json).pid-eq$script:service.Id}catch{}};return $false} 'backend ready';$script:origin='http://127.0.0.1:'+((Get-Content $readyPath -Raw|ConvertFrom-Json).port)}
 function Stop-Backend{$null=Call '/api/shutdown' @{};$script:service.WaitForExit(15000)|Out-Null;Check $script:service.HasExited 'graceful encrypted shutdown'}
 function Idle{Wait-For {!(Call '/api/chat').busy} 'turn complete'}
-function Plan($Responses){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Responses|ForEach-Object{@{response=$_}})}|ConvertTo-Json -Depth 40|Set-Content -LiteralPath (Join-Path $providerRoot 'plan.json') -Encoding utf8}
+function Plan($Responses){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Responses|ForEach-Object{if($_ -is [hashtable] -and $_.ContainsKey('fixture_status')){@{response='';http_status=$_.fixture_status}}else{@{response=$_}}})}|ConvertTo-Json -Depth 40|Set-Content -LiteralPath (Join-Path $providerRoot 'plan.json') -Encoding utf8}
 function Reply([string]$Text){@{version=1;kind='reply';text=$Text;calls=@();presentation=@{speech=$false;bubble=$true}}}
 function Tool([string]$Id,[string]$Name,$ToolArguments){@{id=$Id;tool=$Name;args=$ToolArguments}}
 function Calls($Items){@{version=1;kind='call';text=$null;calls=@($Items);presentation=@{speech=$false;bubble=$false}}}
@@ -65,12 +65,24 @@ try{
  Wait-For {try{$r=Capture;$data=$r.messages[-1].content|ConvertFrom-Json -Depth 40;return $data.event_kind-eq'outer_event'-and$data.input.Contains('television.ended')}catch{return $false}} 'movie completion reaches role event loop' 15
  Idle;Check ((Call '/api/chat').messages[-1].text-eq'只分析实际提供的画面。') 'movie completion may remain silent without an extra chat bubble'
  $null=Plugin 'television.control' @{action='stop'}
+ Plan @(@{visible_reply='只分析实际提供的画面。';actions=@();memories=@();state_update=@{open_questions=@('检查后台重试的连续性')};stage_proposal=$null});$null=Message '留一个待审的问题'
+ $beforeRetry=(Call '/api/chat').messages.Count
+ $retryCall=Calls @((Tool 'retry-user' 'memory.remember' @{kind='inference';text='用户请求重试只保存一次。';source_ids=@('${event_id}')}))
+ Plan @($retryCall,@{fixture_status=503},$retryCall,(Reply '只分析实际提供的画面。'))
+ $retryInput=Call '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='检查短暂网络故障'}
+ Wait-For {$job=(Call '/api/state').jobs.Where({$_.id-eq'chat'})[0];return $job.state-eq'pending'-and$job.attempts-eq1} 'transient conversation retry backoff'
+ Check (Call '/api/chat').busy 'retry backoff keeps the unfinished conversation busy';Rejected '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='不能覆盖待重试消息'} 409
+ Idle;Check (@((Call '/api/memories').memories|Where-Object text -eq '用户请求重试只保存一次。').Count-eq1) 'conversation retry reuses completed memory receipt';Check ((Call '/api/chat').messages.Count-eq($beforeRetry+2)) 'conversation retry publishes one input and one final reply'
+ $soloCall=Calls @((Tool 'retry-alone' 'memory.remember' @{kind='inference';text='独处重试只保存一次。';source_ids=@($retryInput.event_id)}))
+ Plan @($soloCall,@{fixture_status=503},$soloCall,@{version=1;kind='silence';text=$null;calls=@()});$null=Call '/api/solitude' @{};Idle
+ Check (@((Call '/api/memories').memories|Where-Object text -eq '独处重试只保存一次。').Count-eq1) 'solitude retries share one occurrence receipt identity';Check ((Call '/api/state').jobs.Where({$_.id-eq'solitude.once'})[0].attempts-eq2) 'solitude fixture exercised a real second attempt'
+ Plan @((Calls @((Tool 'before-restart' 'state.observe' @{}))),(Reply '只分析实际提供的画面。'));$null=Message '保存前检查连续状态';$state=(Feedback)[0].result
  $secret='saved-secret-fixture-for-dpapi';$null=Call '/api/secret' @{profile_id='fixture';value=$secret};Check (!(Get-Content $configPath -Raw).Contains($secret)) 'dashboard key absent from config';Check (!(Call '/api/dashboard'|ConvertTo-Json -Depth 40).Contains($secret)) 'dashboard never returns saved key'
  $null=Call '/api/control' @{paused=$true};Stop-Backend
  $bytes=[IO.File]::ReadAllBytes((Join-Path $config.dataRoot 'archive/records.sqlite'));$text=[Text.Encoding]::UTF8.GetString($bytes);Check (!$text.Contains('唯一的原始交谈标记')-and!$text.Contains('唯一的加密记忆标记')) 'original and derived memory payloads encrypted at rest'
  $journal=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $config.dataRoot 'archive/events.sqlite')));Check (!$journal.Contains('唯一的原始交谈标记')-and!$journal.Contains('data:image/')) 'event index contains no conversation or frame payload'
  Remove-Item Env:HIBERNATION_PROTOCOL_KEY;Start-Backend;$dashboard=Call '/api/dashboard';Check $dashboard.paused 'pause survives real process restart';Check $dashboard.settings.profiles.Where({$_.id-eq'fixture'})[0].credentialConfigured 'DPAPI model key restores without parent environment'
- Check ((Call '/api/memories').memories.Count-eq2) 'memory revisions survive restart';$chat=Call '/api/chat';Check ($chat.messages[-1].text-eq'只分析实际提供的画面。') 'dialogue survives restart without exposing instructions'
+ Check ((Call '/api/memories').memories.Count-eq4) 'memory revisions survive restart';$chat=Call '/api/chat';Check ($chat.messages[-1].text-eq'只分析实际提供的画面。') 'dialogue survives restart without exposing instructions'
  $null=Call '/api/control' @{paused=$false};Plan @((Calls @((Tool 'state' 'state.observe' @{}))),(Reply '继续。'));$null=Message '重启后的连续性';$restored=(Feedback)[0].result;Check ([Math]::Abs($restored.openness-$state.openness)-lt0.05) 'continuous values survive restart without an offline jump'
  $settings=(Call '/api/dashboard').settings|ConvertTo-Json -Depth 40|ConvertFrom-Json -AsHashtable;foreach($id in @('television','widget','tts','weather')){$settings.plugins[$id].enabled=$false};$null=Call '/api/settings' @{settings=$settings};Check ((Call '/api/dashboard').plugins.Where({$_.enabled}).Count-eq0) 'all plugins unload independently from core'
  Plan @((Calls @((Tool 'missing' 'weather.current' @{}))),(Reply '现在没有天气插件。'));$null=Message '无插件模式';Check ((Feedback)[0].error.code-eq'tool_not_available') 'disabled capability removed from model tool access'

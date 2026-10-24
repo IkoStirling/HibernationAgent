@@ -1,5 +1,5 @@
 {
-  "testedEngineRootCommit": "15e11d08dee7ab6216438c670e36060f2b9e96ed",
+  "testedEngineRootCommit": "8561685f26bd61d89196908bd00eec333b9b1cf7",
   "engineRelativePath": "../AliyatEngine",
   "modules": {
     "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",

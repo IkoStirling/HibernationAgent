@@ -10,6 +10,7 @@ config.dataRoot=path.join(scratch,'data');config.characterRoot=path.join(root,'c
 config.solitudeIntervalMs=600000;config.idleBeforeSolitudeMs=600000;
 const configPath=path.join(scratch,'config.json'),readyPath=path.join(scratch,'ready.json');await fs.writeFile(configPath,JSON.stringify(config));
 const session='dashboard-fixture-only';const env={...process.env,HIBERNATION_SESSION_KEY:session,TEMP:path.join(root,'out/build/tmp'),TMP:path.join(root,'out/build/tmp')};
+process.env.TEMP=env.TEMP;process.env.TMP=env.TMP;await fs.mkdir(env.TEMP,{recursive:true});
 const service=spawn(path.join(root,'out/build/hibernation-agent.exe'),['--config',configPath,'--ready-file',readyPath],{env,windowsHide:true,stdio:['ignore','pipe','pipe']});
 let serviceError='';service.stderr.on('data',d=>serviceError+=d);let browser,origin,checks=0;const errors=[];
 async function waitFor(probe,label){const end=Date.now()+20000;while(Date.now()<end){if(service.exitCode!==null)throw new Error(`Backend exited: ${serviceError}`);try{const result=await probe();if(result)return result;}catch{}await new Promise(r=>setTimeout(r,80));}throw new Error(`Timeout: ${label}`);}
