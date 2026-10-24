@@ -12,6 +12,9 @@
 #include <sstream>
 #include <stdexcept>
 #include <mutex>
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 #include <AYNetwork/HttpClient.h>
 #include <AYIO/File.h>
 
@@ -230,8 +233,18 @@ struct Application::Impl {
         const auto drafts=candidate.draftsRoot.empty()?candidate.dataRoot/"drafts":candidate.draftsRoot;
         const auto materials=candidate.materialsRoot.empty()?candidate.dataRoot/"materials":candidate.materialsRoot;
         std::error_code ec;std::filesystem::create_directories(drafts,ec);if(ec){issue="drafts_unavailable";return false;}std::filesystem::create_directories(materials,ec);if(ec){issue="materials_unavailable";return false;}
-        auto contains=[](const std::filesystem::path& base,const std::filesystem::path& child){auto b=std::filesystem::weakly_canonical(base),c=std::filesystem::weakly_canonical(child);auto bi=b.begin(),ci=c.begin();for(;bi!=b.end();++bi,++ci)if(ci==c.end()||*bi!=*ci)return false;return true;};
-        for(const auto& root:{drafts,materials})for(const auto& protectedRoot:{candidate.dataRoot/"archive",candidate.dataRoot/"runtime",candidate.characterRoot,candidate.uiRoot})if(!protectedRoot.empty()&&(contains(root,protectedRoot)||contains(protectedRoot,root))){issue="workspace_overlaps_private_data";return false;}
+        auto contains=[](const std::filesystem::path& base,const std::filesystem::path& child){
+            auto b=std::filesystem::weakly_canonical(base),c=std::filesystem::weakly_canonical(child);auto bi=b.begin(),ci=c.begin();
+            for(;bi!=b.end();++bi,++ci){if(ci==c.end())return false;
+#ifdef _WIN32
+                const auto left=bi->native(),right=ci->native();if(CompareStringOrdinal(left.data(),static_cast<int>(left.size()),right.data(),static_cast<int>(right.size()),TRUE)!=CSTR_EQUAL)return false;
+#else
+                if(*bi!=*ci)return false;
+#endif
+            }return true;
+        };
+        const std::vector<std::filesystem::path> protectedRoots={candidate.dataRoot/"archive",candidate.dataRoot/"runtime",candidate.characterRoot,candidate.uiRoot,candidate.configPath,candidate.pluginRoot};
+        for(const auto& root:{drafts,materials})for(const auto& protectedRoot:protectedRoots)if(!protectedRoot.empty()&&(contains(root,protectedRoot)||contains(protectedRoot,root))){issue="workspace_overlaps_private_data";return false;}
         std::vector<ayt::io::WorkspaceMount> mounts={{"drafts",drafts,true,true,65536,16384,{".system"}},{"materials",materials,true,false,65536,16384,{}}};
         return workspace.configure(std::move(mounts),[](const auto& access){return (access.principal=="operator"||access.principal=="character")&&(access.mount=="drafts"||access.mount=="materials")&&(access.operation!=ayt::io::WorkspaceOperation::Write||access.mount=="drafts");},issue);
     }

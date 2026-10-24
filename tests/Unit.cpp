@@ -46,6 +46,12 @@ TEST_CASE(solitude_without_authorized_fragments_skips_safely){
     const auto state=Json::parse(app.request({"GET","/api/state",""}).body);for(const auto& j:state.at("jobs"))if(j.at("id")=="solitude.once")CHECK(Json::parse(j.at("result").get<std::string>()).at("status")=="no_update");
     CHECK_INT_EQ(Json::parse(app.request({"GET","/api/memories",""}).body).at("memories").size(),1);
 }
+TEST_CASE(workspace_configuration_protects_program_config_and_plugin_manifests){
+    ayt::test::ScratchDirectory scratch("role-private-program-files");const auto configDir=scratch.path()/"config",pluginRoot=scratch.path()/"installed-plugins";std::filesystem::create_directories(configDir);std::filesystem::create_directories(pluginRoot);
+    auto settings=Json::parse(readFile(std::filesystem::path(HA_PROJECT_ROOT)/"config/example.json"));settings["dataRoot"]=(scratch.path()/"data").generic_string();settings["characterRoot"]=(std::filesystem::path(HA_PROJECT_ROOT)/"character").generic_string();settings["uiRoot"]=(std::filesystem::path(HA_PROJECT_ROOT)/"ui").generic_string();settings["pluginRoot"]=pluginRoot.generic_string();const auto file=configDir/"config.json";std::ofstream(file)<<settings.dump();Application app(loadConfig(file));CHECK(app.initialize());
+    CHECK_INT_EQ(app.request({"POST","/api/settings",Json{{"settings",settings}}.dump()}).status,200);
+    for(const auto& root:{configDir,pluginRoot,std::filesystem::path(HA_PROJECT_ROOT)/"character"}){auto changed=settings;auto path=root.generic_string();std::transform(path.begin(),path.end(),path.begin(),[](unsigned char c){return static_cast<char>(std::toupper(c));});changed["draftsRoot"]=path;const auto rejected=app.request({"POST","/api/settings",Json{{"settings",changed}}.dump()});CHECK_INT_EQ(rejected.status,400);CHECK(Json::parse(rejected.body).at("error")=="workspace_overlaps_private_data");}
+}
 TEST_CASE(turn_protocol_distinguishes_silence_and_never_guesses_malformed_commands){
     Json silence={{"version",1},{"kind","silence"},{"text",nullptr},{"calls",Json::array()}};CHECK(validateTurn(silence.dump()).ok);
     auto call=silence;call["kind"]="call";CHECK(!validateTurn(call.dump()).ok);call["calls"].push_back({{"id","c1"},{"tool","memory.search"},{"args",{{"query","等待"}}}});CHECK(validateTurn(call.dump()).ok);
