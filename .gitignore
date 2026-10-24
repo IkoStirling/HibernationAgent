@@ -1,0 +1,9 @@
+/data/
+/out/
+/artifacts/
+/config/local.json
+*.user
+*.log
+*.sqlite*
+*.db
+.ipc-*

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "dataRoot": "../data",
+  "characterRoot": "../character",
+  "uiRoot": "../ui",
+  "port": 0,
+  "credentialEnvironment": "HIBERNATION_SESSION_KEY",
+  "contextBytes": 24000,
+  "recentMessageCount": 12,
+  "maxMemoriesInContext": 16,
+  "solitudeIntervalMs": 900000,
+  "idleBeforeSolitudeMs": 120000,
+  "maxStartsPerHour": 60,
+  "profiles": [
+    {"id":"mock","label":"离线模拟 · 无需 API","protocol":"mock","enabled":true,"timeoutMs":20000,"maxOutputTokens":2048},
+    {"id":"local","label":"本机模型（配置后启用）","protocol":"chat-completions","enabled":false,"origin":"http://127.0.0.1:11434","basePath":"/v1","model":"replace-with-installed-model","credentialEnvironment":"","supportsJsonSchema":false,"legacyMaxTokens":true,"timeoutMs":30000,"maxOutputTokens":2048},
+    {"id":"remote","label":"远程兼容模型（配置后启用）","protocol":"chat-completions","enabled":false,"origin":"https://replace-with-your-provider.invalid","basePath":"/v1","model":"replace-with-model-name","credentialEnvironment":"HIBERNATION_MODEL_KEY","supportsJsonSchema":false,"timeoutMs":30000,"maxOutputTokens":2048}
+  ]
+}

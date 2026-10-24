@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-24",
+  "platform": "Windows Debug / MSVC 19.51",
+  "engineRoot": "a943d04",
+  "engineDocumentation": "f80f69f",
+  "applicationServices": "6d34206",
+  "ctest": {
+    "passed": 5,
+    "failed": 0
+  },
+  "unit": {
+    "cases": 8,
+    "assertions": 47.0,
+    "failed": 0
+  },
+  "processIntegration": {
+    "completed": true,
+    "checks": 38,
+    "root": "D:\\Aliyat\\HibernationAgent\\out\\build\\integration\\571dbe9a53494c4f94ee5e4a76dd2acd",
+    "timestamp": "2026-10-24T12:09:58.9712625Z"
+  },
+  "launcher": {
+    "root": "D:\\Aliyat\\HibernationAgent\\out\\build\\launcher\\13732c7e7a334aa7b0ba7312abae1005",
+    "completed": true,
+    "checks": 4
+  },
+  "browser": {
+    "completed": true,
+    "checks": 10,
+    "errors": [],
+    "scratch": "D:\\Aliyat\\HibernationAgent\\artifacts\\browser-1792843804491",
+    "engine": "existing Chrome via isolated Playwright headless context",
+    "timestamp": "2026-10-24T12:10:10.541Z"
+  },
+  "sdk": {
+    "ok": true,
+    "capability_count": 171,
+    "module_count": 59,
+    "error_count": 0,
+    "warning_count": 0,
+    "search_case_count": 130,
+    "documented_entry_symbol_count": 806,
+    "undocumented_entry_symbol_baseline_count": 25,
+    "errors": [],
+    "warnings": []
+  }
+}

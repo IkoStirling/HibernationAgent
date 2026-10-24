@@ -1,0 +1,14 @@
+{
+  "testedEngineRootCommit": "a943d0420a3ec1dac78392da555b97651b072a13",
+  "engineRelativePath": "../AliyatEngine",
+  "modules": {
+    "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",
+    "AYFoundation/AYSerializer": "c839aa10e419a47330ffcaa7020afff556de566b",
+    "AYFoundation/AYStorage": "6fddae05e77a4bd61b6bcb5b3904f97c10a42671",
+    "AYFoundation/AYTask": "1ab1e4bbfb38a4ac5e12ef52fd09ecb4fca58549",
+    "AYRuntime/AYInference": "d8c7d3eb53a6bd158386498e08e593ab2e1cbbdf",
+    "AYRuntime/AYNetwork": "d3c8726ab3ad3237cb8a2b8f45f985e89f65ea0b",
+    "AYRuntime/AYApplication": "6d34206ce9a7fe86da59a5856ff1e22aa01af81c",
+    "AYRuntime/AYEventSystem": "d7296137684e2d6f8c9b859dcd317b8b72629e3f"
+  }
+}

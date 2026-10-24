@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "capability_count": 171,
+  "module_count": 59,
+  "error_count": 0,
+  "warning_count": 0,
+  "search_case_count": 130,
+  "documented_entry_symbol_count": 806,
+  "undocumented_entry_symbol_baseline_count": 25,
+  "errors": [],
+  "warnings": []
+}
