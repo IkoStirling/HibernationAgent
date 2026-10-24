@@ -1,4 +1,4 @@
-param([string]$BuildRoot=(Join-Path $PSScriptRoot '../out/build'),[string]$ConfigPath=(Join-Path $PSScriptRoot '../config/local.json'),[switch]$NoBrowser)
+param([string]$BuildRoot=(Join-Path $PSScriptRoot '../out/build'),[string]$ConfigPath=(Join-Path $PSScriptRoot '../config/local.json'),[switch]$NoBrowser,[switch]$Dashboard)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Security
 if(!(Test-Path -LiteralPath $ConfigPath)){Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../config/example.json') -Destination $ConfigPath}
@@ -27,6 +27,7 @@ if(!$ready){
  [IO.File]::WriteAllBytes($tokenPath,$encrypted);[Environment]::SetEnvironmentVariable($config.credentialEnvironment,$token,'Process')
  $previousWrite=if(Test-Path -LiteralPath $readyPath){(Get-Item -LiteralPath $readyPath).LastWriteTimeUtc}else{[DateTime]::MinValue}
  $argumentLine='--config "'+$ConfigPath+'" --ready-file "'+$readyPath+'"'
+ if(!$NoBrowser){$argumentLine+=' --desktop'}
  $process=Start-Process -FilePath $executable -ArgumentList $argumentLine -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runtime 'service.log') -RedirectStandardError (Join-Path $runtime 'error.log')
  $deadline=[DateTime]::UtcNow.AddSeconds(20)
  while([DateTime]::UtcNow -lt $deadline){$process.Refresh();if($process.HasExited){throw '后台启动失败，请查看 runtime/error.log（日志不包含密钥）。'}
@@ -35,7 +36,8 @@ if(!$ready){
  }
  if(!$ready){throw '后台就绪等待超时。'}
 }
-if(!$NoBrowser){Start-Process -FilePath ("http://127.0.0.1:"+$ready.port+"/#session="+$token)|Out-Null}
-Write-Output '后台已运行。关闭页面后任务会继续；再次运行本脚本可重新打开界面。'
-Write-Output '结束后台请运行 scripts/Stop.ps1。模型密钥仅从环境变量读取。'
+if(!$NoBrowser){$null=Invoke-RestMethod -Uri "http://127.0.0.1:$($ready.port)/api/desktop/show" -Method Post -Body '{}' -ContentType 'application/json' -Headers @{Authorization='Bearer '+$token} -TimeoutSec 5}
+if($Dashboard){Start-Process -FilePath ("http://127.0.0.1:"+$ready.port+"/#session="+$token)|Out-Null}
+Write-Output '后台已运行。关闭对话窗口后会留在托盘；右键托盘可打开管理页面。'
+Write-Output '结束后台请从托盘保存退出，或运行 scripts/Stop.ps1。模型密钥可在管理页面设置。'
 }finally{$launcherLock.Dispose()}

@@ -4,6 +4,7 @@
 #include <cctype>
 #include <fstream>
 #include <stdexcept>
+#include <AYNetwork/HttpClient.h>
 
 namespace hibernation {
 std::string outputSchema() {
@@ -33,7 +34,8 @@ bool safeRelative(std::string_view path) {
 ValidatedOutput validateOutput(std::string_view text,const ProposalContext& context) {
     if(!ayt::serializer::validateJsonDocument(text,outputSchema())) return {false,"output_schema",{}};
     auto value=Json::parse(text);
-    if(context.eventKind=="user_message" && value.at("visible_reply").get<std::string>().empty()) return {false,"empty_reply",{}};
+    const auto visible=value.at("visible_reply").get<std::string>();if(context.eventKind=="user_message" && visible.find_first_not_of(" \t\r\n")==std::string::npos) return {false,"empty_reply",{}};
+    if(std::any_of(visible.begin(),visible.end(),[](unsigned char c){return c<32&&c!='\t'&&c!='\r'&&c!='\n';}))return {false,"reply_control_character",{}};
     for(const auto& action:value.at("actions")) {
         const auto path=action.at("path").get<std::string>();
         if(!safeRelative(path)) return {false,"workspace_path",{}};
@@ -71,7 +73,7 @@ Config loadConfig(const std::filesystem::path& path) {
     const auto text=readFile(path,64*1024);
     if(!ayt::serializer::validateJsonDocument(text,"{}")) throw std::runtime_error("config_json");
     const auto j=Json::parse(text);
-    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","maxStartsPerHour","profiles"};
+    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds"};
     for(auto it=j.begin();it!=j.end();++it) if(!allowed.contains(it.key())) throw std::runtime_error("config_unknown_field");
     if(j.at("schemaVersion")!=1) throw std::runtime_error("config_version");
     Config c;const auto base=std::filesystem::absolute(path).parent_path();
@@ -82,23 +84,42 @@ Config loadConfig(const std::filesystem::path& path) {
     };
     auto resolve=[&](const char* key){auto p=std::filesystem::u8path(j.at(key).get<std::string>());return std::filesystem::absolute(p.is_absolute()?p:base/p).lexically_normal();};
     c.dataRoot=resolve("dataRoot");c.characterRoot=resolve("characterRoot");c.uiRoot=resolve("uiRoot");
+    c.configPath=std::filesystem::absolute(path);c.projectRoot=c.characterRoot.parent_path();
+    auto optionalPath=[&](const char* key,const std::filesystem::path& fallback){if(!j.contains(key)||j.at(key)=="")return fallback;auto p=std::filesystem::u8path(j.at(key).get<std::string>());return std::filesystem::absolute(p.is_absolute()?p:base/p).lexically_normal();};
+    c.pluginRoot=optionalPath("pluginRoot",c.projectRoot/"out/build/plugins");c.draftsRoot=optionalPath("draftsRoot",c.dataRoot/"drafts");c.materialsRoot=optionalPath("materialsRoot",c.dataRoot/"materials");
+    c.pluginRootExplicit=j.contains("pluginRoot")&&j.at("pluginRoot")!="";
+    c.plugins=j.value("plugins",Json::object());if(!c.plugins.is_object()||c.plugins.size()>32||c.plugins.dump().size()>16384)throw std::runtime_error("plugin_settings");
+    auto environmentName=[](const std::string& value){if(value.empty())return true;if(value.size()>128||(!std::isalpha(static_cast<unsigned char>(value[0]))&&value[0]!='_'))return false;for(unsigned char x:value)if(!std::isalnum(x)&&x!='_')return false;std::string upper=value;std::transform(upper.begin(),upper.end(),upper.begin(),[](unsigned char x){return static_cast<char>(std::toupper(x));});return !std::set<std::string>{"PATH","HOME","TEMP","TMP","USERPROFILE","SYSTEMROOT","COMSPEC","CODEX_HOME"}.contains(upper);};
+    for(const auto& plugin:c.plugins){if(!plugin.is_object())throw std::runtime_error("plugin_settings");for(auto it=plugin.begin();it!=plugin.end();++it){auto name=it.key();std::transform(name.begin(),name.end(),name.begin(),[](unsigned char x){return static_cast<char>(std::tolower(x));});if(name=="apikey"||name=="api_key"||name=="password"||name=="authorization"||name=="accesstoken"||name=="secret")throw std::runtime_error("plaintext_plugin_secret");}if(!environmentName(plugin.value("credentialEnvironment",std::string{})))throw std::runtime_error("credential_environment");}
+    c.remoteStorage=j.value("remoteStorage",c.remoteStorage);if(!c.remoteStorage.is_object()||c.remoteStorage.value("enabled",false)||c.remoteStorage.dump().size()>4096)throw std::runtime_error("remote_sync_deferred");
+    for(auto it=c.remoteStorage.begin();it!=c.remoteStorage.end();++it)if(it.key()!="kind"&&it.key()!="url"&&it.key()!="enabled")throw std::runtime_error("remote_settings");
+    const auto remoteKind=c.remoteStorage.value("kind",std::string("none"));if(remoteKind!="none"&&remoteKind!="github"&&remoteKind!="webdav")throw std::runtime_error("remote_kind");if(!c.remoteStorage.value("url",std::string{}).empty()&&!c.remoteStorage.at("url").is_string())throw std::runtime_error("remote_url");
+    c.maxToolRounds=static_cast<std::size_t>(integer(j,"maxToolRounds",6,1,12));
     c.port=static_cast<int>(integer(j,"port",0,0,65535));c.credentialEnvironment=j.value("credentialEnvironment",c.credentialEnvironment);
+    if(c.credentialEnvironment.empty()||!environmentName(c.credentialEnvironment))throw std::runtime_error("credential_environment");
+    auto sameEnvironment=[](std::string a,std::string b){for(auto* s:{&a,&b})std::transform(s->begin(),s->end(),s->begin(),[](unsigned char x){return static_cast<char>(std::toupper(x));});return a==b;};
+    for(const auto& plugin:c.plugins)if(sameEnvironment(plugin.value("credentialEnvironment",std::string{}),c.credentialEnvironment))throw std::runtime_error("credential_environment_collision");
     c.contextBytes=static_cast<std::size_t>(integer(j,"contextBytes",24000,4096,128*1024));c.recentMessageCount=static_cast<std::size_t>(integer(j,"recentMessageCount",12,0,32));c.maxMemoriesInContext=static_cast<std::size_t>(integer(j,"maxMemoriesInContext",16,0,64));
     c.solitudeIntervalMs=integer(j,"solitudeIntervalMs",900000,1000,7*86400000LL);c.idleBeforeSolitudeMs=integer(j,"idleBeforeSolitudeMs",120000,0,86400000);c.maxStartsPerHour=static_cast<int>(integer(j,"maxStartsPerHour",60,1,1000));
     if(c.port<0||c.port>65535||c.contextBytes<4096||c.contextBytes>128*1024||c.recentMessageCount>32||c.maxMemoriesInContext>64||c.solitudeIntervalMs<1000||c.solitudeIntervalMs>7*86400000LL||c.idleBeforeSolitudeMs<0||c.idleBeforeSolitudeMs>86400000||c.maxStartsPerHour<1||c.maxStartsPerHour>1000) throw std::runtime_error("config_limit");
     std::set<std::string> profileIds;
     for(const auto& p:j.at("profiles")) {
-        const std::set<std::string> fields={"id","label","protocol","enabled","origin","basePath","model","credentialEnvironment","supportsJsonSchema","supportsStreaming","legacyMaxTokens","timeoutMs","maxOutputTokens"};
+        const std::set<std::string> fields={"id","label","protocol","enabled","origin","basePath","model","credentialEnvironment","supportsJsonSchema","supportsStreaming","supportsVision","legacyMaxTokens","timeoutMs","maxOutputTokens","proxyOrigin","useSystemProxy"};
         for(auto it=p.begin();it!=p.end();++it) if(!fields.contains(it.key())) throw std::runtime_error("profile_unknown_field");
         Profile profile;profile.id=p.at("id").get<std::string>();profile.label=p.at("label").get<std::string>();profile.enabled=p.value("enabled",true);
-        if(profile.id.empty()||profile.id.size()>64||!profileIds.insert(profile.id).second||profile.label.size()>256) throw std::runtime_error("profile_id");
+        if(profile.id.empty()||profile.id=="plugin-tts"||profile.id.size()>64||!std::all_of(profile.id.begin(),profile.id.end(),[](unsigned char x){return std::isalnum(x)||x=='-'||x=='_';})||!profileIds.insert(profile.id).second||profile.label.size()>256) throw std::runtime_error("profile_id");
         const auto protocol=p.at("protocol").get<std::string>();
         if(protocol=="mock") profile.model.protocol=ayt::inference::Protocol::Mock;
         else if(protocol=="chat-completions") profile.model.protocol=ayt::inference::Protocol::ChatCompletions;
         else if(protocol=="responses") profile.model.protocol=ayt::inference::Protocol::Responses;
         else throw std::runtime_error("profile_protocol");
         profile.model.origin=p.value("origin","");profile.model.basePath=p.value("basePath","/v1");profile.model.model=p.value("model","");profile.model.credentialEnvironment=p.value("credentialEnvironment","");
+        if(!environmentName(profile.model.credentialEnvironment))throw std::runtime_error("credential_environment");
+        if(sameEnvironment(profile.model.credentialEnvironment,c.credentialEnvironment))throw std::runtime_error("credential_environment_collision");
         profile.model.supportsJsonSchema=p.value("supportsJsonSchema",false);profile.model.supportsStreaming=p.value("supportsStreaming",true);profile.model.legacyMaxTokens=p.value("legacyMaxTokens",false);
+        profile.model.supportsVision=p.value("supportsVision",false);
+        profile.model.proxyOrigin=p.value("proxyOrigin",std::string{});profile.model.useSystemProxy=p.value("useSystemProxy",true);
+        if(!profile.model.proxyOrigin.empty()&&(!profile.model.proxyOrigin.starts_with("http://")||!ayt::net::http::validOrigin(profile.model.proxyOrigin)))throw std::runtime_error("profile_proxy");
         const auto timeout=integer(p,"timeoutMs",30000,100,120000);profile.maxOutputTokens=static_cast<std::uint32_t>(integer(p,"maxOutputTokens",2048,1,8192));
         if(timeout<100||timeout>120000||!profile.maxOutputTokens||profile.maxOutputTokens>8192) throw std::runtime_error("profile_limit");
         profile.model.timeout=std::chrono::milliseconds(timeout);profile.model.maxRequestBytes=512*1024;profile.model.maxResponseBytes=256*1024;c.profiles.push_back(std::move(profile));

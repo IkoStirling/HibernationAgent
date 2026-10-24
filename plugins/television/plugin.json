@@ -1,0 +1,1 @@
+{"id":"television","name":"浮动电视","description":"复用 AYVideo 解码本地与网络媒体，支持控制、帧观察和公开视频搜索。","version":"0.2.0","api_version":1,"library":"Hibernation_Television.dll","capabilities":["desktop.media-window","media.decode","media.frame-observation","network.video-search"]}

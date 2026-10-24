@@ -1,14 +1,22 @@
 {
-  "testedEngineRootCommit": "a943d0420a3ec1dac78392da555b97651b072a13",
+  "testedEngineRootCommit": "15e11d08dee7ab6216438c670e36060f2b9e96ed",
   "engineRelativePath": "../AliyatEngine",
   "modules": {
     "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",
     "AYFoundation/AYSerializer": "c839aa10e419a47330ffcaa7020afff556de566b",
-    "AYFoundation/AYStorage": "6fddae05e77a4bd61b6bcb5b3904f97c10a42671",
+    "AYFoundation/AYStorage": "d921249117f8e8b9aec40967a7fba4bf58c9f4f3",
     "AYFoundation/AYTask": "1ab1e4bbfb38a4ac5e12ef52fd09ecb4fca58549",
-    "AYRuntime/AYInference": "d8c7d3eb53a6bd158386498e08e593ab2e1cbbdf",
-    "AYRuntime/AYNetwork": "d3c8726ab3ad3237cb8a2b8f45f985e89f65ea0b",
-    "AYRuntime/AYApplication": "6d34206ce9a7fe86da59a5856ff1e22aa01af81c",
-    "AYRuntime/AYEventSystem": "d7296137684e2d6f8c9b859dcd317b8b72629e3f"
+    "AYRuntime/AYInference": "7077ac9fbf4bd19c8625c90e58c49a6d5535ed44",
+    "AYRuntime/AYNetwork": "0c5662a959f6247c3419b08164678c143e74d607",
+    "AYRuntime/AYApplication": "1a706fd1666ead7d7debec4e03c105ef0447553d",
+    "AYRuntime/AYEventSystem": "d7296137684e2d6f8c9b859dcd317b8b72629e3f",
+    "AYFoundation/AYCrypto": "6a295093217a615507a0a8b4b7a7ab7531197c07",
+    "AYRuntime/AYPlugin": "cef4c819d200480e0079225aaca9392356059de1",
+    "AYRuntime/AYVideo": "f5c88e4a52430c648bbe1edcc6fec44c076f8fa2"
+  },
+  "recordStorageFormats": {
+    "plain": 1,
+    "protected": 2,
+    "payloadSchema": 1
   }
 }

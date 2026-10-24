@@ -1,0 +1,32 @@
+#include "../PluginCommon.h"
+#include <future>
+using namespace hibernation;
+using namespace hibernation::plugins;
+namespace {
+class Weather final:public BasePlugin {
+    PluginHostContext host_;PluginJson config_=PluginJson::object(),cached_=PluginJson::object();mutable std::mutex mutex_;std::mutex fetchMutex_;std::future<PluginJson> background_;std::atomic<bool> stopped_=false;std::int64_t nextRefresh_=0;unsigned generation_=0;
+    PluginJson fetch(const std::function<bool()>& cancelled){std::lock_guard fetchLock(fetchMutex_);PluginJson cfg;unsigned generation;std::function<void(PluginJson)> emit;{std::lock_guard lock(mutex_);cfg=config_;generation=generation_;emit=host_.emit;const auto age=nowMs()-cached_.value("fetched_ms",std::int64_t(0));if(!cached_.empty()&&age>=0&&age<60000)return toolSuccess(cached_);}
+        const auto city=cfg.value("city",std::string{});if(city.empty())return toolFailure("location_not_configured");auto cancel=[this,cancelled]{return stopped_.load()||paused_.load()||(cancelled&&cancelled());};if(cancel())return toolFailure("cancelled");
+        try{const auto found=fetchJson(cfg.value("geocodingOrigin",std::string("https://geocoding-api.open-meteo.com")),"/v1/search?name="+urlEncode(city)+"&count=1&language=zh&format=json",cancel);if(!found.contains("results")||found.at("results").empty())return toolFailure("city_not_found");const auto place=found.at("results")[0];const double lat=place.at("latitude"),lon=place.at("longitude");
+            if(!std::isfinite(lat)||!std::isfinite(lon)||lat< -90||lat>90||lon< -180||lon>180)return toolFailure("invalid_weather_location");
+            const auto data=fetchJson(cfg.value("forecastOrigin",std::string("https://api.open-meteo.com")),"/v1/forecast?latitude="+std::to_string(lat)+"&longitude="+std::to_string(lon)+"&current=temperature_2m,relative_humidity_2m,is_day,precipitation,weather_code,cloud_cover,wind_speed_10m&timezone=auto",cancel);const auto current=data.at("current");const double temperature=current.at("temperature_2m");const int code=current.at("weather_code");if(!std::isfinite(temperature)||temperature< -90||temperature>65||code<0||code>99)return toolFailure("invalid_weather_observation");
+            const auto forecastOrigin=cfg.value("forecastOrigin",std::string("https://api.open-meteo.com"));PluginJson value={{"city",city},{"resolved_name",place.at("name")},{"country",place.value("country",std::string{})},{"temperature",temperature},{"weather_code",code},{"humidity",current.value("relative_humidity_2m",0)},{"precipitation",current.value("precipitation",0.0)},{"wind_speed",current.value("wind_speed_10m",0.0)},{"is_day",current.value("is_day",1)},{"observed_time",current.at("time")},{"fetched_ms",nowMs()},{"provider",forecastOrigin=="https://api.open-meteo.com"?"Open-Meteo":"Open-Meteo-compatible"},{"forecast_origin",forecastOrigin},{"source",forecastOrigin+"/v1/forecast"}};
+            {std::lock_guard lock(mutex_);if(generation!=generation_||cancel())return toolFailure("weather_configuration_changed");cached_=value;nextRefresh_=nowMs()+static_cast<std::int64_t>(config_.value("refreshMinutes",30))*60000;}
+            emit({{"kind","weather.observed"},{"plugin","weather"},{"temperature",temperature},{"weather_code",code},{"observed_ms",value.at("fetched_ms")}});return toolSuccess(value);
+        }catch(...){return toolFailure(cancel()?"cancelled":"weather_unavailable",true);}
+    }
+public:
+    const char* getName()const override{return "weather";}const char* getDescription()const override{return "User-configured Open-Meteo weather observations";}
+    bool bind(PluginHostContext host,PluginJson configuration,std::string& issue)override{try{number(configuration,"refreshMinutes",30,5,360);const auto city=configuration.value("city",std::string{});if(city.size()>128)throw std::runtime_error("city_size");for(const auto* key:{"geocodingOrigin","forecastOrigin"})if(configuration.contains(key)){const auto origin=configuration.at(key).get<std::string>();if(!ayt::net::http::validOrigin(origin)||(!origin.starts_with("https://")&&!origin.starts_with("http://127.0.0.1:")&&!origin.starts_with("http://localhost:")))throw std::runtime_error("weather_origin");}std::lock_guard lock(mutex_);if(config_.value("city",std::string{})!=city||config_.value("geocodingOrigin",std::string{})!=configuration.value("geocodingOrigin",std::string{})||config_.value("forecastOrigin",std::string{})!=configuration.value("forecastOrigin",std::string{})){cached_=PluginJson::object();nextRefresh_=0;++generation_;}host_=std::move(host);config_=std::move(configuration);stopped_=false;issue.clear();return true;}catch(...){issue="weather_configuration";return false;}}
+    PluginJson tools()const override{return PluginJson::array({tool("weather.current","获取用户设置城市的当前天气；位置未知时明确失败，不猜测所在地。",object())});}
+    PluginJson invoke(const std::string&,const PluginJson&,const std::function<bool()>& cancelled)override{return fetch(cancelled);}
+    void tick(double)override{if(background_.valid()){if(background_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;background_.get();}bool refresh;{std::lock_guard lock(mutex_);refresh=!paused_.load()&&!config_.value("city",std::string{}).empty()&&nowMs()>=nextRefresh_;if(refresh)nextRefresh_=nowMs()+60000;}if(refresh)background_=std::async(std::launch::async,[this]{return fetch({});});}
+    PluginJson snapshot()const override{std::lock_guard lock(mutex_);return {{"cached",cached_}};}
+    bool restore(const PluginJson& value)override{if(!value.is_object())return false;std::lock_guard lock(mutex_);auto data=value.value("cached",PluginJson::object());const auto age=nowMs()-data.value("fetched_ms",std::int64_t(0));if(!data.empty()&&age>=0&&age<86400000&&data.value("city",std::string{})==config_.value("city",std::string{})&&data.value("forecast_origin",std::string("https://api.open-meteo.com"))==config_.value("forecastOrigin",std::string("https://api.open-meteo.com"))){cached_=std::move(data);nextRefresh_=cached_.value("fetched_ms",std::int64_t(0))+config_.value("refreshMinutes",30)*60000;}return true;}
+    void shutdown()override{stopped_=true;if(background_.valid())background_.wait();}
+    void event(const PluginJson& value)override{if(value.value("kind",std::string{})=="runtime.paused")paused_=value.value("paused",false);}
+private:
+    std::atomic<bool> paused_=false;
+};
+}
+extern "C" __declspec(dllexport) ayt::plugin::IPlugin* CreatePlugin(){return new Weather;}

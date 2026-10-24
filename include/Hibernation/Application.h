@@ -29,6 +29,11 @@ bool safeRelative(std::string_view path);
 struct Profile {std::string id,label;bool enabled=true;ayt::inference::ModelProfile model;std::uint32_t maxOutputTokens=2048;};
 struct Config {
     std::filesystem::path dataRoot,characterRoot,uiRoot;
+    std::filesystem::path configPath,projectRoot,pluginRoot,draftsRoot,materialsRoot;
+    Json plugins=Json::object(),remoteStorage={{"kind","none"},{"url",""},{"enabled",false}};
+    std::size_t maxToolRounds=6;
+    bool desktopEnabled=false;
+    bool pluginRootExplicit=false;
     int port=0;
     std::string credentialEnvironment="HIBERNATION_SESSION_KEY";
     std::size_t contextBytes=24000,recentMessageCount=12,maxMemoriesInContext=16;

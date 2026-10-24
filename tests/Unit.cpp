@@ -1,4 +1,8 @@
 #include <Hibernation/Application.h>
+#include <Hibernation/TurnProtocol.h>
+#include <Hibernation/RoleState.h>
+#include <Hibernation/Vault.h>
+#include <Hibernation/PluginRuntime.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -27,6 +31,13 @@ TEST_CASE(mock_flow_restores_separate_stage_state_and_raw_archive){
     }
     {Application app(cfg);CHECK(app.initialize());auto state=Json::parse(app.request({"GET","/api/state",""}).body);CHECK_INT_EQ(state.at("messages").size(),2);CHECK(state.at("stage").at("id")=="initial");auto raw=Json::parse(app.request({"POST","/api/archive",Json{{"id",sourceId}}.dump()}).body);CHECK_INT_EQ(raw.at("records").size(),1);CHECK(raw.at("records")[0].at("data").at("text")=="如何理解等待？");}
 }
+TEST_CASE(mock_plugin_experiences_remain_internal_and_preserve_their_source){
+    ayt::test::ScratchDirectory scratch("hibernation-plugin-experience");Config cfg;cfg.dataRoot=scratch.path();cfg.characterRoot=std::filesystem::path(HA_PROJECT_ROOT)/"character";cfg.profiles={{"mock","Mock",true,{}}};Application app(cfg);CHECK(app.initialize());
+    const auto event=Json{{"origin","application_plugin"},{"observation",{{"kind","television.ended"},{"source","fixture.mp4"}}}};
+    const auto response=app.request({"POST","/api/event",Json{{"request_id","plugin-experience"},{"kind","outer_event"},{"text",event.dump()}}.dump()});CHECK_INT_EQ(response.status,202);const auto source=Json::parse(response.body).at("event_id");
+    CHECK(ayt::test::waitUntil([&]{app.tick();return !Json::parse(app.request({"GET","/api/chat",""}).body).at("busy").get<bool>();}));
+    const auto chat=Json::parse(app.request({"GET","/api/chat",""}).body);CHECK(chat.at("messages").empty());const auto memory=Json::parse(app.request({"GET","/api/memories",""}).body).at("memories");CHECK(memory.size()==1);CHECK(memory[0].at("sources")[0].at("id")==source);CHECK(memory[0].at("text").get<std::string>().find("application_plugin")==std::string::npos);
+}
 TEST_CASE(solitude_without_authorized_fragments_skips_safely){
     ayt::test::ScratchDirectory scratch("hibernation-empty-context");Config cfg;cfg.dataRoot=scratch.path();cfg.characterRoot=std::filesystem::path(HA_PROJECT_ROOT)/"character";cfg.recentMessageCount=0;cfg.maxMemoriesInContext=0;cfg.profiles={{"mock","Mock",true,{}}};
     Application app(cfg);CHECK(app.initialize());CHECK_INT_EQ(app.request({"POST","/api/message",Json{{"request_id","empty-context"},{"text","一个暂存的问题"}}.dump()}).status,202);
@@ -35,5 +46,55 @@ TEST_CASE(solitude_without_authorized_fragments_skips_safely){
     const auto state=Json::parse(app.request({"GET","/api/state",""}).body);for(const auto& j:state.at("jobs"))if(j.at("id")=="solitude.once")CHECK(Json::parse(j.at("result").get<std::string>()).at("status")=="no_update");
     CHECK_INT_EQ(Json::parse(app.request({"GET","/api/memories",""}).body).at("memories").size(),1);
 }
+TEST_CASE(turn_protocol_distinguishes_silence_and_never_guesses_malformed_commands){
+    Json silence={{"version",1},{"kind","silence"},{"text",nullptr},{"calls",Json::array()}};CHECK(validateTurn(silence.dump()).ok);
+    auto call=silence;call["kind"]="call";CHECK(!validateTurn(call.dump()).ok);call["calls"].push_back({{"id","c1"},{"tool","memory.search"},{"args",{{"query","等待"}}}});CHECK(validateTurn(call.dump()).ok);
+    call["calls"].push_back(call["calls"][0]);CHECK(!validateTurn(call.dump()).ok);call["calls"].erase(1);call["text"]="不要把内部调用显示出来";CHECK(!validateTurn(call.dump()).ok);
+    CHECK(!validateTurn("Some prose "+silence.dump()).ok);CHECK(validateTurn("```json\n"+silence.dump()+"\n```").ok);
+    CHECK(!validateTurn("{\"version\":1,\"version\":1,\"kind\":\"silence\",\"text\":null,\"calls\":[]}").ok);
+    auto reply=silence;reply["kind"]="reply";reply["text"]=" \t\n";CHECK(!validateTurn(reply.dump()).ok);reply["text"]=std::string("hello\0world",11);CHECK(!validateTurn(reply.dump()).ok);
+}
+TEST_CASE(role_state_moves_gradually_and_restores_without_offline_jumps){
+    RoleState state;state.restore(Json::object(),1000);auto first=state.snapshot();std::string issue;CHECK(state.propose("withdrawing",-1,"experience-1",1100,issue));
+    CHECK(state.snapshot().at("openness")==first.at("openness"));state.tick(1200);CHECK(state.snapshot().at("activity")=="idle");
+    for(int i=1;i<=40;++i)state.tick(1200+i*100);auto after=state.snapshot();CHECK(after.at("activity")=="withdrawing");CHECK(after.at("openness").get<double>()<first.at("openness").get<double>());
+    CHECK(first.at("openness").get<double>()-after.at("openness").get<double>()<0.02);RoleState restored;restored.restore(after,999999999);CHECK(restored.snapshot().at("openness")==after.at("openness"));
+    CHECK(!state.propose("override_everything",1,"x",6000,issue));const auto beforeWeather=state.snapshot();state.weather(38,63,6000);CHECK(state.snapshot().at("mood")==beforeWeather.at("mood"));state.tick(6100);CHECK(state.snapshot().at("mood").get<double>()<=beforeWeather.at("mood").get<double>());
+}
+TEST_CASE(strict_provider_schema_and_optional_nulls_preserve_permission_validation){
+    const Json parameters={{"type","object"},{"additionalProperties",false},{"required",Json::array({"query"})},{"properties",{{"query",{{"type","string"}}},{"limit",{{"type","integer"},{"minimum",1}}}}}};
+    const Json catalog=Json::array({{{"name","memory.search"},{"parameters",parameters}}});const auto schema=turnProviderSchema(catalog);CHECK(static_cast<bool>(ayt::serializer::validateJsonSchema(schema)));
+    Json turn={{"version",1},{"kind","call"},{"text",nullptr},{"calls",Json::array({{{"id","c"},{"tool","memory.search"},{"args",{{"query","x"},{"limit",nullptr}}}}})},{"presentation",{{"speech",false},{"bubble",false}}}};
+    CHECK(static_cast<bool>(ayt::serializer::validateJsonDocument(turn.dump(),schema)));auto args=normalizeToolArguments(turn.at("calls")[0].at("args"),parameters);CHECK(!args.contains("limit"));CHECK(args.at("query")=="x");
+    args=normalizeToolArguments({{"query",nullptr},{"unknown",nullptr}},parameters);CHECK(args.contains("query"));CHECK(args.contains("unknown"));CHECK(!ayt::serializer::validateJsonDocument(args.dump(),parameters.dump()));
+    turn["calls"][0]["tool"]="shell.run";CHECK(!ayt::serializer::validateJsonDocument(turn.dump(),schema));
+}
+TEST_CASE(vault_authenticates_identity_and_ciphertext_and_never_resets_missing_keys){
+    ayt::test::ScratchDirectory scratch("role-vault");std::filesystem::create_directories(scratch.path()/"runtime");std::filesystem::create_directories(scratch.path()/"archive");auto codec=openVaultCodec(scratch.path());
+    ayt::storage::VersionedRecord metadata{"memory","private",1,1,{},"experience","turn",1};std::string encoded,again,decoded;CHECK(codec->encode(metadata,"这是一条不应直接出现在文件里的记忆",encoded));CHECK(codec->encode(metadata,"这是一条不应直接出现在文件里的记忆",again));CHECK(encoded!=again);CHECK(encoded.find("记忆")==std::string::npos);CHECK(codec->decode(metadata,encoded,decoded));CHECK(decoded=="这是一条不应直接出现在文件里的记忆");
+    auto changed=metadata;changed.id="different";CHECK(!codec->decode(changed,encoded,decoded));encoded.back()=encoded.back()=='a'?'b':'a';CHECK(!codec->decode(metadata,encoded,decoded));
+    const auto file=scratch.path()/"archive/records.sqlite";{ayt::storage::RecordStore store;CHECK(store.open(file,{codec,false}));CHECK(static_cast<bool>(store.commit({{"memory","private",0,1,"literal-private-memory-marker","source"}},"turn",1)));}
+    CHECK(readFile(file).find("literal-private-memory-marker")==std::string::npos);std::filesystem::rename(scratch.path()/"runtime/memory-key.dpapi",scratch.path()/"runtime/saved-key.dpapi");bool denied=false;try{(void)openVaultCodec(scratch.path());}catch(...){denied=true;}CHECK(denied);CHECK(!std::filesystem::exists(scratch.path()/"runtime/memory-key.dpapi"));
+}
+TEST_CASE(configuration_keeps_secrets_out_of_plaintext_and_rejects_system_environment_overwrites){
+    ayt::test::ScratchDirectory scratch("role-config-boundaries");const auto file=scratch.path()/"config.json";const auto base=Json::parse(readFile(std::filesystem::path(HA_PROJECT_ROOT)/"config/example.json"));
+    auto rejects=[&](Json value){std::ofstream(file,std::ios::binary)<<value.dump();try{(void)loadConfig(file);return false;}catch(...){return true;}};
+    auto value=base;value["profiles"][0]["id"]="../secret";CHECK(rejects(value));value=base;value["profiles"][0]["credentialEnvironment"]="PATH";CHECK(rejects(value));
+    value=base;value["plugins"]={{"tts",{{"enabled",false},{"apiKey","forbidden"}}}};CHECK(rejects(value));value=base;value["remoteStorage"]={{"enabled",true}};CHECK(rejects(value));value=base;value["remoteStorage"]={{"token","forbidden"}};CHECK(rejects(value));
+    value=base;value["profiles"][0]["credentialEnvironment"]="hibernation_session_key";CHECK(rejects(value));value=base;value["profiles"][0]["id"]="plugin-tts";CHECK(rejects(value));value=base;value["profiles"][0]["proxyOrigin"]="http://user:password@proxy";CHECK(rejects(value));
+}
+#ifdef HA_TEST_PLUGIN_ROOT
+TEST_CASE(plugin_configuration_stages_and_rolls_back_without_replacing_the_core){
+    ayt::test::ScratchDirectory scratch("role-plugin-lifecycle");PluginRuntime plugins(std::filesystem::path(HA_TEST_PLUGIN_ROOT),{scratch.path(),std::filesystem::path(HA_PROJECT_ROOT),false,{}});std::string issue;
+    CHECK(plugins.configure(Json::object(),issue));CHECK(plugins.catalog().empty());
+    CHECK(!plugins.configure({{"weather",{{"enabled",true}}},{"widget",{{"enabled",true},{"size",1}}}},issue));CHECK(plugins.catalog().empty());
+    Json enabled={{"weather",{{"enabled",true},{"city",""}}},{"widget",{{"enabled",true},{"roam",false}}}};CHECK(plugins.configure(enabled,issue));CHECK(!plugins.catalog().empty());
+    auto weather=plugins.invoke("weather.current",Json::object(),{});CHECK(!weather.at("ok").get<bool>());CHECK(weather.at("error").at("code")=="location_not_configured");
+    auto status=plugins.invoke("widget.status",Json::object(),{});CHECK(status.at("ok").get<bool>());CHECK(!status.at("result").at("desktop").get<bool>());
+    auto rejected=enabled;rejected["widget"]["size"]=999;CHECK(!plugins.configure(rejected,issue));CHECK(plugins.invoke("widget.status",Json::object(),{}).at("ok").get<bool>());
+    CHECK(plugins.configure(Json::object(),issue));CHECK(plugins.catalog().empty());CHECK(plugins.configure(enabled,issue));CHECK(plugins.invoke("widget.status",Json::object(),{}).at("ok").get<bool>());
+    plugins.stop();CHECK(!plugins.configure(enabled,issue));CHECK(!plugins.invoke("widget.status",Json::object(),{}).at("ok").get<bool>());
+}
+#endif
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

@@ -1,8 +1,13 @@
 #include <Hibernation/Application.h>
+#include <Hibernation/DesktopHost.h>
+#include <AYNetwork/HttpClient.h>
 #include <AYIO/File.h>
 #include <atomic>
 #include <condition_variable>
 #include <csignal>
+#include <algorithm>
+#include <vector>
+#include <string>
 #include <deque>
 #include <future>
 #include <iostream>
@@ -35,13 +40,20 @@ struct InstanceLock {
 #endif
 };
 }
-int main(int argc,char** argv) {
-    std::filesystem::path configFile,readyFile;
-    for(int i=1;i<argc;++i){const std::string option=argv[i];if(option=="--config"&&i+1<argc)configFile=std::filesystem::u8path(argv[++i]);else if(option=="--ready-file"&&i+1<argc)readyFile=std::filesystem::u8path(argv[++i]);else {std::cerr<<"usage: hibernation-agent --config <path> --ready-file <path>\n";return 2;}}
+int launch(int argc,char** argv) {
+    std::filesystem::path configFile,readyFile;bool desktop=false;
+    for(int i=1;i<argc;++i){const std::string option=argv[i];if(option=="--config"&&i+1<argc)configFile=std::filesystem::u8path(argv[++i]);else if(option=="--ready-file"&&i+1<argc)readyFile=std::filesystem::u8path(argv[++i]);else if(option=="--desktop")desktop=true;else {std::cerr<<"usage: hibernation-agent --config <path> --ready-file <path> [--desktop]\n";return 2;}}
     if(configFile.empty()||readyFile.empty())return 2;
     try {
         std::signal(SIGINT,signalHandler);std::signal(SIGTERM,signalHandler);
-        auto cfg=loadConfig(configFile);std::filesystem::create_directories(cfg.dataRoot/"runtime");
+        auto cfg=loadConfig(configFile);cfg.desktopEnabled=desktop;std::filesystem::create_directories(cfg.dataRoot/"runtime");
+        if(!cfg.pluginRootExplicit){
+#ifdef _WIN32
+            std::wstring executable(32768,L'\0');const auto length=GetModuleFileNameW(nullptr,executable.data(),static_cast<DWORD>(executable.size()));if(!length||length>=executable.size())throw std::runtime_error("executable_path");executable.resize(length);cfg.pluginRoot=std::filesystem::path(executable).parent_path()/"plugins";
+#else
+            cfg.pluginRoot=std::filesystem::absolute(std::filesystem::u8path(argv[0])).parent_path()/"plugins";
+#endif
+        }
         InstanceLock instance(cfg.dataRoot/"runtime"/"service.lock");if(!instance.valid()){std::cerr<<"archive_already_in_use\n";return 7;}
         Application app(std::move(cfg));if(!app.initialize()){std::cerr<<"application_initialize_failed\n";return 3;}
         std::mutex mutex;std::deque<std::shared_ptr<Command>> mailbox;std::atomic<bool> accepting=true;
@@ -60,17 +72,32 @@ int main(int argc,char** argv) {
 #else
         const auto pid=static_cast<std::uint64_t>(getpid());
 #endif
-        const auto ready=Json{{"version",1},{"port",service.port()},{"pid",pid},{"application","HibernationAgent"}}.dump();
+        std::unique_ptr<DesktopHost> desktopHost;
+        if(desktop){const auto url="http://127.0.0.1:"+std::to_string(service.port())+"/#session="+ayt::net::http::environmentCredential(app.config().credentialEnvironment);desktopHost=std::make_unique<DesktopHost>(app,url);if(!desktopHost->create()){std::cerr<<"desktop_initialize_failed\n";return 8;}}
+        const auto ready=Json{{"version",1},{"port",service.port()},{"pid",pid},{"application","HibernationAgent"},{"desktop",desktop}}.dump();
         std::filesystem::create_directories(readyFile.parent_path());auto name=readyFile.u8string();
         if(!ayt::io::File::atomicWriteUtf8({reinterpret_cast<const char*>(name.data()),name.size()},ready.data(),ready.size()))return 5;
         std::cout<<"HibernationAgent ready on loopback port "<<service.port()<<"\n"<<std::flush;
         while(!interrupted&&!app.stopping()) {
+            if(desktopHost&&!desktopHost->pump())break;
             std::deque<std::shared_ptr<Command>> batch;{std::lock_guard guard(mutex);batch.swap(mailbox);}
-            for(const auto& command:batch){if(command->cancelled)continue;command->answer.set_value(app.request(command->request));}
-            app.tick();std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            for(const auto& command:batch){if(command->cancelled)continue;if(command->request.path=="/api/desktop/show"){if(desktopHost)desktopHost->show();command->answer.set_value({desktopHost?200:409,desktopHost?"{\"shown\":true}":"{\"error\":\"desktop_unavailable\"}"});}else command->answer.set_value(app.request(command->request));}
+            app.tick();if(desktopHost)desktopHost->update();std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
         accepting=false;
         {std::lock_guard guard(mutex);for(auto& command:mailbox)command->answer.set_value({503,"{\"error\":\"stopping\"}"});mailbox.clear();}
         service.stop();app.stop();return 0;
-    }catch(const std::exception&){std::cerr<<"application_configuration_or_storage_error\n";return 6;}
+    }catch(const std::exception& failure){
+        // Only our bounded symbolic error codes are loggable. Library messages
+        // may quote input data and must never become plaintext memory logs.
+        const std::string code=failure.what();const bool symbolic=code.size()<=96&&!code.empty()&&std::all_of(code.begin(),code.end(),[](unsigned char c){return (c>='a'&&c<='z')||c=='_'||c==':';});
+        std::cerr<<(symbolic?code:"application_configuration_or_storage_error")<<'\n';return 6;
+    }
 }
+#ifdef _WIN32
+int wmain(int argc,wchar_t** arguments){
+    try{std::vector<std::string> values;values.reserve(argc);for(int i=0;i<argc;++i){const auto length=static_cast<int>(wcslen(arguments[i]));const auto bytes=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,arguments[i],length,nullptr,0,nullptr,nullptr);if(length&&!bytes)return 2;std::string value(bytes,'\0');if(bytes)WideCharToMultiByte(CP_UTF8,0,arguments[i],length,value.data(),bytes,nullptr,nullptr);values.push_back(std::move(value));}std::vector<char*> argv;for(auto& value:values)argv.push_back(value.data());argv.push_back(nullptr);return launch(argc,argv.data());}catch(...){std::cerr<<"command_line_encoding\n";return 2;}
+}
+#else
+int main(int argc,char** argv){return launch(argc,argv);}
+#endif
