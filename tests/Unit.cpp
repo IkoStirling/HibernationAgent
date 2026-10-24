@@ -95,6 +95,16 @@ TEST_CASE(plugin_configuration_stages_and_rolls_back_without_replacing_the_core)
     CHECK(plugins.configure(Json::object(),issue));CHECK(plugins.catalog().empty());CHECK(plugins.configure(enabled,issue));CHECK(plugins.invoke("widget.status",Json::object(),{}).at("ok").get<bool>());
     plugins.stop();CHECK(!plugins.configure(enabled,issue));CHECK(!plugins.invoke("widget.status",Json::object(),{}).at("ok").get<bool>());
 }
+TEST_CASE(plugin_settings_reject_wrong_types_before_background_threads_use_them){
+    ayt::test::ScratchDirectory scratch("role-plugin-config-types");PluginRuntime plugins(std::filesystem::path(HA_TEST_PLUGIN_ROOT),{scratch.path(),std::filesystem::path(HA_PROJECT_ROOT),false,{}});std::string issue;
+    const std::vector<Json> invalid={
+        {{"tts",{{"enabled",true},{"backend","http"},{"origin","http://127.0.0.1:9"},{"model",42}}}},
+        {{"television",{{"enabled",true},{"useSystemProxy","yes"}}}},
+        {{"widget",{{"enabled",true},{"showBubble","yes"}}}},
+        {{"tts",{{"enabled",true},{"backend","http"},{"origin","http://127.0.0.1:9"},{"proxyOrigin","http://user:password@127.0.0.1:9"}}}}
+    };
+    for(const auto& settings:invalid){CHECK(!plugins.configure(settings,issue));CHECK(plugins.catalog().empty());}
+}
 #endif
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}
