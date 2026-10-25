@@ -79,6 +79,11 @@
       "respectModelBubble": false
     }
   },
+  "computer": {
+    "enabled": true,
+    "allowScreenCapture": false,
+    "readRoots": []
+  },
   "remoteStorage": {
     "enabled": false,
     "url": "",

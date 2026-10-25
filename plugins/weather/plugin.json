@@ -1,1 +1,1 @@
-{"id":"weather","name":"所在地天气","description":"由用户配置城市，获取天气并提供带来源的观测。","version":"0.2.0","api_version":1,"library":"Hibernation_Weather.dll","capabilities":["network.weather","role.weather-stimulus"]}
+{"id":"weather","name":"所在地天气","description":"由用户配置城市，获取天气并提供带来源的观测。","version":"0.3.0","api_version":2,"library":"Hibernation_Weather.dll","capabilities":["network.weather","role.weather-stimulus"]}

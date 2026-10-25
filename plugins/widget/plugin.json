@@ -1,1 +1,1 @@
-{"id":"widget","name":"桌面小角色","description":"透明桌面小恐龙，支持拖动、点击、游走和对白气泡。","version":"0.2.0","api_version":1,"library":"Hibernation_Widget.dll","capabilities":["desktop.overlay","desktop.pointer-interaction","animation.state-machine"]}
+{"id":"widget","name":"桌面小角色","description":"透明桌面小恐龙，支持拖动、点击、游走和对白气泡。","version":"0.3.0","api_version":2,"library":"Hibernation_Widget.dll","capabilities":["desktop.overlay","desktop.pointer-interaction","animation.state-machine"]}

@@ -42,6 +42,9 @@ int main(int argc,char** argv){
     server.Post("/v1/audio/speech",[](const auto&,auto& response){response.set_content(tone(),"audio/wav");});
     server.Get("/clip.mp4",[&](const auto&,auto& response){const auto bytes=read(root/"clip.mp4");if(bytes.empty()){response.status=404;return;}response.set_content(bytes,"video/mp4");});
     server.Get("/fixture/health",[&](const auto&,auto& response){response.set_content(Json{{"calls",calls.load()}}.dump(),"application/json");});
+    server.Get("/fixture/page",[](const auto&,auto& response){response.set_content(R"(<html><meta charset="utf-8"><title>网页桥接验证</title><body style="background:#dfead8"><h1>实际的本地测试页面</h1><p id="visits"></p><a href="/fixture/video/watch">测试影片链接</a><input type="password" value="never-expose-password-value"><video controls muted src="/fixture/tone.wav" style="width:280px;height:100px"></video><script>let n=Number(localStorage.fixtureVisits||0)+1;localStorage.fixtureVisits=n;document.querySelector('#visits').innerText='页面访问次数：'+n;</script></body></html>)","text/html; charset=utf-8");});
+    server.Get("/fixture/video/watch",[](const auto&,auto& response){response.set_content("<html><meta charset='utf-8'><title>选择后的影片页面</title><body style='background:#dfead8'>这是实际选择的影片页面。</body></html>","text/html; charset=utf-8");});
+    server.Get("/fixture/tone.wav",[](const auto&,auto& response){response.set_content(tone(),"audio/wav");});
     const auto port=server.bind_to_any_port("127.0.0.1");if(port<=0)return 3;std::ofstream(root/"port")<<port;
     std::jthread host([&]{server.listen_after_bind();});std::this_thread::sleep_for(std::chrono::seconds(7200));server.stop();host.join();return 0;
 }

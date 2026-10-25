@@ -30,6 +30,7 @@ struct Profile {std::string id,label;bool enabled=true;ayt::inference::ModelProf
 struct Config {
     std::filesystem::path dataRoot,characterRoot,uiRoot;
     std::filesystem::path configPath,projectRoot,pluginRoot,draftsRoot,materialsRoot;
+    Json computer={{"enabled",true},{"allowScreenCapture",false},{"readRoots",Json::array()}};
     Json plugins=Json::object(),remoteStorage={{"kind","none"},{"url",""},{"enabled",false}};
     std::size_t maxToolRounds=6;
     bool reviewEnabled=false;

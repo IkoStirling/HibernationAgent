@@ -22,6 +22,14 @@
   二进制构成可直接再分发的发行包；发布前须核对实际 FFmpeg 构建选项、GPL/LGPL
   和所有链接依赖的许可。第三方依赖仍遵守各自许可。
 
+- 网页桥接使用 Microsoft WebView2 Runtime 和固定版本 Microsoft.Web.WebView2
+  SDK 1.0.3537.50。SDK 来自官方 NuGet，校验 SHA256
+  `5EA526BBD728ADDA0DA4D31219267E96460494A427E4894C4E09D9F320F4B9AA`，
+  不将 SDK、浏览器或账号资料提交进仓库。分发需遵守包内 Microsoft 许可。
+  [官方嵌入文档](https://learn.microsoft.com/en-us/microsoft-edge/webview2/)
+  · [用户资料目录](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder)。
+  B 站入口只是网页导航配置，不包含账号、平台专用下载器或视频提取功能。
+
 协议与行为参考在2026-10-25核对：
 [FFmpeg protocols](https://ffmpeg.org/ffmpeg-protocols.html)、
 [FFmpeg formats](https://ffmpeg.org/ffmpeg-formats.html)、

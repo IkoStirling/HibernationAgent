@@ -1,9 +1,9 @@
 # 可选原生插件
 
-**Date:**2026-10-25 · **API version:**1 · **Owner:**HibernationAgent
+**Date:**2026-10-26 · **API version:**2 · **Owner:**HibernationAgent
 
 插件放在配置 pluginRoot 的独立子目录，每个目录包含 plugin.json 和匹配 DLL。
-清单目录名必须等于 id，library 是同目录文件名，api_version 为1。宿主不会按模型
+清单目录名必须等于 id，library 是同目录文件名，api_version 为2。宿主不会按模型
 给出的路径加载动态库；只有管理员已安装并启用的插件进入工具目录。
 
 ```json
@@ -11,8 +11,8 @@
   "id":"example",
   "name":"示例",
   "description":"独立能力",
-  "version":"0.2.0",
-  "api_version":1,
+  "version":"0.3.0",
+  "api_version":2,
   "library":"Example.dll",
   "capabilities":["example.feature"]
 }
@@ -29,11 +29,11 @@ bind/tick/event/shutdown 位于桌面 owner 线程。invoke 位于唯一模型�
 停止/等待模型工作，再保存快照和卸载插件；不让对象、回调或线程跨越 DLL 卸载。
 
 tools 返回 name/description/parameters 数组，parameters 使用引擎支持的 JSON
-Schema 子集。名字必须有命名空间且不冲突；memory/state/stage/schedule/workspace
+Schema 子集。名字必须有命名空间且不冲突；memory/state/stage/schedule/workspace/computer/capabilities
 为核心保留空间。invoke 返回 toolSuccess(result) 或 toolFailure(code,retryable)。
 输出限1MiB，事件队列最多128项，异常转为有限错误码，不返回异常正文。
 
-host 提供已授权草稿/素材根、桌面模式与 emit。snapshot/restore 只保存可恢复状态，
+host 提供已授权草稿/素材根、桌面模式、emit 与宿主 browser 协调入口。ABI 2 增加 browser；旧插件须重编译，版本不符拒绝加载。snapshot/restore 只保存可恢复状态，
 不恢复旧语音或旧气泡。插件快照与事件正文进入加密账本。新插件先暂存加载，失败
 则回收；现有插件配置失败尝试回滚。底层原生外部副作用不具备数据库原子回滚。
 启动加载失败会关闭该批插件并保留核心与 Dashboard，便于修正。
