@@ -7,6 +7,7 @@
 #include <Hibernation/Review.h>
 #include <Hibernation/TextPlayback.h>
 #include <Hibernation/DesktopServices.h>
+#include <Hibernation/ReactionCache.h>
 #include <AYSerializer/JsonSchema.h>
 #include <algorithm>
 #include <atomic>
@@ -161,7 +162,7 @@ struct Application::Impl {
         bus.emit(AppFact{kind,std::move(body)},std::move(metadata));
         journalHealthy=static_cast<bool>(lastReceipt);if(!journalHealthy)health="journal_unavailable";else if(health=="journal_unavailable")health="ok";return journalHealthy;
     }
-    void recordPluginEvent(Json event,std::int64_t now) {
+    std::string recordPluginEvent(Json event,std::int64_t now) {
         const auto kind=event.value("kind",std::string{}),plugin=event.value("plugin",std::string{});
         const bool wake=event.value("wake_model",false)&&kind=="television.ended";
         const auto eventId=id("plugin-event");event["created_at"]=now;
@@ -171,7 +172,7 @@ struct Application::Impl {
             for(const auto& key:pending.value)if(get("ha.plugin-events",key).value.value("plugin",std::string{})!=plugin)coalesced.push_back(key);
             pushIndex(coalesced,eventId,8);changes.push_back(mutation("ha.index","plugin-wake",pending,std::move(coalesced),eventId));
         }
-        commit(std::move(changes),eventId);
+        commit(std::move(changes),eventId);return eventId;
     }
     void wakeFromPlugins(std::int64_t now) {
         auto pending=get("ha.index","plugin-wake",Json::array());
@@ -197,6 +198,7 @@ struct Application::Impl {
         const auto policy=visibility();Json refs=Json::array();std::set<std::string> seen;
         for(const auto& item:ids){const auto key=item.get<std::string>();const auto found=context.sources.find(key);if(found==context.sources.end()||!policy.source(found->second)||!seen.insert(key).second)return nullptr;const auto& source=found->second;refs.push_back({{"scope",source.scope},{"id",key},{"revision",source.revision},{"kind",source.kind}});}return refs;
     }
+    #include "ReactionRuntime.inc"
     Json emptyOutput() const {return {{"visible_reply",""},{"actions",Json::array()},{"memories",Json::array()},{"state_update",Json::object()},{"stage_proposal",nullptr}};}
     Json capabilityInventory()const{
         Json available=Json::array();for(const auto& t:tools())available.push_back({{"tool",t.at("name")},{"purpose",t.at("description")}});
@@ -320,10 +322,10 @@ struct Application::Impl {
         }
         return observedTool(name,plugins?plugins->invoke(name,args,cancelled):toolFailure("tool_not_available"),context,traceId);
     }
-    bool consumeModelBudget() {
+    bool consumeModelBudget(int amount=1) {
         auto before=get("ha.budget","models",{{"started_ms",serviceNowMs()},{"count",0}});auto value=before.value;const auto now=serviceNowMs();
         if(now-value.at("started_ms").get<std::int64_t>()>=3600000)value={{"started_ms",now},{"count",0}};
-        if(value.at("count").get<int>()>=cfg.maxStartsPerHour)return false;value["count"]=value.at("count").get<int>()+1;commit({mutation("ha.budget","models",before,value)},"model-call-budget");return true;
+        if(value.at("count").get<int>()+amount>cfg.maxStartsPerHour)return false;value["count"]=value.at("count").get<int>()+amount;commit({mutation("ha.budget","models",before,value)},"model-call-budget");return true;
     }
     bool configureWorkspace(const Config& candidate,std::string& issue) {
         const auto drafts=candidate.draftsRoot.empty()?candidate.dataRoot/"drafts":candidate.draftsRoot;
@@ -509,6 +511,7 @@ struct Application::Impl {
             if(context.sources.contains(r.id))continue;fragments.push_back({r.id,data.dump(),"archive@"+std::to_string(r.revision),r.id==eventId?100:70});
             context.sources.emplace(r.id,Source{r.id,r.revision,kind});
         }
+        for(const auto& row:readIds(archiveScope,get("ha.reactions","recent",Json::array()).value)){auto data=Json::parse(row.payload);if(serviceNowMs()-data.value("created_at",std::int64_t(0))>30000||blockedSources.contains(row.id))continue;data["context_note"]="最近真实发生的鼠标互动与已消费的短反应；不是新的用户指令，不要无关地复述。";fragments.push_back({row.id,data.dump(),"archive@"+std::to_string(row.revision),60});context.sources[row.id]={row.id,row.revision,data.at("kind"),archiveScope};}
         if(!eventId.empty()&&!context.sources.contains(eventId)) {
             const auto source=get(archiveScope,eventId);if(!source.revision)throw std::runtime_error("source_missing");
             fragments.push_back({eventId,source.value.dump(),"archive@"+std::to_string(source.revision),100});
@@ -731,6 +734,8 @@ struct Application::Impl {
             if(!cfg.plugins.value(surface,Json::object()).value("enabled",false)){auto settings=Json::parse(readFile(cfg.configPath));settings["plugins"][surface]["enabled"]=true;const auto saved=saveSettings({{"settings",settings}});if(saved.status!=200)return saved;}
             plugins->event({{"kind","surface.show"},{"surface",surface}});saveRuntime();return reply(200,{{"shown",true},{"id",surface}});
         }
+        if(req.method=="GET"&&req.path=="/api/reactions/status")return reply(200,reactionStatus());
+        if(req.method=="POST"&&req.path=="/api/reactions/refill"){if(!reactionsEnabled()||runtimePaused)return error(409,"reaction_cache_unavailable");reactionForce=true;nextReactionFill=0;return reply(202,{{"queued",true}});}
         if(req.method=="GET"&&req.path=="/api/dashboard")return reply(200,dashboard());
         if(req.method=="GET"&&req.path=="/api/playback")return reply(200,{{"replies",speechPresentation}});
         if(req.method=="GET"&&req.path=="/api/chat"){
@@ -776,7 +781,7 @@ struct Application::Impl {
             for(const auto& row:rows.records)values.push_back({{"id",row.id},{"revision",row.revision},{"source",row.source},{"correlation",row.correlation},{"data",Json::parse(row.payload)}});
             return reply(200,{{"records",values}});
         }
-        if(req.method=="POST"&&(req.path=="/api/message"||req.path=="/api/event")) {
+        if(req.method=="POST"&&(req.path=="/api/message"||req.path=="/api/event")) {reactionGenerator.cancel();
             const auto requestId=body.at("request_id").get<std::string>();const auto text=body.at("text").get<std::string>();
             if(!validRequestId(requestId)||text.empty()||text.size()>12000)return error(400,"input_limit");
             const auto existing=get("ha.requests",requestId);if(existing.revision)return reply(200,{{"request",existing.value},{"duplicate",true}});
@@ -940,14 +945,15 @@ void Application::tick() {
                 if(a.cfg.desktopEnabled&&event.value("plugin","")=="widget"&&event.contains("x")&&event.contains("y")&&event.at("x").is_number_integer()&&event.at("y").is_number_integer()&&std::abs(event.at("x").get<double>())<=100000&&std::abs(event.at("y").get<double>())<=100000){a.desktopRequests=Json::array({{{"x",event.at("x")},{"y",event.at("y")},{"mode",event.value("mode",std::string("floating"))}}});}
                 continue;
             }
+            if(event.value("kind","")=="speech.prepared"){a.reactionPrepared(event);continue;}
             a.trackSpeech(event);
             if(event.value("kind","")=="speech.failed")a.speechIssue="语音未能播放，请在管理页检查声音设置。";
             if(event.value("kind","")=="speech.started")a.speechIssue.clear();
             if(event.value("kind","")=="weather.observed")a.life.weather(event.at("temperature"),event.at("weather_code"),event.value("observed_ms",now));
             a.plugins->event(event);
             if(event.value("kind","")=="speech.progress"||event.value("kind","")=="widget.position")continue; // Playback and position telemetry are ephemeral.
-            a.recordPluginEvent(std::move(event),now);
-        }}a.lastTickMs=now;
+            const auto source=a.recordPluginEvent(event,now);if(event.value("kind","")=="widget.interacted")a.reactToDrag(event,source,now);
+        }}a.lastTickMs=now;a.reactionsTick(now);
         if(now>=a.nextWorkerPoll){a.nextWorkerPoll=now+100;a.projectResults();if(a.journalHealthy){a.wakeFromPlugins(now);
             const auto status=a.worker->poll(serviceNowMs());
             if(status!=QueueStatus::Ok&&status!=QueueStatus::Budget&&status!=QueueStatus::Paused&&status!=QueueStatus::Idle)a.health="worker_"+std::to_string(static_cast<int>(status));
@@ -956,8 +962,9 @@ void Application::tick() {
         if(now>=a.nextRuntimeSave)a.saveRuntime();
     }catch(const std::exception&){a.health="tick_failed";}
 }
-void Application::stop(){if(impl_&&impl_->worker&&impl_->initialized){impl_->worker->stop(serviceNowMs());try{impl_->saveRuntime();}catch(...){}if(impl_->plugins)impl_->plugins->stop();if(impl_->desktop)impl_->desktop->stop();impl_->recorder.reset();impl_->initialized=false;} }
+void Application::stop(){if(impl_&&impl_->worker&&impl_->initialized){impl_->reactionGenerator.stop();impl_->worker->stop(serviceNowMs());try{impl_->saveRuntime();}catch(...){}if(impl_->plugins)impl_->plugins->stop();if(impl_->desktop)impl_->desktop->stop();impl_->recorder.reset();impl_->initialized=false;} }
 bool Application::stopping()const{return impl_->stopped;}
+void Application::setInputActive(bool active){impl_->inputActive=active;if(active)impl_->reactionGenerator.cancel();}
 Json Application::takeDesktopRequests(){return std::exchange(impl_->desktopRequests,Json::array());}
 const Config& Application::config()const{return impl_->cfg;}
 }

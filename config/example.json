@@ -76,7 +76,10 @@
       "bubbleMaxCharacters": 72,
       "charactersPerSecond": 24,
       "pageHoldSeconds": 1.2,
-      "respectModelBubble": false
+      "respectModelBubble": false,
+      "reactionCacheEnabled": false,
+      "reactionCooldownMs": 8000,
+      "reactionProbability": 0.45
     }
   },
   "computer": {

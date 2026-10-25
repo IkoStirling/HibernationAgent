@@ -18,7 +18,7 @@ void substitute(Json& value,const Json& variables){if(value.is_string()){auto te
 std::string tone(){const int samples=16000*3;std::string bytes(44+samples*2,'\0');auto u16=[&](size_t at,uint16_t x){std::memcpy(bytes.data()+at,&x,2);};auto u32=[&](size_t at,uint32_t x){std::memcpy(bytes.data()+at,&x,4);};std::memcpy(bytes.data(),"RIFF",4);u32(4,static_cast<uint32_t>(bytes.size()-8));std::memcpy(bytes.data()+8,"WAVEfmt ",8);u32(16,16);u16(20,1);u16(22,1);u32(24,16000);u32(28,32000);u16(32,2);u16(34,16);std::memcpy(bytes.data()+36,"data",4);u32(40,samples*2);for(int n=0;n<samples;++n)u16(44+n*2,static_cast<int16_t>(std::sin(n*440.0*6.283185307/16000)*1500));return bytes;}
 }
 int main(int argc,char** argv){
-    if(argc!=2)return 2;const auto root=std::filesystem::u8path(argv[1]);std::filesystem::create_directories(root);httplib::Server server;server.new_task_queue=[]{return new httplib::ThreadPool(4);};server.set_payload_max_length(2*1024*1024);std::atomic<int> calls=0;std::mutex mutex;std::string lastPlan,reviewPlan;size_t planAt=0,reviewAt=0;
+    if(argc!=2)return 2;const auto root=std::filesystem::u8path(argv[1]);std::filesystem::create_directories(root);httplib::Server server;server.new_task_queue=[]{return new httplib::ThreadPool(4);};server.set_payload_max_length(2*1024*1024);std::atomic<int> calls=0,audioCalls=0;std::mutex mutex;std::string lastPlan,reviewPlan;size_t planAt=0,reviewAt=0;
 #ifdef HA_TEST_MEDIA
     std::string issue;if(!ayt::testmedia::generateClip((root/"clip.mp4").string(),true,200,64,48,25,issue))return 5;
 #endif
@@ -39,9 +39,9 @@ int main(int argc,char** argv){
     });
     server.Get("/v1/search",[](const auto&,auto& response){response.set_content(Json{{"results",Json::array({{{"name","验证城市"},{"country","Fixture"},{"latitude",30.0},{"longitude",120.0}}})}}.dump(),"application/json");});
     server.Get("/v1/forecast",[](const auto&,auto& response){response.set_content(Json{{"current",{{"temperature_2m",38.0},{"weather_code",63},{"relative_humidity_2m",85},{"precipitation",2.0},{"wind_speed_10m",12.0},{"is_day",1},{"time","2026-10-25T08:00"}}}}.dump(),"application/json");});
-    server.Post("/v1/audio/speech",[](const auto&,auto& response){response.set_content(tone(),"audio/wav");});
+    server.Post("/v1/audio/speech",[&](const auto&,auto& response){++audioCalls;response.set_content(tone(),"audio/wav");});
     server.Get("/clip.mp4",[&](const auto&,auto& response){const auto bytes=read(root/"clip.mp4");if(bytes.empty()){response.status=404;return;}response.set_content(bytes,"video/mp4");});
-    server.Get("/fixture/health",[&](const auto&,auto& response){response.set_content(Json{{"calls",calls.load()}}.dump(),"application/json");});
+    server.Get("/fixture/health",[&](const auto&,auto& response){response.set_content(Json{{"calls",calls.load()},{"audio_calls",audioCalls.load()}}.dump(),"application/json");});
     server.Get("/fixture/page",[](const auto&,auto& response){response.set_content(R"(<html><meta charset="utf-8"><title>网页桥接验证</title><body style="background:#dfead8"><h1>实际的本地测试页面</h1><p id="visits"></p><a href="/fixture/video/watch">测试影片链接</a><input type="password" value="never-expose-password-value"><video controls muted src="/fixture/tone.wav" style="width:280px;height:100px"></video><script>let n=Number(localStorage.fixtureVisits||0)+1;localStorage.fixtureVisits=n;document.querySelector('#visits').innerText='页面访问次数：'+n;</script></body></html>)","text/html; charset=utf-8");});
     server.Get("/fixture/video/watch",[](const auto&,auto& response){response.set_content("<html><meta charset='utf-8'><title>选择后的影片页面</title><body style='background:#dfead8'>这是实际选择的影片页面。</body></html>","text/html; charset=utf-8");});
     server.Get("/fixture/tone.wav",[](const auto&,auto& response){response.set_content(tone(),"audio/wav");});

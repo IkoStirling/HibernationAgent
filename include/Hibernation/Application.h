@@ -56,6 +56,7 @@ public:
     void tick();
     /// Owner-only transient widget UI requests, never model work or archive data.
     Json takeDesktopRequests();
+    void setInputActive(bool active);
     void stop();
     bool stopping() const;
     const Config& config() const;

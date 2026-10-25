@@ -6,6 +6,7 @@
 #include <Hibernation/Review.h>
 #include <Hibernation/TextPlayback.h>
 #include <Hibernation/MemoryContext.h>
+#include <Hibernation/ReactionCache.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -170,6 +171,10 @@ TEST_CASE(plugin_settings_reject_wrong_types_before_background_threads_use_them)
 TEST_CASE(memory_content_grouping_keeps_categories_and_authentic_source_versions){
     Json a={{"kind","inference"},{"text","同一段  文字\n"}};auto b=a;b["text"]="同一段 文字";CHECK(memoryContentKey(a)==memoryContentKey(b));b["kind"]="outer";CHECK(memoryContentKey(a)!=memoryContentKey(b));
     Json refs=Json::array({{{"id","b"},{"revision",1}},{{"id","a"},{"revision",2}}});auto reversed=refs;std::reverse(reversed.begin(),reversed.end());CHECK(canonicalSources(refs)==canonicalSources(reversed));reversed[0]["revision"]=3;CHECK(canonicalSources(refs)!=canonicalSources(reversed));
+}
+TEST_CASE(reaction_cache_validates_candidates_and_consumes_each_ready_entry_once){
+    auto value=Json{{"version",1},{"reactions",Json::array({{{"text","先停在这里。"},{"animation","idle"}}})}};CHECK(validateReactions(value.dump()).ok);value["reactions"].push_back(value["reactions"][0]);CHECK(!validateReactions(value.dump()).ok);value["reactions"].erase(1);value["reactions"][0]["shell"]="not permitted";CHECK(!validateReactions(value.dump()).ok);
+    Json pool={{"entries",Json::array({{{"id","expired"},{"text","过期"},{"expires",100},{"ready",true}},{{"id","pending"},{"text","未准备"},{"expires",999},{"ready",false}},{{"id","one"},{"text","先停在这里。"},{"expires",999},{"ready",true}}})},{"used",Json::array()}};auto first=takeReaction(pool,101);CHECK(first.at("id")=="one");CHECK(pool.at("entries").size()==1);CHECK(pool.at("used").size()==1);CHECK(takeReaction(pool,102).is_null());CHECK(pool.at("used").size()==1);
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}
