@@ -1,4 +1,4 @@
-"""One bounded local synthesis job. Only a DPAPI request path is passed in argv."""
+"""Owned, prewarmed local voice worker; no dialogue or token in argv or logs."""
 import contextlib
 import struct
 import ctypes
@@ -33,6 +33,95 @@ def unprotect(path):
         local_free.argtypes = [ctypes.c_void_p]
         local_free.restype = ctypes.c_void_p
         local_free(plain.data)
+
+
+def protect(path, value):
+    class Blob(ctypes.Structure):
+        _fields_ = [("size", wintypes.DWORD), ("data", ctypes.POINTER(ctypes.c_ubyte))]
+    data = json.dumps(value, separators=(",", ":")).encode("utf-8")
+    buffer = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+    source, sealed = Blob(len(data), buffer), Blob()
+    crypt = ctypes.WinDLL("crypt32", use_last_error=True)
+    crypt.CryptProtectData.argtypes = [ctypes.POINTER(Blob), ctypes.c_void_p, ctypes.c_void_p,
+                                      ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(Blob)]
+    crypt.CryptProtectData.restype = wintypes.BOOL
+    if not crypt.CryptProtectData(ctypes.byref(source), None, None, None, None, 1, ctypes.byref(sealed)):
+        raise ValueError("bootstrap_unavailable")
+    try:
+        Path(path).write_bytes(ctypes.string_at(sealed.data, sealed.size))
+    finally:
+        local_free = ctypes.WinDLL("kernel32").LocalFree
+        local_free.argtypes = [ctypes.c_void_p]
+        local_free.restype = ctypes.c_void_p
+        local_free(sealed.data)
+
+
+def serve(bootstrap_path):
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    import hmac
+    bootstrap = unprotect(bootstrap_path)
+    token, ready = bootstrap["token"], Path(bootstrap["ready"])
+    if bootstrap["version"] != 1 or not isinstance(token, str) or not 64 <= len(token) <= 128:
+        raise ValueError("bootstrap_shape")
+    # Import and initialize dictionary and voice before announcing readiness.
+    # This PCM is discarded, never played or written to a file.
+    synthesize(dict(version=1, text="あ。", speed=1, max_seconds=1))
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(15)
+
+        def do_POST(self):
+            self.close_connection = True
+            if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + token):
+                self.send_error(403)
+                return
+            if self.path != "/synthesize":
+                self.send_error(404)
+                return
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                if not 1 <= size <= 65536:
+                    raise ValueError("request_limit")
+                data = self.rfile.read(size)
+                if len(data) != size:
+                    raise ValueError("request_incomplete")
+                request = json.loads(data)
+                if not isinstance(request, dict):
+                    raise ValueError("request_shape")
+                audio = synthesize(request)
+            except ValueError as error:
+                if str(error) == "no_readable_text":
+                    self.send_response(204)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self.send_error(400)
+                return
+            except Exception:
+                self.send_error(400)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/wav")
+            self.send_header("Content-Length", str(len(audio)))
+            self.end_headers()
+            self.wfile.write(audio)
+
+    class Server(HTTPServer):
+        allow_reuse_address = False
+
+        def handle_error(self, *args):
+            pass  # cancellation closes the client; never print private tracebacks
+
+    with Server(("127.0.0.1", 0), Handler) as server:
+        temporary = ready.with_suffix(".pending.dpapi")
+        protect(temporary, dict(version=1, port=server.server_port))
+        temporary.replace(ready)
+        server.serve_forever(poll_interval=0.1)
 
 
 def synthesize(request):
@@ -108,6 +197,9 @@ def main():
         sys.path.insert(0, runtime["modules"])
         if sys.argv[1:] == ["--check"]:
             import numpy, pypinyin, pyopenjtalk
+            return 0
+        if len(sys.argv) == 3 and sys.argv[1] == "--serve":
+            serve(sys.argv[2])
             return 0
         if len(sys.argv) != 2:
             return 2

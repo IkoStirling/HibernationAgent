@@ -97,9 +97,19 @@ Mei 在短句边界使用真实合成时长对齐，句内字符按读音长度�
 可以用 `-RuntimeRoot` 指定依赖目录；`-BuildRoot` 应与实际应用构建目录一致。
 准备后的 `plugins/tts/runtime.json` 保存本机 Python 和依赖路径，不含密钥，
 不随源码分发；迁移电脑后重新准备。未安装时仍可使用系统音色和 HTTP 服务。
-Python 辅助进程仅在合成时启动，由引擎 AYPlatform 负责超时、取消与后代清理。
-中间任务输入使用 Windows DPAPI 加密，任务结束即删除；PCM 通过进程管道返回，
+启动时使用 Mei，后台会预热并复用声库，避免每句话重新启动 Python 和加载字典。
+长回复按标点分段，每段最多24字；首段就绪即开始同步显示和播放，后续段落提前合成。
+合成中、缓存中和播放中的音频合计最多3段，使用同一个播放通道连续排队，
+不等待整条回复合成完毕；停止或暂停会清空该次回复的待播缓存。
+辅助进程由引擎 AYPlatform 托管，随插件退出；单次合成仍有超时和取消限制，
+中断或故障后下次调用会重新启动。仅绑定本机回环地址，使用每个进程独有的随机凭据，
+请求和 PCM 均在内存中传递；短暂的启动信息使用 Windows DPAPI 加密并在就绪后删除。
 不把语音文件写入交谈档案。没有调用模型翻译或付费语音接口。
+`speech.status` 中的 `last_synthesis_ms` 对 Mei 表示首段准备耗时，
+`kana_worker_starts` 可检查声库进程是否复用，`maximum_buffered_segments` 表示缓存峰值，
+`last_underruns` 记录当前/最近一句的缓存耗尽后续播次数。这些状态不会进入角色记忆。
+分段开始时还不知道完整音频时长，`estimated_seconds` 只覆盖已准备部分，
+`duration_complete:false` 明确标记此情况；文字进度使用各段实际音频时间标记。
 
 Mei 声库由 MMDAgent Project Team / Nagoya Institute of Technology 提供，
 遵循 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)，许可副本随准备脚本

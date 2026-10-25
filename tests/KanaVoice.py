@@ -8,13 +8,17 @@ import sys
 import tempfile
 import unittest
 import wave
+import time
+import secrets
+import urllib.request
+import urllib.error
 
 plugin = Path(sys.argv.pop(1)).resolve()
 runtime = json.loads((plugin / "runtime.json").read_text(encoding="utf-8-sig"))
 sys.path[:0] = [str(plugin), runtime["modules"]]
 sys.dont_write_bytecode = True
 from kana_reading import kana
-from kana_worker import synthesize
+from kana_worker import synthesize, protect, unprotect
 
 
 class KanaVoiceTests(unittest.TestCase):
@@ -63,6 +67,49 @@ class KanaVoiceTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(result.stdout, b"")
             self.assertEqual(result.stderr, b"")
+
+    def test_prewarmed_worker_reuses_voice_and_checks_requests(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            bootstrap, ready = root / "boot.dpapi", root / "ready.dpapi"
+            token = secrets.token_hex(40)
+            protect(bootstrap, dict(version=1, token=token, ready=str(ready)))
+            process = subprocess.Popen([runtime["pythonExecutable"], "-B", str(plugin / "kana_worker.py"),
+                                        "--serve", str(bootstrap)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                deadline = time.monotonic() + 15
+                while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(ready.exists(), "worker must announce readiness after warmup")
+                endpoint = "http://127.0.0.1:%d/synthesize" % unprotect(ready)["port"]
+                def call(request, bearer=token):
+                    req = urllib.request.Request(endpoint, json.dumps(request).encode("utf-8"),
+                        headers={"Authorization": "Bearer " + bearer, "Content-Type": "application/json"})
+                    # Local voice traffic must not go through a system proxy.
+                    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=15) as response:
+                        return response.read()
+                request = dict(version=1, text="你好，今天的天气很好。", speed=1, max_seconds=5)
+                for _ in range(2):
+                    self.assertEqual(call(request), synthesize(request))
+                    self.assertIsNone(process.poll())
+                for invalid in (request | dict(speed=99), [], request | dict(text="")):
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        call(invalid)
+                    self.assertEqual(error.exception.code, 400)
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    call(request, "invalid-token")
+                self.assertEqual(error.exception.code, 403)
+                self.assertEqual(call(request | dict(text="🙂")), b"")
+                self.assertTrue(call(request).startswith(b"RIFF"))
+                self.assertEqual(sorted(p.name for p in root.iterdir()), ["boot.dpapi", "ready.dpapi"])
+                for file in root.iterdir():
+                    self.assertNotIn(request["text"].encode("utf-8"), file.read_bytes())
+                    self.assertNotIn(token.encode("ascii"), file.read_bytes())
+            finally:
+                process.terminate()
+                stdout, stderr = process.communicate(timeout=5)
+                self.assertEqual(stdout, b"")
+                self.assertEqual(stderr, b"")
 
 
 unittest.main()
