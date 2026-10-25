@@ -54,6 +54,8 @@ public:
     bool initialize();
     ayt::app::services::LocalReply request(const ayt::app::services::LocalRequest& request);
     void tick();
+    /// Owner-only transient widget UI requests, never model work or archive data.
+    Json takeDesktopRequests();
     void stop();
     bool stopping() const;
     const Config& config() const;

@@ -167,5 +167,9 @@ TEST_CASE(plugin_settings_reject_wrong_types_before_background_threads_use_them)
     for(const auto& settings:invalid){CHECK(!plugins.configure(settings,issue));CHECK(plugins.catalog().empty());}
 }
 #endif
+TEST_CASE(memory_content_grouping_keeps_categories_and_authentic_source_versions){
+    Json a={{"kind","inference"},{"text","同一段  文字\n"}};auto b=a;b["text"]="同一段 文字";CHECK(memoryContentKey(a)==memoryContentKey(b));b["kind"]="outer";CHECK(memoryContentKey(a)!=memoryContentKey(b));
+    Json refs=Json::array({{{"id","b"},{"revision",1}},{{"id","a"},{"revision",2}}});auto reversed=refs;std::reverse(reversed.begin(),reversed.end());CHECK(canonicalSources(refs)==canonicalSources(reversed));reversed[0]["revision"]=3;CHECK(canonicalSources(refs)!=canonicalSources(reversed));
+}
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}
