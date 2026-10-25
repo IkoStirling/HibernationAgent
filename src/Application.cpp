@@ -4,6 +4,7 @@
 #include <Hibernation/RoleState.h>
 #include <Hibernation/PluginRuntime.h>
 #include <Hibernation/Review.h>
+#include <Hibernation/TextPlayback.h>
 #include <AYSerializer/JsonSchema.h>
 #include <algorithm>
 #include <atomic>
@@ -84,6 +85,7 @@ struct Application::Impl {
     bool runtimePaused=false;
     std::string health="ok";
     std::string pluginIssue,speechIssue;
+    std::map<std::string,Json> speechPresentation;std::set<std::string> historicalMessages;
     std::int64_t nextActionAt=0,nextPluginWake=0;
     explicit Impl(Config c):cfg(std::move(c)){}
     Doc get(const std::string& scope,const std::string& key,Json fallback=Json::object()) const {
@@ -558,6 +560,18 @@ struct Application::Impl {
             }
         }
     }
+    bool automaticSpeech(const Json& presentation)const{
+        const auto settings=cfg.plugins.value("tts",Json::object());if(!settings.value("enabled",false)||!settings.value("autoSpeak",true)||(settings.value("respectModelSpeech",false)&&!presentation.value("speech",true))||!plugins)return false;
+        for(const auto& plugin:plugins->status())if(plugin.at("id")=="tts"&&plugin.value("enabled",false))return true;return false;
+    }
+    void trackSpeech(const Json& event){
+        const auto replyId=event.value("reply_id",std::string{});if(replyId.empty())return;const auto kind=event.value("kind",std::string{});if(kind!="speech.started"&&kind!="speech.progress"&&kind!="speech.ended"&&kind!="speech.failed")return;
+        auto& state=speechPresentation[replyId];if(!state.is_object())state=Json::object();
+        if(kind=="speech.started"){state={{"state","speaking"},{"speech_id",event.value("speech_id",std::string{})},{"visible_characters",0},{"position_seconds",0.0},{"duration_seconds",event.value("estimated_seconds",0.0)}};}
+        if(kind=="speech.progress"&&state.value("speech_id",std::string{})==event.value("speech_id",std::string{})){state["visible_characters"]=event.value("visible_characters",std::size_t(0));state["position_seconds"]=event.value("position_seconds",0.0);}
+        if(kind=="speech.ended"||kind=="speech.failed"){if(state.value("speech_id",event.value("speech_id",std::string{}))!=event.value("speech_id",std::string{}))return;state["state"]=kind=="speech.failed"?"failed":event.value("interrupted",false)?"interrupted":"completed";}
+        while(speechPresentation.size()>128){auto it=std::find_if(speechPresentation.begin(),speechPresentation.end(),[](const auto& row){return row.second.value("state",std::string{})!="waiting"&&row.second.value("state",std::string{})!="speaking";});if(it==speechPresentation.end())break;historicalMessages.insert(it->first);speechPresentation.erase(it);}
+    }
     void projectResults() {
         for(const auto& job:jobs()) {
             if(job.result.empty()||job.state==JobState::Running)continue;
@@ -579,7 +593,8 @@ struct Application::Impl {
             if(result.contains("reply_id")&&plugins){auto shown=get("ha.presentation",job.spec.id);if(shown.value.value("token",std::int64_t(0))!=job.runToken){
                 const auto answer=get(archiveScope,result.at("reply_id").get<std::string>());
                 commit({mutation("ha.presentation",job.spec.id,shown,{{"token",job.runToken}})},key);
-                plugins->event({{"kind","assistant.reply"},{"reply_id",result.at("reply_id")},{"text",answer.value.at("text")},{"presentation",answer.value.value("presentation",Json::object())}});
+                const bool speechExpected=automaticSpeech(answer.value.value("presentation",Json::object()));if(speechExpected)speechPresentation[result.at("reply_id").get<std::string>()]={{"state","waiting"},{"visible_characters",0}};
+                plugins->event({{"kind","assistant.reply"},{"reply_id",result.at("reply_id")},{"text",answer.value.at("text")},{"presentation",answer.value.value("presentation",Json::object())},{"speech_expected",speechExpected}});
             }}
             projected.insert(key);
         }
@@ -624,8 +639,9 @@ struct Application::Impl {
     LocalReply handle(const LocalRequest& req) {
         if(req.method=="GET"&&req.path=="/api/state")return reply(200,state());
         if(req.method=="GET"&&req.path=="/api/dashboard")return reply(200,dashboard());
+        if(req.method=="GET"&&req.path=="/api/playback")return reply(200,{{"replies",speechPresentation}});
         if(req.method=="GET"&&req.path=="/api/chat"){
-            Json messages=Json::array();for(const auto& row:readIds(archiveScope,get("ha.index","recent",Json::array()).value)){const auto data=Json::parse(row.payload);const auto kind=data.value("kind","");if(kind=="user_message"||kind=="assistant_message")messages.push_back({{"id",row.id},{"role",kind=="user_message"?"user":"assistant"},{"text",data.at("text")}});}
+            Json messages=Json::array();for(const auto& row:readIds(archiveScope,get("ha.index","recent",Json::array()).value)){const auto data=Json::parse(row.payload);const auto kind=data.value("kind","");if(kind=="user_message"||kind=="assistant_message"){Json message={{"id",row.id},{"role",kind=="user_message"?"user":"assistant"},{"text",data.at("text")}};if(kind=="assistant_message"){const auto it=speechPresentation.find(row.id);if(it!=speechPresentation.end())message["playback"]=it->second;else if(!historicalMessages.contains(row.id)&&automaticSpeech(data.value("presentation",Json::object())))message["playback"]={{"state","waiting"},{"visible_characters",0}};}messages.push_back(std::move(message));}}
             bool failed=false;Json failure=nullptr;
             for(const auto& job:jobs())if(job.spec.id=="chat"){
                 const auto info=Json::parse(job.result.empty()?"{}":job.result,nullptr,false);
@@ -787,6 +803,7 @@ bool Application::initialize() {
     a.ensure("ha.control","current",{{"paused",false}});a.ensure("ha.access","current",{{"hidden",Json::array()}});
     a.runtimePaused=a.get("ha.control","current").value.at("paused");
     for(const auto* index:{"recent","memories","reviews","plugin-wake"})a.ensure("ha.index",index,Json::array());
+    for(const auto& messageId:a.get("ha.index","recent",Json::array()).value)a.historicalMessages.insert(messageId.get<std::string>());
     a.ensure("ha.life","current",Json::object());a.life.restore(a.get("ha.life","current").value,serviceNowMs());
     a.plugins=std::make_shared<PluginRuntime>(a.cfg.pluginRoot,PluginHostContext{a.cfg.dataRoot,a.cfg.projectRoot,a.cfg.desktopEnabled,{}});
     a.plugins->workspaceRoots(a.cfg.draftsRoot,a.cfg.materialsRoot);
@@ -822,10 +839,12 @@ void Application::tick() {
     try {
         const auto now=serviceNowMs();const bool paused=a.runtimePaused;a.life.tick(now,!paused);
         if(a.plugins){a.plugins->tick(std::clamp((now-a.lastTickMs)/1000.0,0.0,0.25));for(auto event:a.plugins->takeEvents()){
+            a.trackSpeech(event);
             if(event.value("kind","")=="speech.failed")a.speechIssue="语音未能播放，请在管理页检查声音设置。";
             if(event.value("kind","")=="speech.started")a.speechIssue.clear();
             if(event.value("kind","")=="weather.observed")a.life.weather(event.at("temperature"),event.at("weather_code"),event.value("observed_ms",now));
             a.plugins->event(event);
+            if(event.value("kind","")=="speech.progress")continue; // Playback telemetry is ephemeral, not an experience or journal stream.
             a.recordPluginEvent(std::move(event),now);
         }}a.lastTickMs=now;
         if(now>=a.nextWorkerPoll){a.nextWorkerPoll=now+100;a.projectResults();if(a.journalHealthy){a.wakeFromPlugins(now);

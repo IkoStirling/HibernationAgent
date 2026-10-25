@@ -29,6 +29,11 @@ public:
         else if(page_+1<pages_.size()){hold_+=seconds;if(hold_>=holdSeconds_){++page_;select();}}
         return oldPage!=page_||oldVisible!=visible_;
     }
+    // Audio owns the clock in synchronized mode. Page holds must not delay it.
+    bool seekCharacters(std::size_t count){if(pages_.empty())return false;const auto oldPage=page_,oldVisible=visible_;std::size_t start=0;
+        for(std::size_t p=0;p<pages_.size();++p){const auto offsets=textOffsets(pages_[p]);const auto size=offsets.size()-1;if(count<=start+size||p+1==pages_.size()){page_=p;offsets_=offsets;visible_=std::min(size,count>start?count-start:0);credit_=hold_=0;break;}start+=size;}
+        return oldPage!=page_||oldVisible!=visible_;
+    }
     std::string visibleText()const{return pages_.empty()?std::string{}:pages_[page_].substr(0,offsets_[visible_]);}
     bool finished()const{return pages_.empty()||(page_+1==pages_.size()&&visible_+1==offsets_.size());}
     std::size_t pageIndex()const{return page_;}std::size_t pageCount()const{return pages_.size();}

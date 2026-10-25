@@ -13,6 +13,15 @@ Json valid(){return {{"visible_reply","允许没有固定结论。"},{"actions",
 ProposalContext context(){ProposalContext c;c.eventKind="user_message";c.eventId="e1";c.stage="initial";c.nextStage="exploring";c.sources={{"e1",{"e1",1,"user_message"}},{"e2",{"e2",1,"story_end"}}};return c;}
 }
 TEST_SUITE(RolePolicy)
+TEST_CASE(audio_clock_drives_utf8_reveal_and_page_changes_without_extra_holds){
+    TextPlayback playback;playback.reset("你好🙂。下一句话。",4,80,10);
+    playback.seekCharacters(0);CHECK(playback.visibleText().empty());
+    playback.seekCharacters(3);CHECK(playback.visibleText()=="你好🙂");
+    playback.seekCharacters(4);CHECK(playback.visibleText()=="你好🙂。");CHECK(playback.pageIndex()==0);
+    playback.seekCharacters(5);CHECK(playback.visibleText()=="下");CHECK(playback.pageIndex()==1);
+    playback.seekCharacters(8);CHECK(playback.visibleText()=="下一句话");
+    playback.seekCharacters(100);CHECK(playback.finished());CHECK(playback.visibleText()=="。");
+}
 TEST_CASE(paged_text_preserves_every_character_and_prefers_sentence_endings){
     const std::string text="第一句话。第二句话很长，需要在逗号后继续展示，没有删掉内容。最后一句！";const auto pages=textPages(text,12);std::string joined;for(const auto& page:pages){CHECK(textOffsets(page).size()-1<=12);joined+=page;}CHECK(joined==text);CHECK(pages.front()=="第一句话。");
     const std::string unicode="你🙂好🌙，这是连续的对白，没有句号也不会丢字";joined.clear();for(const auto& page:textPages(unicode,5)){CHECK(ayt::serializer::validateJsonDocument(Json(page).dump(),"true"));joined+=page;}CHECK(joined==unicode);

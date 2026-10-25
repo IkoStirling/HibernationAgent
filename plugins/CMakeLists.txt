@@ -12,6 +12,11 @@ ha_role_plugin(weather Hibernation_Weather weather/Weather.cpp)
 ha_role_plugin(widget Hibernation_Widget widget/Widget.cpp)
 target_link_libraries(Hibernation_Widget PRIVATE user32 gdi32)
 ha_role_plugin(tts Hibernation_Speech tts/Speech.cpp)
-target_link_libraries(Hibernation_Speech PRIVATE sapi ole32 uuid winmm)
+target_link_libraries(Hibernation_Speech PRIVATE AYPlatform sapi ole32 uuid winmm crypt32)
+add_custom_command(TARGET Hibernation_Speech POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/tts/kana_worker.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tts/kana_reading.py"
+    "$<TARGET_FILE_DIR:Hibernation_Speech>" COMMAND_EXPAND_LISTS)
 ha_role_plugin(television Hibernation_Television television/Television.cpp)
 target_link_libraries(Hibernation_Television PRIVATE AYVideoDecode user32 gdi32 ole32 windowscodecs crypt32 winmm)
