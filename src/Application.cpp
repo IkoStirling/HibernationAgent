@@ -165,7 +165,9 @@ struct Application::Impl {
     std::string recordPluginEvent(Json event,std::int64_t now) {
         const auto kind=event.value("kind",std::string{}),plugin=event.value("plugin",std::string{});
         const bool wake=event.value("wake_model",false)&&(kind=="television.ended"||(plugin=="habitat"&&(kind=="habitat.consumed"||kind=="habitat.planted")));
-        const auto eventId=id("plugin-event");event["created_at"]=now;const bool worldEvent=worldExperienceKind(event);if(worldEvent)event["journaled"]=false;
+        const auto token=event.value("token",std::string{});const auto eventId=rhythmLifecycle(event)&&!token.empty()&&token.size()<=96?"rhythm:"+token+":"+kind:id("plugin-event");
+        if(rhythmLifecycle(event)&&get("ha.plugin-events",eventId).revision)return eventId;
+        event["created_at"]=now;const bool worldEvent=worldExperienceKind(event);if(worldEvent)event["journaled"]=false;
         std::vector<RecordMutation> changes={{"ha.plugin-events",eventId,0,1,event.dump(),plugin.empty()?"plugin":plugin}};
         if(wake){
             auto pending=get("ha.index","plugin-wake",Json::array());Json coalesced=Json::array();
@@ -176,7 +178,7 @@ struct Application::Impl {
         // Publish the actual virtual-world result and its checkpoint together.
         // A crash before the periodic save must not resurrect consumed food.
         if(plugins&&worldStateChangeKind(event)){auto saved=get("ha.plugins","states");changes.push_back(mutation("ha.plugins","states",saved,plugins->snapshots(),eventId));}
-        commit(std::move(changes),eventId);if(worldEvent&&worldJournalInitialized)worldJournalPending.push_back(eventId);return eventId;
+        commit(std::move(changes),eventId);applyRhythmState(event,eventId,now);if(worldEvent&&worldJournalInitialized)worldJournalPending.push_back(eventId);return eventId;
     }
     void wakeFromPlugins(std::int64_t now) {
         auto pending=get("ha.index","plugin-wake",Json::array());
@@ -731,7 +733,7 @@ struct Application::Impl {
         Json jobValues=Json::array();for(const auto& j:jobs())jobValues.push_back({{"id",j.spec.id},{"state",stateName(j.state)},{"due_at",j.spec.dueAtMs},{"attempts",j.attempts},{"run_token",j.runToken},{"result",j.result.substr(0,512)}});
         Json profileValues=Json::array();for(const auto& p:cfg.profiles)profileValues.push_back({{"id",p.id},{"label",p.label},{"enabled",p.enabled},{"protocol",static_cast<int>(p.model.protocol)},{"credential_environment",p.model.credentialEnvironment}});
         Json reviewValues=Json::array();for(const auto& row:readIds("ha.reviews",get("ha.index","reviews",Json::array()).value)){auto v=Json::parse(row.payload);v["id"]=row.id;reviewValues.push_back(std::move(v));}
-        return {{"version","0.1.0"},{"name",persona.at("displayName")},{"persona_version",persona.at("version")},{"notice",persona.at("notice")},{"state",get("ha.state","current").value},{"stage",get("ha.stage","current").value},{"stage_definition",stageDefinition(get("ha.stage","current").value.at("id"))},{"model",get("ha.settings","model").value},{"profiles",profileValues},{"control",get("ha.control","current").value},{"messages",messages},{"jobs",jobValues},{"reviews",reviewValues},{"busy",busy()},{"health",health},{"data_root",utf8(cfg.dataRoot)},{"context_bytes",cfg.contextBytes}};
+        return {{"version","0.1.0"},{"name",persona.at("displayName")},{"persona_version",persona.at("version")},{"notice",persona.at("notice")},{"state",get("ha.state","current").value},{"continuous_state",life.snapshot()},{"stage",get("ha.stage","current").value},{"stage_definition",stageDefinition(get("ha.stage","current").value.at("id"))},{"model",get("ha.settings","model").value},{"profiles",profileValues},{"control",get("ha.control","current").value},{"messages",messages},{"jobs",jobValues},{"reviews",reviewValues},{"busy",busy()},{"health",health},{"data_root",utf8(cfg.dataRoot)},{"context_bytes",cfg.contextBytes}};
     }
     LocalReply handle(const LocalRequest& req) {
         if(req.method=="GET"&&req.path=="/api/state")return reply(200,state());

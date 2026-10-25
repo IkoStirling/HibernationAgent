@@ -13,6 +13,7 @@ public:
     using Json=nlohmann::json;
     static bool knownKind(const std::string& kind){return kind=="berry"||kind=="leaf"||kind=="seed"||kind=="paper_star"||kind=="sprout";}
     static bool edible(const std::string& kind){return kind=="berry"||kind=="leaf"||kind=="seed";}
+    static const char* growthStage(int value){return value<=0?"newly_planted":value==1?"leaves":value==2?"bud":"flowering";}
     double clock()const{return clock_;}
     bool pending()const{return !pending_.is_null();}
     bool walking()const{return pending()&&pending_.at("phase")=="walking";}
@@ -81,7 +82,7 @@ public:
         emit(kind,item,token);lastActions_.push_back({{"kind",kind},{"item",item},{"at",clock_}});while(lastActions_.size()>4)lastActions_.erase(0);pending_=nullptr;
     }
     Json observe()const{
-        Json items=Json::array();for(const auto& item:objects_)items.push_back({{"id",item.at("id")},{"kind",item.at("kind")},{"x",item.at("x")},{"y",item.at("y")},{"growth",item.at("growth")}});
+        Json items=Json::array();for(const auto& item:objects_){Json value={{"id",item.at("id")},{"kind",item.at("kind")},{"x",item.at("x")},{"y",item.at("y")},{"growth",item.at("growth")}};if(item.at("kind")=="sprout")value["appearance_stage"]=growthStage(item.at("growth"));items.push_back(std::move(value));}
         return {{"objects",items},{"appetite",std::min(appetite_,targetAppetite_)<.12?"satisfied":appetite_>.6?"hungry":"mild"},{"pending",pending_},{"last_actions",lastActions_},{"guide","物件是程序内的虚拟物件。接近和动作完成有真实回执；accepted不等于已经吃掉或观察。可按自己的意愿选择或忽略，不报告内部数值。"}};
     }
     Json snapshot()const{return {{"version",1},{"clock",clock_},{"objects",objects_},{"pending",pending_},{"appetite",appetite_},{"target_appetite",targetAppetite_},{"comfort",comfort_},{"target_comfort",targetComfort_},{"last_actions",lastActions_}};}

@@ -23,6 +23,19 @@ DLL 导出 CreatePlugin，返回实现 RolePlugin.h 中 IRolePlugin 的实例。
 引擎 IPluginLoader 负责装载、初始化失败清理及卸载；应用 PluginRuntime 负责角色
 工具、配置、事件、快照、停用与加载事务的业务约束。
 
+清单可选 `dependencies:["widget"]`，其集合必须与原生 getDependencies 一致；启用
+仍由后台核对，元数据不授予额外能力。管理页可联动启用依赖、关闭依赖时关闭相关
+插件。新文件安装后重启后台以重新发现清单；已有配置可保存后热更新。
+
+简单配置可由 `settings_ui` 声明，管理页无需为每个插件单写界面。最多32项，支持
+toggle/number/select/text，使用 key、label、default 及数值 min/max/step 或选项列表。
+见 rhythm/plugin.json。文字按普通文本显示，不加载插件 JavaScript；保留字段、原型
+字段和疑似密钥字段不会生成普通输入。密钥继续使用单独的加密保存流程。声明式表单
+只是编辑偏好，原生 bind 与应用策略仍负责类型、范围、依赖和权限。
+
+构建会跟踪清单修改，不必为了复制新设置说明而修改/重新链接插件源码。复杂声库、
+网站平台和工作区仍使用对应专用设置。停用插件保留加密快照，重启不自动重播旧声音。
+
 bind/tick/event/shutdown 位于桌面 owner 线程。invoke 位于唯一模型工作线程，
 必须线程安全、限定网络/文件预算、响应取消，不能直接从工作线程操控 HWND。
 媒体、语音插件通过自己的受控线程执行工作，UI状态由 owner 更新。关闭程序先

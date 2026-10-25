@@ -83,6 +83,13 @@
       "refreshMinutes": 30,
       "city": ""
     },
+    "rhythm": {
+      "enabled": false,
+      "automaticRest": true,
+      "idleBeforeRestSeconds": 300,
+      "restSeconds": 180,
+      "automaticProbability": 0.3
+    },
     "widget": {
       "enabled": false,
       "skin": "dinosaur",

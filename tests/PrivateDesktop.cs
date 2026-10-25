@@ -19,10 +19,15 @@ public sealed class PrivateDesktop : IDisposable {
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool CreateProcessW(string application,StringBuilder arguments,IntPtr processSecurity,IntPtr threadSecurity,bool inherit,uint flags,IntPtr environment,string directory,ref Startup startup,out Created result);
     [DllImport("kernel32.dll")]static extern bool CloseHandle(IntPtr handle);
     [DllImport("user32.dll")]public static extern uint GetGuiResources(IntPtr process,uint kind);
+    delegate bool WindowCallback(IntPtr window,IntPtr context);
+    [DllImport("user32.dll")]static extern bool EnumDesktopWindows(IntPtr desktop,WindowCallback callback,IntPtr context);
+    [DllImport("user32.dll")]static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern int GetClassName(IntPtr window,StringBuilder name,int capacity);
     [DllImport("kernel32.dll")]public static extern uint SetThreadExecutionState(uint flags);
     IntPtr desktop;
     public Process Child {get;private set;}
     public string Name {get;private set;}
+    public IntPtr Find(string className){IntPtr found=IntPtr.Zero;EnumDesktopWindows(desktop,(window,context)=>{uint pid;GetWindowThreadProcessId(window,out pid);if(pid==Child.Id){var name=new StringBuilder(128);GetClassName(window,name,128);if(name.ToString()==className){found=window;return false;}}return true;},IntPtr.Zero);return found;}
     public PrivateDesktop(string executable,string config,string ready,string directory){
         foreach(string value in new[]{executable,config,ready,directory})if(value.IndexOfAny(new[]{'"','\0','\r','\n'})>=0)throw new ArgumentException("invalid_fixture_path");
         executable=Path.GetFullPath(executable);config=Path.GetFullPath(config);ready=Path.GetFullPath(ready);directory=Path.GetFullPath(directory);

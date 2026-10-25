@@ -9,6 +9,7 @@
             if(event.value("kind","")=="speech.started")speechIssue.clear();
             if(event.value("kind","")=="weather.observed")life.weather(event.at("temperature"),event.at("weather_code"),event.value("observed_ms",now));
             plugins->event(event);
-            if(event.value("kind","")=="speech.progress"||event.value("kind","")=="widget.position")continue; // Playback and position telemetry are ephemeral.
+            const auto transientKind=event.value("kind",std::string{});
+            if(transientKind=="speech.progress"||transientKind=="widget.position"||transientKind=="rhythm.pose.request"||transientKind=="rhythm.pose.release"||transientKind=="widget.rest_started"||transientKind=="widget.rest_interrupted")continue; // Pose acknowledgements, playback and position telemetry are ephemeral.
             const auto source=recordPluginEvent(event,now);if(event.value("kind","")=="widget.interacted")reactToDrag(event,source,now);
         }}

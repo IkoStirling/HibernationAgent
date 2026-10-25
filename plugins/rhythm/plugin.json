@@ -1,0 +1,13 @@
+{
+  "id":"rhythm","name":"安静节律","icon":"☾",
+  "description":"角色自己的短暂休息与安静共处，跟随实际活动时间。需要桌面小角色。",
+  "version":"0.1.0","api_version":2,"library":"Hibernation_Rhythm.dll",
+  "dependencies":["widget"],"capabilities":["character.rest","character.rhythm"],
+  "settings_ui":[
+    {"key":"automaticRest","label":"允许它自己选择短暂休息","type":"toggle","default":true},
+    {"key":"idleBeforeRestSeconds","label":"空闲多久后才可能休息（秒）","type":"number","default":300,"min":5,"max":7200,"step":5},
+    {"key":"restSeconds","label":"自主休息时长（秒）","type":"number","default":180,"min":15,"max":1800,"step":15},
+    {"key":"automaticProbability","label":"每次考虑时休息的概率（0 至 1）","type":"number","default":0.3,"min":0,"max":1,"step":0.05}
+  ],
+  "settings_note":"通常只在夜间或精力较低、没有交谈和朗读时考虑休息。休息不会改变系统声音，也不要求用户回应。"
+}

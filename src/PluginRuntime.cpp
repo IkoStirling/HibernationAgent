@@ -43,6 +43,12 @@ bool PluginRuntime::configure(const PluginJson& settings,std::string& issue){aut
             slot->loader=ayt::plugin::IPluginLoader::create(utf8Path(path));if(!slot->loader||!slot->loader->load(utf8Path(path))){issue="plugin_load_failed";return false;}
             slot->plugin=dynamic_cast<IRolePlugin*>(slot->loader->getPlugin());
             if(!slot->plugin||slot->plugin->roleApiVersion()!=2||slot->plugin->getName()!=id){issue="plugin_contract";return false;}
+            if(m.contains("dependencies")){
+                if(!m.at("dependencies").is_array()||m.at("dependencies").size()>16){issue="plugin_dependency_manifest";return false;}
+                std::set<std::string> declared,native;for(const auto& value:m.at("dependencies")){if(!value.is_string()||!known.contains(value.get<std::string>())||!declared.insert(value.get<std::string>()).second){issue="plugin_dependency_manifest";return false;}}
+                for(const auto* value:slot->plugin->getDependencies()){if(!value){issue="plugin_dependency_manifest";return false;}native.insert(value);}
+                if(declared!=native){issue="plugin_dependency_manifest";return false;}
+            }
             if(!dependencies(id,slot->plugin))return false;
             if(!slot->plugin->bind(a.host,cfg,issue)){issue=id+":"+issue;return false;}
             const auto tools=slot->plugin->tools();if(!tools.is_array()||tools.size()>32){issue="plugin_tools";return false;}

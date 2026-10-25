@@ -1,1 +1,1 @@
-{"id":"habitat","name":"桌面小物","description":"桌面上的虚拟食物、纸星与慢慢生长的种子。需要桌面小角色。","version":"0.1.0","api_version":2,"library":"Hibernation_Habitat.dll","capabilities":["desktop.objects","world.observation","world.interaction"]}
+{"id":"habitat","name":"桌面小物","description":"桌面上的虚拟食物、纸星与慢慢生长的种子。需要桌面小角色。","version":"0.1.0","api_version":2,"library":"Hibernation_Habitat.dll","dependencies":["widget"],"capabilities":["desktop.objects","world.observation","world.interaction"]}

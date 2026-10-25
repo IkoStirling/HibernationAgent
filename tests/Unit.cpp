@@ -10,6 +10,8 @@
 #include <Hibernation/WidgetAppearance.h>
 #include <Hibernation/SmallWorld.h>
 #include <Hibernation/SplashPixels.h>
+#include <Hibernation/DeskObjectAppearance.h>
+#include <Hibernation/QuietRhythm.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -173,6 +175,12 @@ TEST_CASE(plugin_settings_reject_wrong_types_before_background_threads_use_them)
     };
     for(const auto& settings:invalid){CHECK(!plugins.configure(settings,issue));CHECK(plugins.catalog().empty());}
 }
+TEST_CASE(plugin_dependency_metadata_must_match_the_native_contract){
+    ayt::test::ScratchDirectory scratch("role-plugin-dependency-metadata");const auto root=scratch.path()/"plugins";std::filesystem::create_directories(root);for(const auto* id:{"widget","rhythm"})std::filesystem::copy(std::filesystem::path(HA_TEST_PLUGIN_ROOT)/id,root/id,std::filesystem::copy_options::recursive);
+    const auto path=root/"rhythm/plugin.json";const auto original=Json::parse(readFile(path));auto altered=original;altered["dependencies"]=Json::array();std::ofstream(path)<<altered.dump();
+    {PluginRuntime plugins(root,{scratch.path(),std::filesystem::path(HA_PROJECT_ROOT),false,{}});std::string issue;CHECK(plugins.configure({{"widget",{{"enabled",true},{"roam",false}}}},issue));CHECK(!plugins.configure({{"widget",{{"enabled",true}}},{"rhythm",{{"enabled",true}}}},issue));CHECK(issue=="plugin_dependency_manifest");CHECK(plugins.invoke("widget.status",Json::object(),{}).at("ok").get<bool>());}
+    std::ofstream(path)<<original.dump();PluginRuntime correct(root,{scratch.path(),std::filesystem::path(HA_PROJECT_ROOT),false,{}});std::string issue;CHECK(correct.configure({{"widget",{{"enabled",true}}},{"rhythm",{{"enabled",true},{"automaticRest",false}}}},issue));CHECK(correct.invoke("rhythm.observe",Json::object(),{}).at("ok").get<bool>());CHECK(correct.invoke("rhythm.rest",{{"seconds",15}},{}).at("error").at("code")=="desktop_required");
+}
 #endif
 TEST_CASE(memory_content_grouping_keeps_categories_and_authentic_source_versions){
     Json a={{"kind","inference"},{"text","同一段  文字\n"}};auto b=a;b["text"]="同一段 文字";CHECK(memoryContentKey(a)==memoryContentKey(b));b["kind"]="outer";CHECK(memoryContentKey(a)!=memoryContentKey(b));
@@ -229,6 +237,19 @@ TEST_CASE(tool_failure_hints_follow_the_failed_capability){
     auto memory=toolFailureGuidance("memory.remember","memory_category_requires_experience");CHECK(memory.find("television")==std::string::npos);CHECK(memory.find("推测")!=std::string::npos);
     auto video=toolFailureGuidance("television.open","video_source_outside_workspace");CHECK(video.find("television.sources")!=std::string::npos);
     auto food=toolFailureGuidance("habitat.act","world_not_hungry");CHECK(food.find("不必解释内部数值")!=std::string::npos);CHECK(food.find("视频")==std::string::npos);
+}
+TEST_CASE(desk_object_frames_distinguish_growth_and_keep_reduced_motion_stable){
+    const auto sprout=deskAppearance::make("sprout",0,1),leaves=deskAppearance::make("sprout",1,1),bud=deskAppearance::make("sprout",2,1),flower=deskAppearance::make("sprout",3,1);CHECK(sprout.cells!=leaves.cells&&leaves.cells!=bud.cells&&bud.cells!=flower.cells);
+    for(const auto* kind:{"berry","leaf","seed","paper_star","sprout"}){const auto frame=deskAppearance::make(kind,3,.1);bool valid=true,nonempty=false;for(const auto cell:frame.cells){valid=valid&&cell<5;nonempty=nonempty||cell!=0;}CHECK(valid&&nonempty);const auto reduced=deskAppearance::make(kind,3,.1,true),later=deskAppearance::make(kind,3,3.7,true);CHECK(reduced.cells==later.cells&&reduced.offsetY==0&&later.offsetY==0&&reduced.pixelSize==3);}
+}
+TEST_CASE(quiet_rest_requires_a_real_pose_and_preserves_pause_and_attention_boundaries){
+    QuietRhythm rhythm;CHECK(rhythm.request("rest-1",15,1,"model").empty());rhythm.tick(.25,true,true,false,true,"idle",1);CHECK(rhythm.phase()=="queued");CHECK(!rhythm.acknowledged("rest-1"));rhythm.tick(.25,true,false,false,true,"idle",1);CHECK(rhythm.phase()=="requesting");CHECK(!rhythm.acknowledged("wrong"));CHECK(rhythm.acknowledged("rest-1"));CHECK(rhythm.phase()=="active");
+    const auto frozen=rhythm.snapshot();rhythm.tick(600,false,false,false,true,"resting",1);CHECK(rhythm.snapshot()==frozen);for(int i=0;i<60;++i)rhythm.tick(.25,true,false,false,true,"resting",1);CHECK(rhythm.phase()=="idle");bool finished=false;for(const auto& event:rhythm.takeEvents())if(event.at("kind")=="rhythm.rest_finished"){CHECK(event.at("elapsed_seconds")==15);finished=true;}CHECK(finished);
+    CHECK(rhythm.request("rest-2",30,2,"model").empty());rhythm.tick(.25,true,false,false,true,"idle",3);CHECK(rhythm.phase()=="idle");for(const auto& event:rhythm.takeEvents())CHECK(event.at("kind")!="rhythm.rest_started");
+}
+TEST_CASE(quiet_rest_restart_records_only_actual_elapsed_time_and_never_replays_an_intent){
+    QuietRhythm rhythm;CHECK(rhythm.request("rest-3",60,4,"automatic").empty());rhythm.tick(.25,true,false,false,true,"idle",4);CHECK(rhythm.acknowledged("rest-3"));for(int i=0;i<20;++i)rhythm.tick(.25,true,false,false,true,"resting",4);const auto saved=rhythm.snapshot();QuietRhythm restored;CHECK(restored.restore(saved));CHECK(restored.phase()=="idle");int interruptions=0;for(const auto& event:restored.takeEvents())if(event.at("kind")=="rhythm.rest_interrupted"){++interruptions;CHECK(event.at("elapsed_seconds")==5);CHECK(event.at("reason")=="application_restarted");}CHECK(interruptions==1);restored.tick(86400,true,false,false,true,"idle",5);CHECK(restored.phase()=="idle");CHECK(restored.clock()-rhythm.clock()<=.251);
+    CHECK(QuietRhythm::mayRest(23,.8,"idle"));CHECK(!QuietRhythm::mayRest(12,.8,"idle"));CHECK(QuietRhythm::mayRest(12,.2,"idle"));CHECK(!QuietRhythm::mayRest(23,.2,"watching"));CHECK(!QuietRhythm::restfulHour(-1)&&!QuietRhythm::restfulHour(24));
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

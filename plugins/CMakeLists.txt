@@ -4,7 +4,9 @@ function(ha_role_plugin id name source)
     target_link_libraries(${name} PRIVATE AYPlugin AYNetworkHttp nlohmann_json::nlohmann_json)
     target_compile_definitions(${name} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     set_target_properties(${name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins/${id}")
-    add_custom_command(TARGET ${name} POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/${id}/plugin.json" "$<TARGET_FILE_DIR:${name}>/plugin.json")
+    # Track manifest edits as configure inputs; changing labels/settings must
+    # not require an unrelated C++ edit just to refresh the installed metadata.
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/${id}/plugin.json" "${CMAKE_BINARY_DIR}/plugins/${id}/plugin.json" COPYONLY)
     add_dependencies(HibernationPlugins ${name})
 endfunction()
 add_custom_target(HibernationPlugins)
@@ -13,6 +15,7 @@ ha_role_plugin(widget Hibernation_Widget widget/Widget.cpp)
 target_link_libraries(Hibernation_Widget PRIVATE user32 gdi32)
 ha_role_plugin(habitat Hibernation_Habitat habitat/Habitat.cpp)
 target_link_libraries(Hibernation_Habitat PRIVATE user32 gdi32)
+ha_role_plugin(rhythm Hibernation_Rhythm rhythm/Rhythm.cpp)
 ha_role_plugin(tts Hibernation_Speech tts/Speech.cpp)
 target_link_libraries(Hibernation_Speech PRIVATE AYPlatform AYAudioPlayback sapi ole32 uuid winmm crypt32)
 add_custom_command(TARGET Hibernation_Speech POST_BUILD

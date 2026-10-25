@@ -66,7 +66,7 @@ int launch(int argc,char** argv) {
         std::mutex mutex;std::deque<std::shared_ptr<Command>> mailbox;std::atomic<bool> accepting=true;
         LocalService service;LocalServiceOptions options;options.credentialEnvironment=app.config().credentialEnvironment;options.port=app.config().port;
         options.maxMessageBytes=2*1024*1024;options.allowSameOriginBrowser=true;
-        for(const auto& item:std::vector<std::tuple<std::string,std::string,std::string>>{{"/","text/html; charset=utf-8","index.html"},{"/ui/app.js","application/javascript; charset=utf-8","app.js"},{"/ui/style.css","text/css; charset=utf-8","style.css"},{"/ui/icon.svg","image/svg+xml","icon.svg"}})
+        for(const auto& item:std::vector<std::tuple<std::string,std::string,std::string>>{{"/","text/html; charset=utf-8","index.html"},{"/ui/app.js","application/javascript; charset=utf-8","app.js"},{"/ui/plugin-forms.js","application/javascript; charset=utf-8","plugin-forms.js"},{"/ui/style.css","text/css; charset=utf-8","style.css"},{"/ui/icon.svg","image/svg+xml","icon.svg"}})
             options.publicAssets.push_back({std::get<0>(item),std::get<1>(item),readFile(app.config().uiRoot/std::get<2>(item),512*1024)});
         if(!service.start(options,[&](const LocalRequest& request)->LocalReply {
             if(!accepting)return {503,"{\"error\":\"stopping\"}"};
