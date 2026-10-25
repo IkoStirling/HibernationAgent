@@ -172,7 +172,11 @@ struct Application::Impl {
             for(const auto& key:pending.value)if(get("ha.plugin-events",key).value.value("plugin",std::string{})!=plugin)coalesced.push_back(key);
             pushIndex(coalesced,eventId,8);changes.push_back(mutation("ha.index","plugin-wake",pending,std::move(coalesced),eventId));
         }
-        appendWorldExperience(changes,event,eventId,now);commit(std::move(changes),eventId);if(worldEvent&&worldJournalInitialized)worldJournalPending.push_back(eventId);return eventId;
+        appendWorldExperience(changes,event,eventId,now);
+        // Publish the actual virtual-world result and its checkpoint together.
+        // A crash before the periodic save must not resurrect consumed food.
+        if(plugins&&worldStateChangeKind(event)){auto saved=get("ha.plugins","states");changes.push_back(mutation("ha.plugins","states",saved,plugins->snapshots(),eventId));}
+        commit(std::move(changes),eventId);if(worldEvent&&worldJournalInitialized)worldJournalPending.push_back(eventId);return eventId;
     }
     void wakeFromPlugins(std::int64_t now) {
         auto pending=get("ha.index","plugin-wake",Json::array());

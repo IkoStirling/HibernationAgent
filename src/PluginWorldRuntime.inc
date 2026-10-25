@@ -4,6 +4,7 @@
     bool worldJournalInitialized=false;std::vector<std::string> worldJournalPending;
     std::int64_t nextWorldJournal=0;
     static bool worldExperienceKind(const Json& event){const auto kind=event.value("kind",std::string{});return event.value("plugin",std::string{})=="habitat"&&(kind=="habitat.consumed"||kind=="habitat.inspected"||kind=="habitat.planted");}
+    static bool worldStateChangeKind(const Json& event){const auto kind=event.value("kind",std::string{});return worldExperienceKind(event)||(event.value("plugin",std::string{})=="habitat"&&(kind=="habitat.appeared"||kind=="habitat.disappeared"));}
     void journalWorldEvents(std::int64_t now){
         if(now<nextWorldJournal)return;
         if(!worldJournalInitialized&&worldJournalPending.empty()){RecordQuery q;q.scope="ha.plugin-events";q.contains="\"journaled\":false";q.limit=256;const auto rows=store.query({{"ha.plugin-events"}},q);if(!rows)throw std::runtime_error("world_outbox_read");for(const auto& row:rows.records)worldJournalPending.push_back(row.id);worldJournalInitialized=rows.records.size()<q.limit;}

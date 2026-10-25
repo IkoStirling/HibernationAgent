@@ -34,3 +34,6 @@ pwsh -NoProfile -File tests/VaultUpgrade.ps1 -BuildRoot out/staging `
 
 引擎 AYCrypto 的变体实现与 AYStorage 的兼容编码身份升级分别有模块测试和文档，
 应用不再自行实现另一套加密算法或账本迁移。
+
+对应引擎提交：AYCrypto `1ba2f39`、AYStorage `462af90`，主仓库 `349c4a2`。
+SDK doctor 检查181项能力、59模块、130项检索与910个文档入口，0错误/0警告。

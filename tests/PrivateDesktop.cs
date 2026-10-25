@@ -33,7 +33,11 @@ public sealed class PrivateDesktop : IDisposable {
         if(!CreateProcessW(executable,args,IntPtr.Zero,IntPtr.Zero,false,0x08000000,IntPtr.Zero,directory,ref startup,out made)){
             int error=Marshal.GetLastWin32Error();CloseDesktop(desktop);desktop=IntPtr.Zero;throw new Win32Exception(error,"private_test_process_failed");
         }
-        try{Child=Process.GetProcessById((int)made.processId);}finally{CloseHandle(made.thread);CloseHandle(made.process);}
+        // Retain a query/synchronize handle before the child exits. An attached
+        // Process otherwise may be unable to retrieve ExitCode after exit.
+        try{Child=Process.GetProcessById((int)made.processId);var retained=Child.Handle;}
+        catch{if(Child!=null)Child.Dispose();CloseDesktop(desktop);desktop=IntPtr.Zero;throw;}
+        finally{CloseHandle(made.thread);CloseHandle(made.process);}
     }
     public void Dispose(){if(desktop!=IntPtr.Zero){CloseDesktop(desktop);desktop=IntPtr.Zero;}}
 }
