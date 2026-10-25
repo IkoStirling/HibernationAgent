@@ -37,6 +37,28 @@ struct Doc {Json value;std::int64_t revision=0;};
 struct AppFact {std::string kind;Json body;};
 LocalReply reply(int status,Json body){return {status,body.dump()};}
 LocalReply error(int status,const char* code){return reply(status,{{"error",code}});}
+// Only application-owned messages cross into the chat UI; provider bodies may
+// contain credentials, prompts or private context and must never be echoed here.
+Json callFailure(int status,int httpStatus){
+    using Status=ayt::inference::Status;
+    const char* code="call_failed";const char* message="这次调用没有完成，请重试。";
+    if(httpStatus==402){code="insufficient_balance";message="API 余额不足，请充值后重试。";}
+    else if(httpStatus==401||status==static_cast<int>(Status::CredentialMissing)){code="credential_invalid";message="API 密钥未配置或无效，请在管理页检查。";}
+    else if(httpStatus==403){code="access_denied";message="没有此模型的访问权限，请检查账户权限。";}
+    else if(httpStatus==404){code="endpoint_not_found";message="模型或接口不存在，请检查地址和模型名称。";}
+    else if(httpStatus==400||httpStatus==422){code="request_rejected";message="服务不接受当前请求，请检查接口协议和参数。";}
+    else if(httpStatus==429){code="rate_limited";message="调用额度或频率受限，请稍后重试。";}
+    else if(httpStatus>=500){code="provider_unavailable";message="模型服务暂时不可用，请稍后重试。";}
+    else if(status==static_cast<int>(Status::Timeout)){code="timeout";message="模型响应超时，请稍后重试或增加连接超时。";}
+    else if(status==static_cast<int>(Status::Transport)){code="connection_failed";message="无法连接模型服务，请检查网络和代理。";}
+    else if(status==static_cast<int>(Status::Incomplete)){code="incomplete_output";message="模型返回未完成，请增加输出额度后重试。";}
+    else if(status==static_cast<int>(Status::Refused)){code="provider_refused";message="模型服务拒绝了这次请求。";}
+    else if(status==static_cast<int>(Status::Limit)){code="call_budget";message="本次调用达到预算或操作轮数限制。";}
+    else if(status==static_cast<int>(Status::Invalid)||status==static_cast<int>(Status::Unsupported)){code="configuration_invalid";message="当前模型连接配置不兼容，请在管理页检查。";}
+    else if(status==static_cast<int>(Status::Ok)||status==static_cast<int>(Status::InvalidOutput)){code="invalid_output";message="模型返回格式未通过校验，请重试。";}
+    else if(status==static_cast<int>(Status::Provider)){code="provider_response_invalid";message="模型服务返回异常，请检查接口协议后重试。";}
+    return {{"code",code},{"message",message},{"http_status",httpStatus}};
+}
 std::string stateName(JobState state){switch(state){case JobState::Pending:return "pending";case JobState::Running:return "running";case JobState::Succeeded:return "succeeded";case JobState::Failed:return "failed";case JobState::Paused:return "paused";}return "unknown";}
 bool validRequestId(const std::string& s){return !s.empty()&&s.size()<=64&&std::all_of(s.begin(),s.end(),[](unsigned char c){return std::isalnum(c)||c=='-'||c=='_';});}
 }
@@ -427,14 +449,15 @@ struct Application::Impl {
         const auto turnIdentity=requestId.empty()?claim.job.spec.id+"-"+std::to_string(occurrence):requestId;trace["turn_identity"]=turnIdentity;
         const auto started=std::chrono::steady_clock::now();const auto result=selectedProfile.model.protocol==ayt::inference::Protocol::Mock?ayt::inference::invoke(selectedProfile.model,req):invokeTurn(selectedProfile,req,context,trace,traceId,turnIdentity);
         trace["elapsed_ms"]=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-started).count();
-        trace["provider_request_id"]=result.providerRequestId;trace["provider_status"]=static_cast<int>(result.status);
+        trace["provider_request_id"]=result.providerRequestId;trace["provider_status"]=static_cast<int>(result.status);trace["http_status"]=result.httpStatus;
         if(result.usage.inputTokens)trace["input_tokens"]=*result.usage.inputTokens;if(result.usage.outputTokens)trace["output_tokens"]=*result.usage.outputTokens;
         if(token.requested())return {false,true,"cancelled",{}};
         const bool transient=result.status==ayt::inference::Status::Transport||result.status==ayt::inference::Status::Timeout||(result.status==ayt::inference::Status::Provider&&(result.httpStatus==429||result.httpStatus>=500));
-        if(!result&&transient)return {false,true,Json{{"status","provider_retry"},{"trace",trace}}.dump(),{}};
+        if(!result&&transient)return {false,true,Json{{"status","provider_retry"},{"call_error",callFailure(static_cast<int>(result.status),result.httpStatus)},{"trace",trace}}.dump(),{}};
         auto finalContext=context;if(trace.value("silent",false))finalContext.eventKind="solitude";
         auto validated=result?validateOutput(result.text,finalContext):ValidatedOutput{false,"model_"+std::to_string(static_cast<int>(result.status)),{}};
         JobOutcome outcome;Json resultInfo={{"status",validated.ok?"completed":"rejected"},{"kind",eventKind},{"request_id",requestId},{"trace_id",traceId},{"output_id",outputId},{"occurred_at",serviceNowMs()}};
+        if(!validated.ok)resultInfo["call_error"]=callFailure(static_cast<int>(result.status),result.httpStatus);
         trace["validation"]=validated.code;trace["output_id"]=outputId;
         outcome.updates.push_back({"ha.trace",traceId,0,1,trace.dump(),eventId});
         Json archived={{"kind","model_output"},{"profile_id",selectedProfile.id},{"trace_id",traceId},{"text",result.text},{"accepted",validated.ok},{"validation",validated.code},{"created_at",serviceNowMs()}};
@@ -562,8 +585,15 @@ struct Application::Impl {
         if(req.method=="GET"&&req.path=="/api/dashboard")return reply(200,dashboard());
         if(req.method=="GET"&&req.path=="/api/chat"){
             Json messages=Json::array();for(const auto& row:readIds(archiveScope,get("ha.index","recent",Json::array()).value)){const auto data=Json::parse(row.payload);const auto kind=data.value("kind","");if(kind=="user_message"||kind=="assistant_message")messages.push_back({{"id",row.id},{"role",kind=="user_message"?"user":"assistant"},{"text",data.at("text")}});}
-            bool failed=false;for(const auto& job:jobs())if(job.spec.id=="chat"&&(job.state==JobState::Failed||(!job.result.empty()&&Json::parse(job.result).value("status","")=="rejected")))failed=true;
-            return reply(200,{{"messages",messages},{"busy",busy()},{"paused",get("ha.control","current").value.at("paused")},{"health",health},{"call_failed",failed},{"mock",profile(get("ha.settings","model").value.at("id")).model.protocol==ayt::inference::Protocol::Mock}});
+            bool failed=false;Json failure=nullptr;
+            for(const auto& job:jobs())if(job.spec.id=="chat"){
+                const auto info=Json::parse(job.result.empty()?"{}":job.result,nullptr,false);
+                if(job.state!=JobState::Failed&&(!info.is_object()||info.value("status","")!="rejected"))continue;
+                failed=true;
+                if(info.is_object()&&info.contains("call_error"))failure=info.at("call_error");
+                else {auto trace=info.is_object()?info.value("trace",Json::object()):Json::object();if(info.is_object()&&info.contains("trace_id"))trace=get("ha.trace",info.at("trace_id")).value;if(!trace.is_object())trace=Json::object();failure=callFailure(trace.value("provider_status",-1),trace.value("http_status",0));}
+            }
+            return reply(200,{{"messages",messages},{"busy",busy()},{"paused",get("ha.control","current").value.at("paused")},{"health",health},{"call_failed",failed},{"call_error",failure},{"mock",profile(get("ha.settings","model").value.at("id")).model.protocol==ayt::inference::Protocol::Mock}});
         }
         Json body=Json::object();
         if(req.method=="POST"){if(req.body.size()>64*1024||!ayt::serializer::validateJsonDocument(req.body,"{\"type\":\"object\"}"))return error(400,"request_json");body=Json::parse(req.body);}
