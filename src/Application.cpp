@@ -890,7 +890,7 @@ bool Application::initialize() {
     std::set<std::string> stageIds;for(const auto& stage:a.stages.at("stages")){const auto key=stage.at("id").get<std::string>();const auto count=stage.at("minimumEvidence").get<std::int64_t>();if(key.empty()||key.size()>64||!stageIds.insert(key).second||count<0||count>8)return false;}
     if(!stageIds.contains(a.stages.at("initial").get<std::string>()))return false;
     for(const auto& stage:a.stages.at("stages")){const auto next=stage.at("next").get<std::string>();if(!next.empty()&&(!stageIds.contains(next)||next==stage.at("id").get<std::string>()||stage.at("minimumEvidence").get<int>()<1))return false;}
-    if(!a.store.open(a.cfg.dataRoot/"archive"/"records.sqlite",{openVaultCodec(a.cfg.dataRoot),true})||!a.journal.open(a.cfg.dataRoot/"archive"/"events.sqlite"))return false;
+    if(!a.store.open(a.cfg.dataRoot/"archive"/"records.sqlite",{openVaultCodec(a.cfg.dataRoot),true,true})||!a.journal.open(a.cfg.dataRoot/"archive"/"events.sqlite"))return false;
     const auto coreKey="persona-"+std::to_string(a.persona.at("version").get<int>());
     auto oldCore=a.get("ha.core",coreKey);if(oldCore.revision&&oldCore.value!=a.persona)throw std::runtime_error("persona_changed_without_version");
     if(!oldCore.revision)a.commit({a.mutation("ha.core",coreKey,oldCore,a.persona)},"persona-initialize");
