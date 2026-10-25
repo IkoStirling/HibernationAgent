@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <thread>
 #include <cstring>
+#include "MemorySpeech.h"
 using namespace hibernation;
 using namespace hibernation::plugins;
 namespace {
@@ -24,7 +25,7 @@ bool wav(const std::string& bytes,Wav& out){if(bytes.size()<12||bytes.compare(0,
 }
 class Speech final:public BasePlugin {
     struct Command {std::string text,id;double maxSeconds=60;unsigned generation=0;std::shared_ptr<std::promise<PluginJson>> result;std::string replyId;};
-    PluginHostContext host_;PluginJson cfg_;mutable std::mutex mutex_;std::condition_variable cv_;std::deque<Command> commands_;std::thread thread_;std::atomic<bool> stop_=false,active_=false;std::atomic<unsigned> generation_=0;std::string voiceName_,lastError_;double lastDuration_=0;unsigned startedCount_=0,completedCount_=0;
+    PluginHostContext host_;PluginJson cfg_;mutable std::mutex mutex_;std::condition_variable cv_;std::deque<Command> commands_;std::thread thread_;std::atomic<bool> stop_=false,active_=false;std::atomic<unsigned> generation_=0;std::string voiceName_,lastError_;double lastDuration_=0,lastSourcePeak_=0;unsigned startedCount_=0,completedCount_=0;
     std::string nextId(){static std::atomic<unsigned> next=0;return "speech-"+std::to_string(nowMs())+"-"+std::to_string(next++);}
     void queue(Command cmd){std::lock_guard lock(mutex_);if(commands_.size()>=8){if(cmd.result)cmd.result->set_value(toolFailure("speech_queue_full"));return;}commands_.push_back(std::move(cmd));cv_.notify_one();}
     void work(){const auto com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);ISpVoice* voice=nullptr;CoCreateInstance(CLSID_SpVoice,nullptr,CLSCTX_ALL,IID_ISpVoice,reinterpret_cast<void**>(&voice));
@@ -35,12 +36,14 @@ class Speech final:public BasePlugin {
             if(cfg.value("backend",std::string("system"))=="http"){
                 ayt::net::http::Request request;request.useSystemProxy=cfg.value("useSystemProxy",true);request.proxyOrigin=cfg.value("proxyOrigin",std::string{});request.origin=cfg.value("origin",std::string("http://127.0.0.1:5000"));request.path=cfg.value("path",std::string("/v1/audio/speech"));request.timeout=std::chrono::seconds(15);request.maxResponseBytes=8*1024*1024;request.cancelled=cancelled;request.headers={{"Content-Type","application/json"}};const auto key=ayt::net::http::environmentCredential(cfg.value("credentialEnvironment",std::string{}));if(!key.empty())request.headers.emplace_back("Authorization","Bearer "+key);
                 request.body=PluginJson{{"model",cfg.value("model",std::string("tts"))},{"input",cmd.text},{"voice",cfg.value("voice",std::string("default"))},{"response_format","wav"},{"speed",std::clamp(1.0+cfg.value("rate",5)*0.1,0.25,4.0)}}.dump();const auto result=ayt::net::http::perform(request);
-                if(result&&result.httpStatus==200&&wav(result.body,audio)&&!cancelled()){
-                    const auto maximum=static_cast<size_t>(cmd.maxSeconds*audio.format.nSamplesPerSec)*audio.format.nBlockAlign;if(audio.pcm.size()>maximum)audio.pcm.resize(maximum);duration=static_cast<double>(audio.pcm.size())/audio.format.nAvgBytesPerSec;gain(audio,cfg.value("volume",75));
-                    if(waveOutOpen(&output,WAVE_MAPPER,&audio.format,0,0,CALLBACK_NULL)==MMSYSERR_NOERROR){header.lpData=audio.pcm.data();header.dwBufferLength=static_cast<DWORD>(audio.pcm.size());if(waveOutPrepareHeader(output,&header,sizeof(header))==MMSYSERR_NOERROR&&waveOutWrite(output,&header,sizeof(header))==MMSYSERR_NOERROR)started=true;}
-                }
+                if(!(result&&result.httpStatus==200&&wav(result.body,audio)&&!cancelled()))audio.pcm.clear();
             }else if(voice&&!cancelled()){
-                voice->SetRate(cfg.value("rate",5));voice->SetVolume(static_cast<USHORT>(cfg.value("volume",75)));const auto text=L"<pitch middle=\"+6\">"+xmlEscape(wide(cmd.text))+L"</pitch>";started=SUCCEEDED(voice->Speak(text.c_str(),SPF_ASYNC|SPF_PURGEBEFORESPEAK|SPF_IS_XML,nullptr));duration=std::min(cmd.maxSeconds,std::max(0.8,wide(cmd.text).size()/7.0));
+                const auto text=L"<pitch middle=\"+6\">"+xmlEscape(wide(cmd.text))+L"</pitch>";if(!renderSpeech(voice,text,cfg.value("rate",5),cancelled,audio.format,audio.pcm))audio.pcm.clear();
+            }
+            if(!audio.pcm.empty()&&!cancelled()){
+                double peak=0;for(std::size_t at=0;at<audio.pcm.size();at+=audio.format.wBitsPerSample/8){double sample=0;if(audio.format.wBitsPerSample==16){int16_t x;std::memcpy(&x,audio.pcm.data()+at,2);sample=x/32768.0;}else if(audio.format.wFormatTag==WAVE_FORMAT_PCM){int32_t x;std::memcpy(&x,audio.pcm.data()+at,4);sample=x/2147483648.0;}else{float x;std::memcpy(&x,audio.pcm.data()+at,4);sample=std::isfinite(x)?x:0;}peak=std::max(peak,std::abs(sample));}{std::lock_guard lock(mutex_);lastSourcePeak_=peak;}
+                const auto maximum=static_cast<size_t>(cmd.maxSeconds*audio.format.nSamplesPerSec)*audio.format.nBlockAlign;if(audio.pcm.size()>maximum)audio.pcm.resize(maximum);duration=static_cast<double>(audio.pcm.size())/audio.format.nAvgBytesPerSec;gain(audio,cfg.value("volume",75));
+                if(waveOutOpen(&output,WAVE_MAPPER,&audio.format,0,0,CALLBACK_NULL)==MMSYSERR_NOERROR){header.lpData=audio.pcm.data();header.dwBufferLength=static_cast<DWORD>(audio.pcm.size());if(waveOutPrepareHeader(output,&header,sizeof(header))==MMSYSERR_NOERROR&&waveOutWrite(output,&header,sizeof(header))==MMSYSERR_NOERROR)started=true;}
             }
             {std::lock_guard lock(mutex_);if(started){active_=true;++startedCount_;lastError_.clear();}else lastError_="speech_unavailable";}
             if(cmd.result)cmd.result->set_value(started?toolSuccess({{"speech_id",cmd.id},{"started",true},{"estimated_seconds",duration},{"maximum_seconds",cmd.maxSeconds}}):toolFailure(cancelled()?"cancelled":"speech_unavailable",true));
@@ -59,7 +62,7 @@ public:
         if(backend=="http"){const auto origin=cfg.value("origin",std::string("http://127.0.0.1:5000"));if(!ayt::net::http::validOrigin(origin)||(!origin.starts_with("https://")&&!origin.starts_with("http://127.0.0.1:")&&!origin.starts_with("http://localhost:")))throw std::runtime_error("origin");}
         {std::lock_guard lock(mutex_);host_=std::move(host);cfg_=std::move(cfg);}if(!thread_.joinable()){stop_=false;thread_=std::thread([this]{work();});}issue.clear();return true;}catch(...){issue="speech_configuration";return false;}}
     PluginJson tools()const override{return PluginJson::array({tool("speech.speak","朗读文字；实际启动后返回结果，并限制最大朗读时长。",object({{"text",{{"type","string"},{"minLength",1},{"maxLength",6000}}},{"max_seconds",{{"type","number"},{"minimum",1},{"maximum",120}}}},PluginJson::array({"text"}))),tool("speech.stop","中断当前朗读。",object()),tool("speech.status","读取语音播放状态。",object())});}
-    PluginJson invoke(const std::string& name,const PluginJson& args,const std::function<bool()>& cancelled)override{if(name=="speech.stop"){++generation_;return toolSuccess({{"stopping",true}});}if(name=="speech.status"){std::lock_guard lock(mutex_);return toolSuccess({{"active",active_.load()},{"voice",voiceName_},{"last_duration_seconds",lastDuration_},{"started_count",startedCount_},{"completed_count",completedCount_},{"queued",commands_.size()},{"last_error",lastError_},{"volume",cfg_.value("volume",75)}});}
+    PluginJson invoke(const std::string& name,const PluginJson& args,const std::function<bool()>& cancelled)override{if(name=="speech.stop"){++generation_;return toolSuccess({{"stopping",true}});}if(name=="speech.status"){std::lock_guard lock(mutex_);return toolSuccess({{"active",active_.load()},{"voice",voiceName_},{"last_duration_seconds",lastDuration_},{"started_count",startedCount_},{"completed_count",completedCount_},{"queued",commands_.size()},{"last_error",lastError_},{"volume",cfg_.value("volume",75)},{"source_peak",lastSourcePeak_},{"playback_path","wave-mapper"}});}
         auto promise=std::make_shared<std::promise<PluginJson>>();auto future=promise->get_future();double maximum;{std::lock_guard lock(mutex_);maximum=std::min(cfg_.value("maxSeconds",60.0),args.value("max_seconds",120.0));}const auto generation=++generation_;queue({args.at("text"),nextId(),maximum,generation,promise});
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(18);while(future.wait_for(std::chrono::milliseconds(20))!=std::future_status::ready){if((cancelled&&cancelled())||std::chrono::steady_clock::now()>deadline){++generation_;return toolFailure("speech_cancelled_or_timeout",true);}}return future.get();
     }
