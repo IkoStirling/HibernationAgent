@@ -1,5 +1,5 @@
 {
-  "testedEngineRootCommit": "8561685f26bd61d89196908bd00eec333b9b1cf7",
+  "testedEngineRootCommit": "64f7da73da47ba4a21d49000167aa4f56ef0ef43",
   "engineRelativePath": "../AliyatEngine",
   "modules": {
     "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",
@@ -8,11 +8,17 @@
     "AYFoundation/AYTask": "1ab1e4bbfb38a4ac5e12ef52fd09ecb4fca58549",
     "AYRuntime/AYInference": "7077ac9fbf4bd19c8625c90e58c49a6d5535ed44",
     "AYRuntime/AYNetwork": "0c5662a959f6247c3419b08164678c143e74d607",
-    "AYRuntime/AYApplication": "1a706fd1666ead7d7debec4e03c105ef0447553d",
+    "AYRuntime/AYApplication": "0fd005ec78becdd009cb35a44259f77a3fb171d1",
     "AYRuntime/AYEventSystem": "d7296137684e2d6f8c9b859dcd317b8b72629e3f",
     "AYFoundation/AYCrypto": "6a295093217a615507a0a8b4b7a7ab7531197c07",
     "AYRuntime/AYPlugin": "cef4c819d200480e0079225aaca9392356059de1",
-    "AYRuntime/AYVideo": "f5c88e4a52430c648bbe1edcc6fec44c076f8fa2"
+    "AYRuntime/AYVideo": "2184c0e248dcc736a9304214b451dd6581bc0aae",
+    "AYRuntime/AYAudio": "496702ece760b2fd0f21a45c1f95e9da478a99b3",
+    "AYRuntime/AYCore": "4fe6b582a8edbc6855aeba59188487c69bca6ab5",
+    "AYFoundation/AYMath": "ee4580b114ae719b3416204661607411cba7a107",
+    "AYFoundation/AYTime": "7e7108d0fe31d43ce87cba011d7fd228bfad0306",
+    "AYFoundation/AYPlatform": "21af61a690446ca75ca57c3eb940f8e9fe6c185b",
+    "AYFoundation/AYLog": "d4c717cd8afd2ed8ac92a3a6c1300810144b4f7a"
   },
   "recordStorageFormats": {
     "plain": 1,

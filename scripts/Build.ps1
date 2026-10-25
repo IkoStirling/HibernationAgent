@@ -10,5 +10,5 @@ if($Action -in @('All','Configure')){
  & $cmake @argsList;if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 }
 if($Action -in @('All','Build')){& $cmake --build $BuildRoot --parallel 4 --target @Targets;if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}
-if($Action -in @('All','Test')){& 'D:/Software/Cmake/bin/ctest.exe' --test-dir $BuildRoot --output-on-failure -R '^(Hibernation_UnitTests|Hibernation_ProcessIntegration|Hibernation_ProtocolIntegration|Hibernation_LauncherCheck|AYApplication_ServiceTests|AYApplication_ServiceIntegration|AYStorage_Test|AYInference_Tests|AYPluginTest|AYCrypto_Tests|AYVideoDecode_Test|AYNetwork_HttpTests)$';if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}
+if($Action -in @('All','Test')){& 'D:/Software/Cmake/bin/ctest.exe' --test-dir $BuildRoot --output-on-failure -R '^(Hibernation_UnitTests|Hibernation_ProcessIntegration|Hibernation_ProtocolIntegration|Hibernation_ContinuityIntegration|Hibernation_LauncherCheck|AYApplication_ServiceTests|AYApplication_ServiceIntegration|AYStorage_Test|AYInference_Tests|AYPluginTest|AYCrypto_Tests|AYVideoDecode_Test|AYAudio_PanTests|AYAudioPlayback_Tests|AYVideoPlayback_Tests|AYNetwork_HttpTests)$';if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}
 Write-Output "完成：$BuildRoot/hibernation-agent.exe"

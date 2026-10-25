@@ -17,7 +17,7 @@ struct PluginRuntime::Impl {
     std::map<std::string,std::shared_ptr<Slot>> loaded;PluginJson manifests=PluginJson::array(),saved=PluginJson::object();
     std::vector<PluginJson> events;std::atomic<unsigned> calls=0;bool stopped=false;
     Impl(std::filesystem::path r,PluginHostContext h):root(std::move(r)),host(std::move(h)){
-        host.emit=[this](PluginJson value){if(!value.is_object()||value.dump().size()>1024*1024)return;std::lock_guard guard(eventMutex);if(events.size()<128)events.push_back(std::move(value));};
+        host.emit=[this](PluginJson value){if(!value.is_object()||value.dump().size()>1024*1024)return;std::lock_guard guard(eventMutex);if(value.value("kind",std::string{})=="widget.position"){for(auto& e:events)if(e.value("kind",std::string{})=="widget.position"){e=std::move(value);return;}}if(events.size()<128)events.push_back(std::move(value));};
         if(std::filesystem::exists(root))for(const auto& entry:std::filesystem::directory_iterator(root))if(entry.is_directory()){
             try{auto m=readManifest(entry.path()/"plugin.json");const auto id=m.at("id").get<std::string>(),file=m.at("library").get<std::string>();
                 if(id.empty()||id.size()>64||entry.path().filename()!=std::filesystem::u8path(id)||file.find_first_of("/\\:")!=std::string::npos||m.at("api_version")!=1)continue;
@@ -43,7 +43,7 @@ bool PluginRuntime::configure(const PluginJson& settings,std::string& issue){aut
             if(!slot->plugin||slot->plugin->roleApiVersion()!=1||slot->plugin->getName()!=id){issue="plugin_contract";return false;}
             if(!slot->plugin->bind(a.host,cfg,issue)){issue=id+":"+issue;return false;}
             const auto tools=slot->plugin->tools();if(!tools.is_array()||tools.size()>32){issue="plugin_tools";return false;}
-            for(const auto& t:tools){if(!t.contains("name")||!t.contains("parameters")||!ayt::serializer::validateJsonSchema(t.at("parameters").dump())){issue="plugin_tools";return false;}const auto name=t.at("name").get<std::string>();const auto dot=name.find('.');if(dot==std::string::npos||name.size()>96||name.starts_with("memory.")||name.starts_with("state.")||name.starts_with("stage.")||name.starts_with("schedule.")||name.starts_with("workspace.")||!names.insert(name).second){issue="plugin_tool_collision";return false;}}
+            for(const auto& t:tools){if(!t.contains("name")||!t.contains("parameters")||!ayt::serializer::validateJsonSchema(t.at("parameters").dump())){issue="plugin_tools";return false;}const auto name=t.at("name").get<std::string>();const auto dot=name.find('.');if(dot==std::string::npos||name.size()>96||name.starts_with("reflection.")||name.starts_with("memory.")||name.starts_with("state.")||name.starts_with("stage.")||name.starts_with("schedule.")||name.starts_with("workspace.")||!names.insert(name).second){issue="plugin_tool_collision";return false;}}
             slot->manifest=m;slot->configuration=cfg;if(a.saved.contains(id)&&!slot->plugin->restore(a.saved.at(id))){issue="plugin_restore";return false;}staged.emplace(id,std::move(slot));
         }
         for(const auto& [id,slot]:a.loaded){const auto cfg=settings.value(id,PluginJson::object());if(!cfg.value("enabled",false))continue;rebound.push_back(id);if(!slot->plugin->bind(a.host,cfg,issue)){rollback();return false;}}

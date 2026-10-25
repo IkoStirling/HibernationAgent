@@ -5,6 +5,7 @@
 #include <Hibernation/PluginRuntime.h>
 #include <Hibernation/Review.h>
 #include <Hibernation/TextPlayback.h>
+#include <Hibernation/MemoryContext.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -13,6 +14,33 @@ Json valid(){return {{"visible_reply","允许没有固定结论。"},{"actions",
 ProposalContext context(){ProposalContext c;c.eventKind="user_message";c.eventId="e1";c.stage="initial";c.nextStage="exploring";c.sources={{"e1",{"e1",1,"user_message"}},{"e2",{"e2",1,"story_end"}}};return c;}
 }
 TEST_SUITE(RolePolicy)
+TEST_CASE(behavior_changes_gradually_and_does_not_override_autonomy){
+    RoleState state;state.restore(Json::object(),1000);const auto initial=state.snapshot();std::string issue;
+    for(int i=0;i<80;++i)state.contact(1000);CHECK(state.snapshot().at("social_load")==initial.at("social_load"));CHECK(state.snapshot().at("willingness")==initial.at("willingness"));
+    CHECK(state.propose("withdrawing",-1,"experienced-boundary",1000,issue,-1,"暂时留在自己的问题上"));CHECK(state.snapshot().at("mood")==initial.at("mood"));state.contact(1000);CHECK(state.snapshot().at("desired_activity")=="withdrawing");
+    auto previous=initial;for(int i=1;i<=2400;++i){state.tick(1000+i*250);const auto now=state.snapshot();for(const auto* key:{"energy","mood","openness","attention","willingness","social_load"}){const double x=now.at(key),y=previous.at(key);CHECK(x>=0&&x<=1);CHECK(std::abs(x-y)<=0.00626);}previous=now;}
+    const auto after=state.snapshot();CHECK(after.at("conversation_mode")=="quiet");CHECK(after.at("behavior").at("preferred_response")=="silence_or_brief");CHECK(after.at("focus")=="暂时留在自己的问题上");
+    state.tick(1000000,false);for(const auto* key:{"energy","mood","openness","attention","willingness","social_load"})CHECK(state.snapshot().at(key)==after.at(key));
+    RoleState restored;restored.restore(after,86401000);for(const auto* key:{"energy","mood","openness","attention","willingness","social_load","focus","conversation_mode"})CHECK(restored.snapshot().at(key)==after.at(key));
+    CHECK(!state.propose("resting",0,"source",1000001,issue,2));CHECK(characterConduct().find("不要为了证明独立")!=std::string::npos);CHECK(reviewerConduct().find("允许自然的短答")!=std::string::npos);
+}
+TEST_CASE(legacy_state_migrates_without_jumping_or_resetting_activity_dwell){
+    RoleState state;state.restore({{"version",1},{"energy",0.31},{"mood",0.4},{"updated_ms",10000},{"entered_ms",5000},{"activity","resting"},{"desired_activity","reflecting"}},86410000);
+    CHECK(state.snapshot().at("energy")==0.31);CHECK(state.snapshot().at("mood")==0.4);CHECK(state.snapshot().at("version")==2);state.tick(86410001);CHECK(state.snapshot().at("activity")=="reflecting");
+}
+TEST_CASE(memory_retrieval_matches_chinese_topics_and_forgetting_closes_derived_sources){
+    CHECK(memoryRelevance("那座钟塔后来怎样了", "钟塔外的雨声还没有停止")>memoryRelevance("那座钟塔后来怎样了", "桌上的杯子是蓝色"));CHECK(memoryRelevance("RAIN", "rain outside")>0);
+    auto memory=[](const char* id,const char* scope,const char* source){return ayt::storage::VersionedRecord{"ha.memory",id,1,1,Json{{"kind","inference"},{"text","fixture"},{"sources",Json::array({{{"scope",scope},{"id",source},{"revision",1},{"kind","inference"}}})}}.dump(),"fixture","fixture",1};};
+    const auto root=memory("root","ha.archive","raw"),summary=memory("summary","ha.memory","root"),derived=memory("derived","ha.memory","summary");const auto policy=memoryVisibility({root,summary,derived},Json::array({"root"}));
+    CHECK(policy.memories.contains("summary"));CHECK(policy.memories.contains("derived"));CHECK(policy.archives.contains("raw"));CHECK(!policy.allows(Json::parse(derived.payload)));CHECK(!policy.source({"summary",1,"inference","ha.memory"}));
+}
+TEST_CASE(next_day_metadata_and_model_switch_preserve_role_and_memories){
+    ayt::test::ScratchDirectory scratch("role-next-day");Config cfg;cfg.dataRoot=scratch.path();cfg.characterRoot=std::filesystem::path(HA_PROJECT_ROOT)/"character";cfg.profiles={{"mock","Mock",true,{}},{"other","Other mock",true,{}}};
+    auto send=[](Application& app,const char* request,const char* text){CHECK_INT_EQ(app.request({"POST","/api/message",Json{{"request_id",request},{"text",text}}.dump()}).status,202);CHECK(ayt::test::waitUntil([&]{app.tick();return !Json::parse(app.request({"GET","/api/chat",""}).body).at("busy").get<bool>();}));};
+    {Application app(cfg);CHECK(app.initialize());send(app,"day-one","钟塔为什么停在三点？");}
+    {ayt::storage::RecordStore store;CHECK(store.open(cfg.dataRoot/"archive/records.sqlite",{openVaultCodec(cfg.dataRoot),true}));for(const auto* scope:{"ha.life","ha.state"}){auto rows=store.query({{scope}},{scope,"current"});CHECK(static_cast<bool>(rows));const auto& row=rows.records[0];auto value=Json::parse(row.payload);const auto before=ayt::app::services::serviceNowMs()-86400000;if(std::string(scope)=="ha.life"){value["updated_ms"]=before;value["entered_ms"]=before;value["energy"]=0.17;value["willingness"]=0.22;value["conversation_mode"]="brief";}else{value["lastInteractionMs"]=before;value["lastUserInteractionMs"]=before;}CHECK(static_cast<bool>(store.commit({{scope,"current",row.revision,1,value.dump(),"clock-fixture"}},"simulated-one-day-gap",before)));}}
+    {Application app(cfg);CHECK(app.initialize());CHECK_INT_EQ(app.request({"POST","/api/model",R"({"id":"other"})"}).status,200);send(app,"day-two","昨天那个钟塔问题呢？");auto state=Json::parse(app.request({"GET","/api/state",""}).body);CHECK(state.at("model").at("id")=="other");CHECK(state.at("stage").at("id")=="initial");const auto traceId=state.at("state").at("lastTraceId");const auto trace=Json::parse(app.request({"POST","/api/trace",Json{{"id",traceId}}.dump()}).body);CHECK(trace.at("time_context").at("offline_ms").get<std::int64_t>()>=86400000);CHECK(!trace.at("time_context").at("offline_experiences_inferred").get<bool>());CHECK(trace.at("time_context").at("elapsed_since_previous_ms").get<std::int64_t>()>=86400000);CHECK(trace.at("continuous_state").at("energy").get<double>()<0.171);CHECK(trace.at("persona_version")==4);CHECK(Json::parse(app.request({"GET","/api/memories",""}).body).at("memories").size()==2);}
+}
 TEST_CASE(audio_clock_drives_utf8_reveal_and_page_changes_without_extra_holds){
     TextPlayback playback;playback.reset("你好🙂。下一句话。",4,80,10);
     playback.seekCharacters(0);CHECK(playback.visibleText().empty());

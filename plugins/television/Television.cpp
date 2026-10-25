@@ -1,8 +1,10 @@
 #include "../PluginCommon.h"
-#include <AYVideo/DecodeSession.h>
+#include <wincodec.h>
+#include <AYVideo/VideoPlayer.h>
+#include <AYVideo/IVideoFrameTexture.h>
+#include <AYAudio/AudioEngine.h>
 #include <windowsx.h>
 #include <mmsystem.h>
-#include <wincodec.h>
 #include <wincrypt.h>
 #include <deque>
 #include <future>
@@ -24,63 +26,133 @@ std::string jpeg(const std::vector<uint8_t>& pixels,int width,int height){if(pix
 }
 class Television final:public BasePlugin {
     struct Command{PluginJson value;std::shared_ptr<std::promise<PluginJson>> answer;std::shared_ptr<std::atomic<bool>> cancelled;};
-    struct AudioBlock{std::vector<int16_t> samples;WAVEHDR header{};};
     PluginHostContext host_;PluginJson cfg_;mutable std::recursive_mutex mutex_;std::mutex commandMutex_;std::condition_variable cv_;std::deque<Command> commands_;std::thread worker_;std::atomic<bool> stopped_=false;
-    std::shared_ptr<ayt::video::DecodeSession> session_;HWND window_=nullptr;HINSTANCE instance_{};HFONT font_=nullptr;bool visible_=false,playing_=false,audioAvailable_=false;double position_=0,duration_=0;std::string source_,title_,state_="idle",lastError_;std::vector<uint8_t> pixels_;int frameWidth_=0,frameHeight_=0;double framePts_=0;int volume_=65;
+    ayt::video::IAYVideoDemuxer* session_=nullptr;bool dirty_=true,previewPending_=false;HBITMAP buffer_=nullptr;int bufferWidth_=0,bufferHeight_=0;std::string syncSource_="EngineClock";HWND window_=nullptr;HINSTANCE instance_{};HFONT font_=nullptr;bool visible_=false,playing_=false,audioAvailable_=false;double position_=0,duration_=0;std::string source_,title_,state_="idle",lastError_;std::vector<uint8_t> pixels_;int frameWidth_=0,frameHeight_=0;double framePts_=0;int volume_=65;
     void emit(PluginJson event){std::function<void(PluginJson)> callback;{std::lock_guard lock(mutex_);callback=host_.emit;}event["plugin"]="television";if(callback)callback(std::move(event));}
-    std::string mediaSource(const std::string& source){if(source.empty()||source.size()>2048||source.find_first_of("\r\n")!=std::string::npos||source.find('\0')!=std::string::npos)return {};if(source.starts_with("https://")||source.starts_with("http://")){const auto start=source.find("://")+3,slash=source.find_first_of("/?#",start);const auto origin=source.substr(0,slash);if(!ayt::net::http::validOrigin(origin)||origin.find('@')!=std::string::npos)return {};return source;}
-        std::filesystem::path root;{std::lock_guard lock(mutex_);root=host_.materialsRoot.empty()?host_.dataRoot/"materials":host_.materialsRoot;}std::error_code ec;root=std::filesystem::weakly_canonical(root,ec);if(ec)return {};auto requested=std::filesystem::u8path(source);if(!requested.is_absolute()){if(source.starts_with("materials/"))requested=std::filesystem::u8path(source.substr(10));requested=root/requested;}const auto candidate=std::filesystem::canonical(requested,ec);if(ec||!std::filesystem::is_regular_file(candidate))return {};auto r=root.begin(),p=candidate.begin();for(;r!=root.end();++r,++p)if(p==candidate.end()||*r!=*p)return {};return pathUtf8(candidate);
+
+    static bool within(const std::filesystem::path& root,const std::filesystem::path& candidate){
+        auto r=root.begin(),p=candidate.begin();
+        for(;r!=root.end();++r,++p)if(p==candidate.end()||CompareStringOrdinal(r->c_str(),-1,p->c_str(),-1,TRUE)!=CSTR_EQUAL)return false;
+        return true;
+    }
+    std::vector<std::pair<std::string,std::filesystem::path>> mediaRoots(){std::lock_guard lock(mutex_);return {{"materials",host_.materialsRoot.empty()?host_.dataRoot/"materials":host_.materialsRoot},{"drafts",host_.draftsRoot.empty()?host_.dataRoot/"drafts":host_.draftsRoot}};}
+    static bool videoFile(const std::filesystem::path& path){auto ext=pathUtf8(path.extension());std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});return ext==".mp4"||ext==".mkv"||ext==".webm"||ext==".avi"||ext==".mov"||ext==".mpeg"||ext==".mpg"||ext==".ts"||ext==".ogv"||ext==".flv"||ext==".wmv";}
+    std::string mediaSource(std::string source){
+        if(source.empty()||source.size()>2048||source.find_first_of("\r\n")!=std::string::npos||source.find('\0')!=std::string::npos)return {};
+        if(source.starts_with("https://")||source.starts_with("http://")){const auto start=source.find("://")+3,slash=source.find_first_of("/?#",start);const auto origin=source.substr(0,slash);if(!ayt::net::http::validOrigin(origin)||origin.find('@')!=std::string::npos)return {};return source;}
+        std::replace(source.begin(),source.end(),'\\','/');auto requested=std::filesystem::u8path(source);
+        std::string found;
+        for(const auto& [mount,rawRoot]:mediaRoots()){
+            std::error_code ec;const auto root=std::filesystem::canonical(rawRoot,ec);if(ec)continue;
+            auto path=requested;
+            if(!requested.is_absolute()){
+                if(source.starts_with("materials/")||source.starts_with("drafts/")){if(!source.starts_with(mount+"/"))continue;path=std::filesystem::u8path(source.substr(mount.size()+1));}
+                path=root/path;
+            }
+            const auto candidate=std::filesystem::canonical(path,ec);
+            if(ec||!within(root,candidate)||!std::filesystem::is_regular_file(candidate,ec)||ec||!videoFile(candidate))continue;
+            const auto value=pathUtf8(candidate);if(!found.empty()&&found!=value)return {};found=value;
+        }
+        return found;
+    }
+    PluginJson sources(){PluginJson files=PluginJson::array();unsigned visited=0;
+        for(const auto& [mount,rawRoot]:mediaRoots()){
+            std::error_code ec;const auto root=std::filesystem::canonical(rawRoot,ec);if(ec)continue;
+            std::filesystem::recursive_directory_iterator it(root,std::filesystem::directory_options::skip_permission_denied,ec),end;
+            for(;it!=end&&!ec;it.increment(ec)){
+                if(++visited>512||files.size()>=64)break;
+                if(it.depth()>=3)it.disable_recursion_pending();
+                if(!it->is_regular_file(ec)||ec||!videoFile(it->path()))continue;
+                const auto path=std::filesystem::canonical(it->path(),ec);if(ec||!within(root,path))continue;
+                auto relative=pathUtf8(path.lexically_relative(root));std::replace(relative.begin(),relative.end(),'\\','/');files.push_back(mount+"/"+relative);
+            }
+        }
+        return toolSuccess({{"sources",files},{"limit",64},{"note","仅列出 materials/ 和 drafts/ 内的视频。来源被拒时先核对该列表，不要反复猜路径。"}});
     }
     void enqueue(Command command){std::lock_guard lock(commandMutex_);if(commands_.size()>=16){if(command.answer)command.answer->set_value(toolFailure("television_queue_full"));return;}commands_.push_back(std::move(command));cv_.notify_one();}
     bool hasCommands(){std::lock_guard lock(commandMutex_);return !commands_.empty();}
-    void mediaLoop(){std::shared_ptr<ayt::video::DecodeSession> session;HWAVEOUT audio=nullptr;std::deque<std::unique_ptr<AudioBlock>> audioBlocks;double clockBase=0;bool playing=false,preview=false;std::int64_t clockStarted=nowMs();
-        auto resetAudio=[&]{if(audio){waveOutReset(audio);for(auto& block:audioBlocks)if(block->header.dwFlags&WHDR_PREPARED)waveOutUnprepareHeader(audio,&block->header,sizeof(WAVEHDR));waveOutClose(audio);audio=nullptr;}audioBlocks.clear();};
-        auto cleanAudio=[&]{while(audio&&!audioBlocks.empty()&&(audioBlocks.front()->header.dwFlags&WHDR_DONE)){waveOutUnprepareHeader(audio,&audioBlocks.front()->header,sizeof(WAVEHDR));audioBlocks.pop_front();}};
-        while(!stopped_){Command command;bool has=false;{std::unique_lock lock(commandMutex_);if(commands_.empty()&&!playing&&!preview)cv_.wait_for(lock,std::chrono::milliseconds(20));if(!commands_.empty()){command=std::move(commands_.front());commands_.pop_front();has=true;}}
-            cleanAudio();if(has){if(command.cancelled&&command.cancelled->load()){if(command.answer)command.answer->set_value(toolFailure("video_control_cancelled",true));continue;}const auto action=command.value.value("action",std::string{});PluginJson result=toolSuccess();
-                if(action=="open"){resetAudio();playing=false;preview=false;if(session)session->close();session=std::make_shared<ayt::video::DecodeSession>();{std::lock_guard lock(mutex_);session_=session;source_=command.value.at("source");title_=command.value.value("title",std::string("一段影像"));state_="opening";pixels_.clear();frameWidth_=frameHeight_=0;lastError_.clear();}
-                    ayt::video::DemuxerOpenParams params;params.path=command.value.at("source");params.openTimeoutMs=10000;params.rwTimeoutMs=5000;const bool network=ayt::video::isHttpUrl(params.path);if(network){const auto start=params.path.find("://")+3;const auto slash=params.path.find_first_of("/?#",start);const auto origin=params.path.substr(0,slash);std::lock_guard lock(mutex_);params.httpProxyOrigin=cfg_.value("proxyOrigin",std::string{});if(params.httpProxyOrigin.empty()&&cfg_.value("useSystemProxy",true))params.httpProxyOrigin=ayt::net::http::systemProxyOrigin(origin);}params.protocolAllowlist=network?"http,https,tcp,tls,crypto,data,httpproxy":"file";params.formatAllowlist=network?"mov,matroska,webm,avi,mpeg,mpegts,ogg,flv,asf,hls":"mov,matroska,webm,avi,mpeg,mpegts,ogg,flv,asf";const auto status=session->open(params,true);
-                    if(command.cancelled&&command.cancelled->load()){session->close();std::lock_guard lock(mutex_);playing_=false;state_="stopped";result=toolFailure("video_control_cancelled",true);}
-                    else if(status==VideoResult::Ok){const auto media=session->info();clockBase=0;clockStarted=nowMs();playing=!command.value.value("start_paused",false);preview=!playing;{std::lock_guard lock(mutex_);duration_=media.durationSec;position_=0;playing_=playing;state_=playing?"playing":"paused";visible_=command.value.value("visible",true);audioAvailable_=false;}result=toolSuccess({{"opened",true},{"duration_seconds",media.durationSec},{"width",media.width},{"height",media.height},{"has_audio",media.hasAudio}});emit({{"kind","television.opened"},{"source",params.path},{"duration_seconds",media.durationSec}});}else{{std::lock_guard lock(mutex_);state_="failed";playing_=false;lastError_=ayt::video::toString(status);}result=toolFailure("video_open_failed",true);emit({{"kind","television.failed"},{"code",ayt::video::toString(status)}});}
-                }else if(action=="pause"){if(!session||!session->info().hasVideo){}else{if(playing){clockBase+=(nowMs()-clockStarted)/1000.0;preview=false;}playing=false;if(audio)waveOutPause(audio);if(session)session->clearAbort();std::lock_guard lock(mutex_);playing_=false;state_="paused";position_=clockBase;}}
-                else if(action=="play"){if(!session||!session->info().hasVideo)result=toolFailure("no_video_open");else{session->clearAbort();if(!playing){if(clockBase>=session->info().durationSec&&session->info().durationSec>0){resetAudio();session->seek(ayt::time::Duration::fromUs(0));clockBase=0;}clockStarted=nowMs();playing=true;}if(audio)waveOutRestart(audio);std::lock_guard lock(mutex_);playing_=true;state_="playing";}}
-                else if(action=="seek"){const double seconds=command.value.value("seconds",0.0);if(!session||!session->info().hasVideo)result=toolFailure("no_video_open");else{resetAudio();const auto status=session->seek(ayt::time::Duration::fromUs(static_cast<std::int64_t>(seconds*1000000)));if(status!=VideoResult::Ok)result=toolFailure("video_seek_failed");else{clockBase=seconds;clockStarted=nowMs();preview=!playing;std::lock_guard lock(mutex_);position_=seconds;pixels_.clear();frameWidth_=frameHeight_=0;if(!playing)state_="paused";}}}
-                else if(action=="stop"){resetAudio();playing=false;preview=false;if(session)session->close();std::lock_guard lock(mutex_);playing_=false;position_=0;state_="stopped";pixels_.clear();}
+
+    void mediaLoop(){
+        using namespace ayt::video;
+        ayt::audio::AudioEngine audio;
+        ayt::audio::AudioSettings settings;settings.backend=ayt::audio::AudioBackendKind::Miniaudio;settings.reverbReturn=0;
+        const bool sound=audio.initialize(settings);int audioVolume=-1;
+        AYVideoPlayer player(makeFFmpegDemuxer(),makeFFmpegDecoder());
+        if(sound)player.attachAudioEngine(&audio);
+        auto texture=makeCpuVideoFrameTexture();bool opened=false;
+        {std::lock_guard lock(mutex_);session_=player.demuxer();}
+        auto publish=[&](const VideoFrame& frame){
+            if(!frame.data||texture->updateFromFrame(frame)!=VideoResult::Ok)return;
+            std::vector<uint8_t> bgra(texture->rgba8Data(),texture->rgba8Data()+texture->rgba8ByteSize());
+            for(size_t i=0;i+3<bgra.size();i+=4)std::swap(bgra[i],bgra[i+2]);
+            std::lock_guard lock(mutex_);pixels_=std::move(bgra);frameWidth_=frame.width;frameHeight_=frame.height;framePts_=frame.pts.toUs()/1000000.0;previewPending_=false;dirty_=true;
+        };
+        while(!stopped_){
+            Command command;bool has=false;
+            {std::unique_lock lock(commandMutex_);if(commands_.empty())cv_.wait_for(lock,std::chrono::milliseconds(5));if(!commands_.empty()){command=std::move(commands_.front());commands_.pop_front();has=true;}}
+            if(has){
+                if(command.cancelled&&command.cancelled->load()){if(command.answer)command.answer->set_value(toolFailure("video_control_cancelled",true));continue;}
+                const auto action=command.value.value("action",std::string{});auto status=VideoResult::Ok;PluginJson result;
+                if(action=="open"){
+                    if(player.state()!=PlayerState::Idle&&player.state()!=PlayerState::Stopped)player.stop();opened=false;
+                    DemuxerOpenParams params;params.path=command.value.at("source");params.openTimeoutMs=10000;params.rwTimeoutMs=5000;
+                    const bool network=isHttpUrl(params.path);params.reconnectMax=network?1:0;
+                    {std::lock_guard lock(mutex_);source_=params.path;title_=command.value.value("title",std::string("一段影像"));state_="opening";playing_=false;position_=duration_=0;pixels_.clear();frameWidth_=frameHeight_=0;lastError_.clear();dirty_=true;audio.setMasterGain(volume_/100.0f);
+                        if(network){const auto start=params.path.find("://")+3,slash=params.path.find_first_of("/?#",start);params.httpProxyOrigin=cfg_.value("proxyOrigin",std::string{});if(params.httpProxyOrigin.empty()&&cfg_.value("useSystemProxy",true))params.httpProxyOrigin=ayt::net::http::systemProxyOrigin(params.path.substr(0,slash));}}
+                    params.protocolAllowlist=network?"http,https,tcp,tls,crypto,data,httpproxy":"file";
+                    params.formatAllowlist=network?"mov,matroska,webm,avi,mpeg,mpegts,ogg,flv,asf,hls":"mov,matroska,webm,avi,mpeg,mpegts,ogg,flv,asf";
+                    status=player.openWithOptions(params);
+                    if(command.cancelled&&command.cancelled->load()){player.stop();status=VideoResult::Cancelled;}
+                    if(status==VideoResult::Ok){MediaInfo info;player.getMediaInfo(info);opened=true;const bool paused=command.value.value("start_paused",false);status=player.play();if(paused&&status==VideoResult::Ok){player.pause();player.seek(ayt::time::Duration{});}
+                        {std::lock_guard lock(mutex_);duration_=info.durationSec;visible_=command.value.value("visible",true);audioAvailable_=sound&&info.hasAudio;}
+                        result=toolSuccess({{"opened",true},{"duration_seconds",info.durationSec},{"width",info.width},{"height",info.height},{"has_audio",info.hasAudio}});
+                        emit({{"kind","television.opened"},{"source",params.path},{"duration_seconds",info.durationSec}});
+                    }
+                }else if(action=="stop"){
+                    if(player.state()!=PlayerState::Idle&&player.state()!=PlayerState::Stopped)status=player.stop();opened=false;
+                    std::lock_guard lock(mutex_);state_="stopped";playing_=false;position_=0;pixels_.clear();dirty_=true;
+                }else if(!opened){result=toolFailure("no_video_open");}
+                else if(action=="pause")status=player.pause();
+                else if(action=="play")status=player.play();
+                else if(action=="seek"){{std::lock_guard lock(mutex_);previewPending_=true;}status=player.seek(ayt::time::Duration::fromUs(static_cast<int64_t>(command.value.value("seconds",0.0)*1000000)));}
                 else result=toolFailure("invalid_video_control");
-                if(command.answer)command.answer->set_value(result);continue;
+                if(status!=VideoResult::Ok){std::lock_guard lock(mutex_);state_="failed";playing_=false;lastError_=toString(status);dirty_=true;result=toolFailure(action=="open"?"video_open_failed":"video_control_failed",status==VideoResult::DemuxError);}
+                else if(opened){std::lock_guard lock(mutex_);playing_=player.state()==PlayerState::Playing;state_=playing_?"playing":"paused";position_=player.position().toUs()/1000000.0;dirty_=true;}
+                if(result.is_null())result=toolSuccess();if(command.answer)command.answer->set_value(std::move(result));
             }
-            if(!session||(!playing&&!preview)){std::this_thread::sleep_for(std::chrono::milliseconds(8));continue;}
-            ayt::video::DecodedSample sample;const auto status=session->next(sample);if(status==VideoResult::Cancelled){session->clearAbort();continue;}if(status==VideoResult::EndOfStream){const bool completedPlayback=playing;clockBase=session->info().durationSec;playing=false;preview=false;PluginJson ended;{std::lock_guard lock(mutex_);playing_=false;state_="ended";position_=duration_;ended={{"kind","television.ended"},{"source",source_},{"title",title_},{"duration_seconds",duration_},{"frame_time_seconds",pixels_.empty()?PluginJson():PluginJson(framePts_)},{"wake_model",completedPlayback&&cfg_.value("wakeOnEnd",true)}};}emit(std::move(ended));continue;}if(status!=VideoResult::Ok){playing=false;preview=false;{std::lock_guard lock(mutex_);playing_=false;state_="failed";lastError_=ayt::video::toString(status);}emit({{"kind","television.failed"},{"code",ayt::video::toString(status)}});continue;}
-            // A backward keyframe seek can return older PCM before the requested
-            // position. Discard that prefix before sending it to the audio sink.
-            if(!sample.audio.empty()&&playing&&sample.channels&&sample.sampleRate){const auto seconds=clockBase-sample.audioPts.toUs()/1000000.0;if(seconds>0){const auto frames=std::min<double>(sample.audio.size()/sample.channels,std::ceil(seconds*sample.sampleRate));sample.audio.erase(sample.audio.begin(),sample.audio.begin()+static_cast<size_t>(frames)*sample.channels);}}
-            if(!sample.audio.empty()&&playing){if(!audio){WAVEFORMATEX format{};format.wFormatTag=WAVE_FORMAT_PCM;format.nChannels=sample.channels;format.nSamplesPerSec=sample.sampleRate;format.wBitsPerSample=16;format.nBlockAlign=format.nChannels*2;format.nAvgBytesPerSec=format.nSamplesPerSec*format.nBlockAlign;if(waveOutOpen(&audio,WAVE_MAPPER,&format,0,0,CALLBACK_NULL)!=MMSYSERR_NOERROR)audio=nullptr;{std::lock_guard lock(mutex_);audioAvailable_=audio!=nullptr;}}
-                if(audio){while(audioBlocks.size()>=12&&!stopped_&&!hasCommands()){cleanAudio();std::this_thread::sleep_for(std::chrono::milliseconds(3));}if(!hasCommands()){auto block=std::make_unique<AudioBlock>();block->samples.resize(sample.audio.size());int level;{std::lock_guard lock(mutex_);level=volume_;}const float gain=level/100.0f;std::transform(sample.audio.begin(),sample.audio.end(),block->samples.begin(),[gain](float s){return static_cast<int16_t>((std::isfinite(s)?std::clamp(s,-1.0f,1.0f):0.0f)*gain*32767);});block->header.lpData=reinterpret_cast<LPSTR>(block->samples.data());block->header.dwBufferLength=static_cast<DWORD>(block->samples.size()*2);if(waveOutPrepareHeader(audio,&block->header,sizeof(WAVEHDR))==MMSYSERR_NOERROR){waveOutWrite(audio,&block->header,sizeof(WAVEHDR));audioBlocks.push_back(std::move(block));}}}
-            }
-            if(!sample.bgra.empty()){const double pts=sample.videoPts.toUs()/1000000.0;if(pts+0.001<clockBase)continue;while(playing&&!stopped_&&!hasCommands()&&clockBase+(nowMs()-clockStarted)/1000.0<pts)std::this_thread::sleep_for(std::chrono::milliseconds(2));if(hasCommands())continue;
-                {std::lock_guard lock(mutex_);pixels_=std::move(sample.bgra);frameWidth_=sample.width;frameHeight_=sample.height;framePts_=pts;position_=playing?clockBase+(nowMs()-clockStarted)/1000.0:clockBase;}if(preview)preview=false;
-            }
-        }resetAudio();if(session)session->close();std::lock_guard lock(commandMutex_);for(auto& cmd:commands_)if(cmd.answer)cmd.answer->set_value(toolFailure("television_stopped"));commands_.clear();
+            {std::lock_guard lock(mutex_);if(volume_!=audioVolume){audioVolume=volume_;audio.setMasterGain(audioVolume/100.0f);}}
+            if(!opened)continue;
+            VideoFrame frame;auto status=VideoResult::Ok;
+            if(player.state()==PlayerState::Playing)status=player.pullFrame(frame);
+            else if(player.state()==PlayerState::Paused){player.pollSeekPreview();player.currentFrame(frame);}
+            if(frame.data){bool changed;{std::lock_guard lock(mutex_);changed=pixels_.empty()||std::abs(framePts_-frame.pts.toUs()/1000000.0)>0.000001;}if(changed)publish(frame);}
+            {std::lock_guard lock(mutex_);const auto pos=player.position().toUs()/1000000.0;if(static_cast<int>(pos)!=static_cast<int>(position_))dirty_=true;position_=pos;syncSource_=toString(player.syncSource());}
+            if(status==VideoResult::EndOfStream){PluginJson ended;{std::lock_guard lock(mutex_);playing_=false;state_="ended";position_=duration_;dirty_=true;ended={{"kind","television.ended"},{"source",source_},{"title",title_},{"duration_seconds",duration_},{"frame_time_seconds",pixels_.empty()?PluginJson():PluginJson(framePts_)},{"wake_model",cfg_.value("wakeOnEnd",true)}};}emit(std::move(ended));}
+            else if(status!=VideoResult::Ok){std::lock_guard lock(mutex_);state_="failed";playing_=false;lastError_=toString(status);dirty_=true;}
+        }
+        {std::lock_guard lock(mutex_);session_=nullptr;}
+        player.stop();audio.shutdown();
+        std::lock_guard lock(commandMutex_);for(auto& cmd:commands_)if(cmd.answer)cmd.answer->set_value(toolFailure("television_stopped"));commands_.clear();
     }
     void create(){if(window_||!host_.desktopEnabled)return;WNDCLASSW wc{};wc.lpfnWndProc=procedure;wc.hInstance=instance_;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.lpszClassName=L"HibernationFloatingTelevision";RegisterClassW(&wc);window_=CreateWindowExW(WS_EX_APPWINDOW|(cfg_.value("topmost",true)?WS_EX_TOPMOST:0),wc.lpszClassName,L"小爱 · 浮动电视",WS_OVERLAPPEDWINDOW,160,120,640,420,nullptr,nullptr,instance_,this);}
-    void paint(){PAINTSTRUCT ps;auto dc=BeginPaint(window_,&ps);RECT r;GetClientRect(window_,&r);auto brush=CreateSolidBrush(RGB(24,29,25));FillRect(dc,&r,brush);DeleteObject(brush);if(!pixels_.empty()&&frameWidth_>0&&frameHeight_>0){const double scale=std::min(static_cast<double>(r.right)/frameWidth_,static_cast<double>(r.bottom-34)/frameHeight_);const int width=static_cast<int>(frameWidth_*scale),height=static_cast<int>(frameHeight_*scale);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=frameWidth_;info.bmiHeader.biHeight=-frameHeight_;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;SetStretchBltMode(dc,HALFTONE);StretchDIBits(dc,(r.right-width)/2,(r.bottom-34-height)/2,width,height,0,0,frameWidth_,frameHeight_,pixels_.data(),&info,DIB_RGB_COLORS,SRCCOPY);}SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(195,210,188));SelectObject(dc,font_);const auto status=wide(title_+"  ·  "+state_+"  "+std::to_string(static_cast<int>(position_))+" / "+std::to_string(static_cast<int>(duration_))+"s");RECT footer{14,r.bottom-27,r.right-14,r.bottom-4};DrawTextW(dc,status.c_str(),static_cast<int>(status.size()),&footer,DT_LEFT|DT_SINGLELINE|DT_END_ELLIPSIS);if(pixels_.empty()){RECT center{20,r.bottom/2-20,r.right-20,r.bottom/2+30};DrawTextW(dc,state_=="opening"?L"正在打开影像……":state_=="failed"?L"这段影像暂时无法播放。":L"这里可以放一段影像。",-1,&center,DT_CENTER|DT_SINGLELINE);}EndPaint(window_,&ps);}
-    static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM w,LPARAM l){auto* a=reinterpret_cast<Television*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));if(message==WM_NCCREATE){a=static_cast<Television*>(reinterpret_cast<CREATESTRUCTW*>(l)->lpCreateParams);a->window_=hwnd;SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(a));}if(!a)return DefWindowProcW(hwnd,message,w,l);std::lock_guard lock(a->mutex_);switch(message){case WM_PAINT:a->paint();return 0;case WM_ERASEBKGND:return 1;case WM_CLOSE:a->visible_=false;ShowWindow(hwnd,SW_HIDE);if(a->session_)a->session_->requestAbort();a->enqueue({{{"action","pause"}}, {}});return 0;case WM_KEYDOWN:if(w==VK_SPACE){if(a->session_)a->session_->requestAbort();a->enqueue({{{"action",a->playing_?"pause":"play"}}, {}});return 0;}break;case WM_GETMINMAXINFO:reinterpret_cast<MINMAXINFO*>(l)->ptMinTrackSize={320,220};return 0;}return DefWindowProcW(hwnd,message,w,l);}
+    void paint(){PAINTSTRUCT ps;auto target=BeginPaint(window_,&ps);RECT r;GetClientRect(window_,&r);if(r.right<=0||r.bottom<=0){EndPaint(window_,&ps);return;}auto dc=CreateCompatibleDC(target);if(!buffer_||bufferWidth_!=r.right||bufferHeight_!=r.bottom){if(buffer_)DeleteObject(buffer_);buffer_=CreateCompatibleBitmap(target,r.right,r.bottom);bufferWidth_=r.right;bufferHeight_=r.bottom;}auto oldBitmap=SelectObject(dc,buffer_);auto brush=CreateSolidBrush(RGB(24,29,25));FillRect(dc,&r,brush);DeleteObject(brush);if(!pixels_.empty()&&frameWidth_>0&&frameHeight_>0){const double scale=std::min(static_cast<double>(r.right)/frameWidth_,static_cast<double>(r.bottom-34)/frameHeight_);const int width=static_cast<int>(frameWidth_*scale),height=static_cast<int>(frameHeight_*scale);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=frameWidth_;info.bmiHeader.biHeight=-frameHeight_;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;SetStretchBltMode(dc,HALFTONE);StretchDIBits(dc,(r.right-width)/2,(r.bottom-34-height)/2,width,height,0,0,frameWidth_,frameHeight_,pixels_.data(),&info,DIB_RGB_COLORS,SRCCOPY);}SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(195,210,188));SelectObject(dc,font_);const auto status=wide(title_+"  ·  "+state_+"  "+std::to_string(static_cast<int>(position_))+" / "+std::to_string(static_cast<int>(duration_))+"s");RECT footer{14,r.bottom-27,r.right-14,r.bottom-4};DrawTextW(dc,status.c_str(),static_cast<int>(status.size()),&footer,DT_LEFT|DT_SINGLELINE|DT_END_ELLIPSIS);if(pixels_.empty()){RECT center{20,r.bottom/2-20,r.right-20,r.bottom/2+30};DrawTextW(dc,state_=="opening"?L"正在打开影像……":state_=="failed"?L"这段影像暂时无法播放。":L"这里可以放一段影像。",-1,&center,DT_CENTER|DT_SINGLELINE);}BitBlt(target,0,0,r.right,r.bottom,dc,0,0,SRCCOPY);SelectObject(dc,oldBitmap);DeleteDC(dc);dirty_=false;EndPaint(window_,&ps);}
+    static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM w,LPARAM l){auto* a=reinterpret_cast<Television*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));if(message==WM_NCCREATE){a=static_cast<Television*>(reinterpret_cast<CREATESTRUCTW*>(l)->lpCreateParams);a->window_=hwnd;SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(a));}if(!a)return DefWindowProcW(hwnd,message,w,l);std::lock_guard lock(a->mutex_);switch(message){case WM_PAINT:a->paint();return 0;case WM_SIZE:a->dirty_=true;InvalidateRect(hwnd,nullptr,FALSE);return 0;case WM_ERASEBKGND:return 1;case WM_CLOSE:a->visible_=false;ShowWindow(hwnd,SW_HIDE);a->enqueue({{{"action","pause"}}, {}});return 0;case WM_KEYDOWN:if(w==VK_SPACE){a->enqueue({{{"action",a->playing_?"pause":"play"}}, {}});return 0;}break;case WM_GETMINMAXINFO:reinterpret_cast<MINMAXINFO*>(l)->ptMinTrackSize={320,220};return 0;}return DefWindowProcW(hwnd,message,w,l);}
     PluginJson search(const PluginJson& args,const std::function<bool()>& externalCancel){const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);auto cancel=[&]{return stopped_.load()||(externalCancel&&externalCancel())||std::chrono::steady_clock::now()>deadline;};try{auto query=args.at("query").get<std::string>();for(char& c:query)if(c=='"'||c=='\\'||c=='('||c==')')c=' ';const auto response=fetchJson("https://archive.org","/advancedsearch.php?q="+urlEncode("mediatype:movies AND title:(\""+query+"\")")+"&fl%5B%5D=identifier&fl%5B%5D=title&rows=3&output=json",cancel);PluginJson found=PluginJson::array();for(const auto& doc:response.at("response").at("docs")){if(cancel())break;const auto identifier=doc.at("identifier").get<std::string>();const auto metadata=fetchJson("https://archive.org","/metadata/"+urlEncode(identifier),cancel);for(const auto& f:metadata.at("files")){const auto name=f.value("name",std::string{});if(name.ends_with(".mp4")||name.ends_with(".webm")){found.push_back({{"title",doc.value("title",identifier)},{"url","https://archive.org/download/"+urlEncode(identifier)+"/"+urlEncode(name)},{"page","https://archive.org/details/"+identifier},{"license",metadata.value("metadata",PluginJson::object()).value("licenseurl",std::string{})}});break;}}}return toolSuccess({{"videos",found},{"provider","Internet Archive"}});}catch(...){return toolFailure(cancel()?"search_cancelled":"video_search_unavailable",true);}}
 public:
     Television(){GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&anchor),&instance_);}static void anchor(){}
-    const char* getName()const override{return "television";}const char* getDescription()const override{return "Floating AYVideo CPU-decoded local/URL television";}
+    const char* getName()const override{return "television";}const char* getDescription()const override{return "Floating television using AYVideoPlayer with AYAudio master clock";}
     bool bind(PluginHostContext host,PluginJson cfg,std::string& issue)override{try{configurationTypes(cfg,{"proxyOrigin"},{"topmost","useSystemProxy","wakeOnEnd"});const int volume=static_cast<int>(number(cfg,"volume",65,0,100));{std::lock_guard lock(mutex_);host_=std::move(host);cfg_=std::move(cfg);volume_=volume;if(!font_)font_=CreateFontW(-13,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei UI");create();if(window_)SetWindowPos(window_,cfg_.value("topmost",true)?HWND_TOPMOST:HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);}if(!worker_.joinable()){stopped_=false;worker_=std::thread([this]{mediaLoop();});}issue.clear();return true;}catch(...){issue="television_configuration";return false;}}
-    PluginJson tools()const override{return PluginJson::array({tool("television.open","打开并播放素材工作区中的视频，或可直接播放的 HTTP(S) 媒体 URL。网页地址通常不能直接播放。",object({{"source",{{"type","string"},{"minLength",1},{"maxLength",2048}}},{"title",{{"type","string"},{"maxLength",160}}}},PluginJson::array({"source"}))),tool("television.control","控制电视播放、暂停、停止、跳转、显示或隐藏。",object({{"action",{{"enum",PluginJson::array({"play","pause","stop","seek","show","hide"})}}},{"seconds",{{"type","number"},{"minimum",0},{"maximum",86400}}}},PluginJson::array({"action"}))),tool("television.observe","获取当前真正呈现的画面及时间位置；有视觉模型时可分析返回帧。",object({{"include_frame",{{"type","boolean"}}}})),tool("television.search","在 Internet Archive 搜索公开视频并解析可播放 URL。",object({{"query",{{"type","string"},{"minLength",1},{"maxLength",256}}}},PluginJson::array({"query"})))});}
-    PluginJson invoke(const std::string& name,const PluginJson& args,const std::function<bool()>& cancelled)override{if(name=="television.search")return search(args,cancelled);if(name=="television.observe"){
+    PluginJson tools()const override{return PluginJson::array({tool("television.sources","列出已授权 materials/ 和 drafts/ 中的视频路径，最多 64 个。",object()),tool("television.open","打开并播放 materials/ 或 drafts/ 工作区中的视频，或直接媒体 HTTP(S) URL。被拒时先用 television.sources 核对路径，不要反复猜测。",object({{"source",{{"type","string"},{"minLength",1},{"maxLength",2048}}},{"title",{{"type","string"},{"maxLength",160}}}},PluginJson::array({"source"}))),tool("television.control","控制电视播放、暂停、停止、跳转、显示或隐藏。",object({{"action",{{"enum",PluginJson::array({"play","pause","stop","seek","show","hide"})}}},{"seconds",{{"type","number"},{"minimum",0},{"maximum",86400}}}},PluginJson::array({"action"}))),tool("television.observe","获取当前真正呈现的画面及时间位置；有视觉模型时可分析返回帧。",object({{"include_frame",{{"type","boolean"}}}})),tool("television.search","在 Internet Archive 搜索公开视频并解析可播放 URL。",object({{"query",{{"type","string"},{"minLength",1},{"maxLength",256}}}},PluginJson::array({"query"})))});}
+    PluginJson invoke(const std::string& name,const PluginJson& args,const std::function<bool()>& cancelled)override{if(name=="television.sources")return sources();if(name=="television.search")return search(args,cancelled);if(name=="television.observe"){
             const bool includeFrame=args.value("include_frame",true);
             const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(2);
             std::vector<uint8_t> frame;int width=0,height=0;PluginJson result;
             for(;;){
                 if(stopped_||(cancelled&&cancelled()))return toolFailure("video_observation_cancelled",true);
                 bool wait=false;
-                {std::lock_guard lock(mutex_);result=snapshot();result["frame_ready"]=!pixels_.empty();
-                    if(!pixels_.empty()){result["frame_time_seconds"]=framePts_;if(includeFrame){frame=pixels_;width=frameWidth_;height=frameHeight_;}}
-                    wait=includeFrame&&pixels_.empty()&&(state_=="opening"||state_=="playing"||state_=="paused");}
+                {std::lock_guard lock(mutex_);result=snapshot();result["frame_ready"]=!pixels_.empty()&&!previewPending_;
+                    if(!pixels_.empty()&&!previewPending_){result["frame_time_seconds"]=framePts_;if(includeFrame){frame=pixels_;width=frameWidth_;height=frameHeight_;}}
+                    wait=includeFrame&&(pixels_.empty()||previewPending_)&&(state_=="opening"||state_=="playing"||state_=="paused");}
                 if(!wait||std::chrono::steady_clock::now()>=deadline)break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
@@ -89,13 +161,13 @@ result["perception_note"]="仅包含实际解码并呈现的帧；没有自动�
         auto value=args;if(name=="television.open"){const auto source=mediaSource(args.at("source"));if(source.empty())return toolFailure("video_source_outside_workspace_or_invalid_url");value["source"]=source;value["action"]="open";}
         if(name=="television.control"&&(args.at("action")=="show"||args.at("action")=="hide")){std::lock_guard lock(mutex_);if(!host_.desktopEnabled)return toolFailure("desktop_required");visible_=args.at("action")=="show";return toolSuccess({{"visible",visible_}});}
         if(value.value("action",std::string{})=="seek"&&!value.contains("seconds"))return toolFailure("seek_position_required");
-        auto promise=std::make_shared<std::promise<PluginJson>>();auto cancelledCommand=std::make_shared<std::atomic<bool>>(false);auto future=promise->get_future();{std::lock_guard lock(mutex_);if(session_)session_->requestAbort();}enqueue({value,promise,cancelledCommand});const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(18);while(future.wait_for(std::chrono::milliseconds(20))!=std::future_status::ready){if((cancelled&&cancelled())||std::chrono::steady_clock::now()>deadline){cancelledCommand->store(true);std::lock_guard lock(mutex_);if(session_)session_->requestAbort();return toolFailure("video_control_cancelled_or_timeout",true);}}return future.get();
+        auto promise=std::make_shared<std::promise<PluginJson>>();auto cancelledCommand=std::make_shared<std::atomic<bool>>(false);auto future=promise->get_future();{std::lock_guard lock(mutex_);}enqueue({value,promise,cancelledCommand});const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(18);while(future.wait_for(std::chrono::milliseconds(20))!=std::future_status::ready){if((cancelled&&cancelled())||std::chrono::steady_clock::now()>deadline){cancelledCommand->store(true);std::lock_guard lock(mutex_);if(session_)session_->requestAbort();return toolFailure("video_control_cancelled_or_timeout",true);}}return future.get();
     }
-    void tick(double)override{std::lock_guard lock(mutex_);if(window_){const auto shown=IsWindowVisible(window_)!=FALSE;if(visible_!=shown)ShowWindow(window_,visible_?SW_SHOWNOACTIVATE:SW_HIDE);if(visible_)InvalidateRect(window_,nullptr,FALSE);}}
-    void event(const PluginJson& value)override{if(value.value("kind",std::string{})=="runtime.paused"&&value.value("paused",false)){std::lock_guard lock(mutex_);if(session_)session_->requestAbort();enqueue({{{"action","pause"}}, {}});}}
-    PluginJson snapshot()const override{std::lock_guard lock(mutex_);return {{"source",source_},{"title",title_},{"state",state_},{"position_seconds",position_},{"duration_seconds",duration_},{"visible",visible_},{"audio_available",audioAvailable_},{"frame_width",frameWidth_},{"frame_height",frameHeight_},{"error",lastError_}};}
+    void tick(double)override{std::lock_guard lock(mutex_);if(window_){const auto shown=IsWindowVisible(window_)!=FALSE;if(visible_!=shown)ShowWindow(window_,visible_?SW_SHOWNOACTIVATE:SW_HIDE);if(visible_&&dirty_)InvalidateRect(window_,nullptr,FALSE);}}
+    void event(const PluginJson& value)override{if(value.value("kind",std::string{})=="runtime.paused"&&value.value("paused",false)){std::lock_guard lock(mutex_);enqueue({{{"action","pause"}}, {}});}}
+    PluginJson snapshot()const override{std::lock_guard lock(mutex_);return {{"playback_engine","AYVideoPlayer"},{"sync_source",syncSource_},{"source",source_},{"title",title_},{"state",state_},{"position_seconds",position_},{"duration_seconds",duration_},{"visible",visible_},{"audio_available",audioAvailable_},{"frame_width",frameWidth_},{"frame_height",frameHeight_},{"error",lastError_}};}
     bool restore(const PluginJson& value)override{if(!value.is_object())return false;const auto source=value.value("source",std::string{});if(source.empty())return true;if(value.value("state",std::string{})=="stopped"||value.value("state",std::string{})=="failed"){std::lock_guard lock(mutex_);source_=source;title_=value.value("title",std::string{});state_="stopped";visible_=value.value("visible",false);return true;}const auto valid=mediaSource(source);if(valid.empty())return true;enqueue({{{"action","open"},{"source",valid},{"title",value.value("title",std::string("一段影像"))},{"start_paused",true},{"visible",value.value("visible",false)}}, {}});const auto position=value.value("position_seconds",0.0);if(std::isfinite(position)&&position>0&&position<86400)enqueue({{{"action","seek"},{"seconds",position}}, {}});{std::lock_guard lock(mutex_);visible_=value.value("visible",false);}return true;}
-    void shutdown()override{stopped_=true;{std::lock_guard lock(mutex_);if(session_)session_->requestAbort();}cv_.notify_all();if(worker_.joinable())worker_.join();std::lock_guard lock(mutex_);session_.reset();if(window_){DestroyWindow(window_);window_=nullptr;}UnregisterClassW(L"HibernationFloatingTelevision",instance_);if(font_){DeleteObject(font_);font_=nullptr;}}
+    void shutdown()override{stopped_=true;{std::lock_guard lock(mutex_);if(session_)session_->requestAbort();}cv_.notify_all();if(worker_.joinable())worker_.join();std::lock_guard lock(mutex_);session_=nullptr;if(window_){DestroyWindow(window_);window_=nullptr;}UnregisterClassW(L"HibernationFloatingTelevision",instance_);if(buffer_){DeleteObject(buffer_);buffer_=nullptr;}if(font_){DeleteObject(font_);font_=nullptr;}}
 };
 }
 extern "C" __declspec(dllexport) ayt::plugin::IPlugin* CreatePlugin(){return new Television;}
