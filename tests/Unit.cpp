@@ -8,6 +8,7 @@
 #include <Hibernation/MemoryContext.h>
 #include <Hibernation/ReactionCache.h>
 #include <Hibernation/WidgetAppearance.h>
+#include <Hibernation/SmallWorld.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -190,6 +191,25 @@ TEST_CASE(widget_appearances_keep_valid_pixels_and_distinct_continuous_poses){
         for(int i=0;i<64;++i){auto pose=make(skin,"walk",i*.11);CHECK(std::isfinite(pose.offsetY));for(const auto cell:pose.cells)CHECK(cell<=5);}
     }
     CHECK(make("dinosaur","walk",.1).cells!=make("dinosaur","walk",.5).cells);
+}
+TEST_CASE(desk_objects_need_a_real_arrival_and_completed_action){
+    SmallWorld world;CHECK(world.place("berry-1","berry",.4,.5));CHECK(world.request("berry-1","eat","action-1").empty());CHECK(world.size()==1);CHECK(world.queued());
+    CHECK(world.beginWalk());CHECK(!world.arrive("different",.4,.5));CHECK(!world.arrive("action-1",.8,.5));CHECK(world.arrive("action-1",.4,.5));
+    auto prior=world.snapshot();for(int i=0;i<8;++i){world.tick(.25,true,.4,.5,true);auto next=world.snapshot();CHECK(std::abs(next.at("appetite").get<double>()-prior.at("appetite").get<double>())<=.00151);prior=next;}
+    CHECK(world.size()==0);CHECK(!world.pending());unsigned completed=0;for(const auto& e:world.takeEvents())if(e.at("kind")=="habitat.consumed")++completed;CHECK(completed==1);
+    world.tick(.25,true,.4,.5,true);CHECK(world.takeEvents().empty());CHECK(!world.request("berry-1","eat","replay").empty());
+}
+TEST_CASE(desk_object_interruption_and_restart_never_finish_an_old_action){
+    SmallWorld world;CHECK(world.place("star","paper_star",.2,.2));CHECK(!world.request("star","eat","wrong").empty());CHECK(world.request("star","look","look-1").empty());CHECK(world.beginWalk());CHECK(world.arrive("look-1",.2,.2));
+    world.tick(.25,true,.2,.2,true);const auto frozen=world.snapshot();world.tick(500,false,.2,.2,true);CHECK(world.snapshot()==frozen);
+    SmallWorld restored;CHECK(restored.restore(frozen));CHECK(!restored.pending());CHECK(restored.size()==1);for(int i=0;i<10;++i)restored.tick(.25,true,.2,.2,true);for(const auto& e:restored.takeEvents())CHECK(e.at("kind")!="habitat.inspected");
+    world.cancel("user_dragged");for(int i=0;i<10;++i)world.tick(.25,true,.2,.2,true);CHECK(world.size()==1);for(const auto& e:world.takeEvents())CHECK(e.at("kind")!="habitat.inspected");
+}
+TEST_CASE(planted_seeds_grow_only_during_active_elapsed_time){
+    SmallWorld world;CHECK(world.place("seed","seed",.3,.4));CHECK(world.request("seed","plant","plant-1").empty());CHECK(world.beginWalk());CHECK(world.arrive("plant-1",.3,.4));for(int i=0;i<10;++i)world.tick(.25,true,.3,.4,true);
+    CHECK(world.object("seed").at("kind")=="sprout");CHECK(world.object("seed").at("growth")==0);for(int i=0;i<2401;++i)world.tick(.25,true,.3,.4,true);CHECK(world.object("seed").at("growth")==1);
+    const auto saved=world.snapshot();SmallWorld restored;CHECK(restored.restore(saved));restored.tick(86400,true,.3,.4,true);CHECK(restored.object("seed").at("growth")==1);CHECK(restored.clock()-world.clock()<=.251);
+    auto invalid=saved;invalid["appetite"]=2;CHECK(!restored.restore(invalid));CHECK(restored.object("seed").at("kind")=="sprout");
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

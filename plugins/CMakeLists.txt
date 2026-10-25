@@ -11,6 +11,8 @@ add_custom_target(HibernationPlugins)
 ha_role_plugin(weather Hibernation_Weather weather/Weather.cpp)
 ha_role_plugin(widget Hibernation_Widget widget/Widget.cpp)
 target_link_libraries(Hibernation_Widget PRIVATE user32 gdi32)
+ha_role_plugin(habitat Hibernation_Habitat habitat/Habitat.cpp)
+target_link_libraries(Hibernation_Habitat PRIVATE user32 gdi32)
 ha_role_plugin(tts Hibernation_Speech tts/Speech.cpp)
 target_link_libraries(Hibernation_Speech PRIVATE AYPlatform AYAudioPlayback sapi ole32 uuid winmm crypt32)
 add_custom_command(TARGET Hibernation_Speech POST_BUILD

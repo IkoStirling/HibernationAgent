@@ -1,0 +1,36 @@
+param([string]$ProjectRoot=(Join-Path $PSScriptRoot '..'),[string]$BuildRoot='',[ValidateRange(1,720)][double]$DurationMinutes=180,[ValidateRange(1,300)][int]$CycleSeconds=60,[string]$RunRoot='',[switch]$KeepAwake)
+$ErrorActionPreference='Stop';$ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot);if(!$BuildRoot){$BuildRoot=Join-Path $ProjectRoot 'out/staging'};$BuildRoot=[IO.Path]::GetFullPath($BuildRoot)
+if(!$RunRoot){$RunRoot=Join-Path $ProjectRoot ('artifacts/world-soak-'+[Guid]::NewGuid().ToString('N'))};$RunRoot=[IO.Path]::GetFullPath($RunRoot);if(Test-Path "$RunRoot/progress.json"){throw 'Choose an unused test directory.'};New-Item -ItemType Directory -Force $RunRoot|Out-Null
+Add-Type -Path (Join-Path $PSScriptRoot 'PrivateDesktop.cs')
+$desktop=$null;$service=$null;$checks=0;$cycles=0;$restarts=0;$started=[DateTime]::UtcNow;$finish=$started.AddMinutes($DurationMinutes);$plantId=''
+$env:HIBERNATION_SESSION_KEY='private-world-soak-fixture';$env:TEMP="$RunRoot/tmp";$env:TMP=$env:TEMP;New-Item -ItemType Directory -Force $env:TEMP|Out-Null
+function Check($Condition,$Name){if(!$Condition){throw "CHECK FAILED: $Name"};$script:checks++}
+function Wait-For([scriptblock]$Probe,$Name,[int]$Seconds=25){$end=[DateTime]::UtcNow.AddSeconds($Seconds);while([DateTime]::UtcNow-lt$end){if(& $Probe){return};Start-Sleep -Milliseconds 50};throw "TIMEOUT $Name"}
+function Api($Path,$Data=$null){$a=@{Uri=$script:origin+$Path;Headers=@{Authorization='Bearer private-world-soak-fixture'};TimeoutSec=10};if($null-ne$Data){$a.Method='Post';$a.ContentType='application/json';$a.Body=[Text.Encoding]::UTF8.GetBytes(($Data|ConvertTo-Json -Depth 35 -Compress))};Invoke-RestMethod @a}
+function World{(Api '/api/capabilities').plugins.Where({$_.id-eq'habitat'})[0].current}
+function Plugin($Name,$Arguments){$null=Api '/api/plugin/test' @{tool=$Name;args=$Arguments};Wait-For {$script:result=Api '/api/plugin/result';$script:result.state-in@('succeeded','failed')} $Name;return $script:result.result}
+function Start-Backend{Remove-Item "$RunRoot/ready.json" -ErrorAction SilentlyContinue;$script:desktop=[PrivateDesktop]::new("$BuildRoot/hibernation-agent.exe","$RunRoot/config.json","$RunRoot/ready.json",$ProjectRoot);$script:service=$desktop.Child;Wait-For {if($service.HasExited){throw "Private desktop process exited: $($service.ExitCode)"};Test-Path "$RunRoot/ready.json"} 'private desktop';$script:origin='http://127.0.0.1:'+((Get-Content "$RunRoot/ready.json" -Raw|ConvertFrom-Json).port)}
+function Stop-Backend{$null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)-and$service.ExitCode-eq0) 'clean native shutdown';$desktop.Dispose();$script:desktop=$null}
+function Progress($Status,$ErrorText=''){
+ $service.Refresh();$scene=World;$plant=@($scene.objects|Where-Object id -eq $plantId)[0]
+ $value=@{status=$Status;error=$ErrorText;root=$RunRoot;startedUtc=$started.ToString('O');plannedEndUtc=$finish.ToString('O');updatedUtc=[DateTime]::UtcNow.ToString('O');elapsedMinutes=([DateTime]::UtcNow-$started).TotalMinutes;checks=$checks;cycles=$cycles;restarts=$restarts;servicePid=$service.Id;privateMiB=[math]::Round($service.PrivateMemorySize64/1MB,2);handles=$service.HandleCount;gdi=[PrivateDesktop]::GetGuiResources($service.Handle,0);userObjects=[PrivateDesktop]::GetGuiResources($service.Handle,1);plantGrowth=if($plant){$plant.growth}else{-1};worldClock=$scene.clock}
+ $text=$value|ConvertTo-Json -Depth 5;[IO.File]::WriteAllText("$RunRoot/progress.next",$text,[Text.UTF8Encoding]::new($false));[IO.File]::Move("$RunRoot/progress.next","$RunRoot/progress.json",$true);($value|ConvertTo-Json -Compress)|Add-Content "$RunRoot/samples.jsonl" -Encoding utf8
+}
+try{
+ if($KeepAwake){$null=[PrivateDesktop]::SetThreadExecutionState([uint32]2147483649)}
+ $cfg=Get-Content "$ProjectRoot/config/example.json" -Raw|ConvertFrom-Json -AsHashtable;$cfg.dataRoot="$RunRoot/data";$cfg.characterRoot="$ProjectRoot/character";$cfg.uiRoot="$ProjectRoot/ui";$cfg.pluginRoot="$BuildRoot/plugins";$cfg.profiles=@($cfg.profiles[0]);$cfg.maxStartsPerHour=1000;$cfg.solitudeIntervalMs=604800000;$cfg.idleBeforeSolitudeMs=86400000;$cfg.plugins=@{widget=@{enabled=$true;roam=$false};habitat=@{enabled=$true;autoSpawn=$false;autoInteract=$false;wakeOnAction=$false;maxObjects=4;lifetimeSeconds=90}}
+ $cfg|ConvertTo-Json -Depth 40|Set-Content "$RunRoot/config.json" -Encoding utf8
+ Start-Backend;Wait-For {(World).desktop} 'native world';$placed=Plugin 'habitat.place' @{kind='seed'};Check $placed.ok 'seed placed on private desktop';$plantId=$placed.result.objects[-1].id;$accepted=Plugin 'habitat.act' @{id=$plantId;action='plant'};Check $accepted.ok 'planting accepted';Wait-For {@((World).objects|Where-Object {$_.id-eq$plantId-and$_.kind-eq'sprout'}).Count-eq1} 'actual planting';Progress 'running'
+ while([DateTime]::UtcNow-lt$finish){
+  if(Test-Path "$RunRoot/stop"){Progress 'stopped';break};$cycleStart=[DateTime]::UtcNow;$cycles++;$scene=World
+  if($scene.objects.Count-lt4){$kind=if($cycles%6-eq0){'berry'}else{'paper_star'};$placed=Plugin 'habitat.place' @{kind=$kind};Check $placed.ok 'new bounded object';$item=$placed.result.objects[-1]}else{$item=@($scene.objects|Where-Object id -ne $plantId)[0]}
+  $action=if($item.kind-eq'berry'){'eat'}else{'look'};$accepted=Plugin 'habitat.act' @{id=$item.id;action=$action}
+  if(!$accepted.ok){Check ($accepted.error.code-eq'world_not_hungry') 'satisfied character can decline food'}else{Wait-For {$value=World;!$value.pending-and@($value.last_actions|Where-Object {$_.item.id-eq$item.id}).Count-gt0} 'actual native action';Check $true 'navigation and object animation complete'}
+  if($cycles%5-eq0){$null=Api '/api/control' @{paused=$true};$before=World;Start-Sleep -Milliseconds 400;$after=World;Check ($before.clock-eq$after.clock-and$before.appetite-eq$after.appetite) 'pause freezes world and needs';$null=Api '/api/control' @{paused=$false}}
+  if($cycles%12-eq0){$before=World;Stop-Backend;Start-Backend;$restarts++;$after=World;Check (@($after.objects|Where-Object id -eq $plantId).Count-eq1-and[math]::Abs($after.appetite-$before.appetite)-lt.01) 'native restart preserves plant and gradual needs'}
+  $service.Refresh();Check ($service.PrivateMemorySize64-lt512MB-and$service.HandleCount-lt2048) 'native process resources bounded';Check ([PrivateDesktop]::GetGuiResources($service.Handle,0)-lt1024-and[PrivateDesktop]::GetGuiResources($service.Handle,1)-lt1024) 'GDI and window resources bounded';Check ((Api '/api/chat').health-eq'ok') 'native owner loop healthy';Progress 'running'
+  while([DateTime]::UtcNow-lt$cycleStart.AddSeconds($CycleSeconds)-and[DateTime]::UtcNow-lt$finish){if(Test-Path "$RunRoot/stop"){break};Start-Sleep -Milliseconds 1000}
+ }
+ if([DateTime]::UtcNow-ge$finish){Check (([DateTime]::UtcNow-$started).TotalMinutes-ge$DurationMinutes) 'real duration reached';Progress 'completed'}
+}catch{try{Progress 'failed' $_.Exception.Message}catch{};throw}
+finally{if($service){$service.Refresh();if(!$service.HasExited){try{Stop-Backend}catch{};$service.Refresh();if(!$service.HasExited){Stop-Process -Id $service.Id}}};if($desktop){$desktop.Dispose()};if($KeepAwake){$null=[PrivateDesktop]::SetThreadExecutionState([uint32]2147483648)}}

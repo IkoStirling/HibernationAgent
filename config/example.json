@@ -50,6 +50,17 @@
   ],
   "maxToolRounds": 6,
   "plugins": {
+    "habitat": {
+      "enabled": false,
+      "autoSpawn": true,
+      "autoInteract": true,
+      "maxObjects": 3,
+      "spawnSeconds": 120,
+      "lifetimeSeconds": 600,
+      "interactionProbability": 0.35,
+      "wakeOnAction": false,
+      "reducedMotion": false
+    },
     "television": {
       "enabled": false,
       "volume": 65,

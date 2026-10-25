@@ -30,6 +30,8 @@ PluginRuntime::~PluginRuntime(){stop();}
 void PluginRuntime::workspaceRoots(std::filesystem::path drafts,std::filesystem::path materials){std::lock_guard guard(impl_->mutex);impl_->host.draftsRoot=std::move(drafts);impl_->host.materialsRoot=std::move(materials);}
 bool PluginRuntime::configure(const PluginJson& settings,std::string& issue){auto& a=*impl_;std::lock_guard guard(a.mutex);if(a.calls||a.stopped){issue="plugin_busy";return false;}if(!settings.is_object()){issue="plugin_settings";return false;}
     std::set<std::string> known;for(const auto& m:a.manifests)known.insert(m.at("id"));for(auto it=settings.begin();it!=settings.end();++it)if(!it.value().is_object()||(!known.contains(it.key())&&it.value().value("enabled",false))){issue="plugin_unknown";return false;}
+    auto dependencies=[&](const std::string& id,IRolePlugin* plugin){for(const auto* dependency:plugin->getDependencies()){if(!dependency||!known.contains(dependency)||!settings.value(dependency,PluginJson::object()).value("enabled",false)){issue=id+":plugin_dependency";return false;}}return true;};
+    for(const auto& [id,slot]:a.loaded)if(settings.value(id,PluginJson::object()).value("enabled",false)&&!dependencies(id,slot->plugin))return false;
     // Stage newly loaded libraries. Existing plugins are removed only after all
     // additions and reconfiguration succeeded; rejected batches unload staging.
     std::map<std::string,std::shared_ptr<Impl::Slot>> staged;std::vector<std::string> rebound;
@@ -41,6 +43,7 @@ bool PluginRuntime::configure(const PluginJson& settings,std::string& issue){aut
             slot->loader=ayt::plugin::IPluginLoader::create(utf8Path(path));if(!slot->loader||!slot->loader->load(utf8Path(path))){issue="plugin_load_failed";return false;}
             slot->plugin=dynamic_cast<IRolePlugin*>(slot->loader->getPlugin());
             if(!slot->plugin||slot->plugin->roleApiVersion()!=2||slot->plugin->getName()!=id){issue="plugin_contract";return false;}
+            if(!dependencies(id,slot->plugin))return false;
             if(!slot->plugin->bind(a.host,cfg,issue)){issue=id+":"+issue;return false;}
             const auto tools=slot->plugin->tools();if(!tools.is_array()||tools.size()>32){issue="plugin_tools";return false;}
             for(const auto& t:tools){if(!t.contains("name")||!t.contains("parameters")||!ayt::serializer::validateJsonSchema(t.at("parameters").dump())){issue="plugin_tools";return false;}const auto name=t.at("name").get<std::string>();const auto dot=name.find('.');if(dot==std::string::npos||name.size()>96||name.starts_with("computer.")||name.starts_with("capabilities.")||name.starts_with("reflection.")||name.starts_with("memory.")||name.starts_with("state.")||name.starts_with("stage.")||name.starts_with("schedule.")||name.starts_with("workspace.")||!names.insert(name).second){issue="plugin_tool_collision";return false;}}

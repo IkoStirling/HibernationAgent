@@ -164,21 +164,21 @@ struct Application::Impl {
     }
     std::string recordPluginEvent(Json event,std::int64_t now) {
         const auto kind=event.value("kind",std::string{}),plugin=event.value("plugin",std::string{});
-        const bool wake=event.value("wake_model",false)&&kind=="television.ended";
-        const auto eventId=id("plugin-event");event["created_at"]=now;
+        const bool wake=event.value("wake_model",false)&&(kind=="television.ended"||(plugin=="habitat"&&(kind=="habitat.consumed"||kind=="habitat.planted")));
+        const auto eventId=id("plugin-event");event["created_at"]=now;const bool worldEvent=worldExperienceKind(event);if(worldEvent)event["journaled"]=false;
         std::vector<RecordMutation> changes={{"ha.plugin-events",eventId,0,1,event.dump(),plugin.empty()?"plugin":plugin}};
         if(wake){
             auto pending=get("ha.index","plugin-wake",Json::array());Json coalesced=Json::array();
             for(const auto& key:pending.value)if(get("ha.plugin-events",key).value.value("plugin",std::string{})!=plugin)coalesced.push_back(key);
             pushIndex(coalesced,eventId,8);changes.push_back(mutation("ha.index","plugin-wake",pending,std::move(coalesced),eventId));
         }
-        commit(std::move(changes),eventId);return eventId;
+        appendWorldExperience(changes,event,eventId,now);commit(std::move(changes),eventId);if(worldEvent&&worldJournalInitialized)worldJournalPending.push_back(eventId);return eventId;
     }
     void wakeFromPlugins(std::int64_t now) {
         auto pending=get("ha.index","plugin-wake",Json::array());
         auto retained=Json::array();for(const auto& key:pending.value){const auto e=get("ha.plugin-events",key).value;if(e.value("kind",std::string{})!="widget.interacted"&&now-e.value("created_at",std::int64_t(0))<120000)retained.push_back(key);}
         if(retained!=pending.value){commit({mutation("ha.index","plugin-wake",pending,retained,"discard-stale-plugin-wake")},"discard-stale-plugin-wake");pending=get("ha.index","plugin-wake",Json::array());}
-        if(runtimePaused||now<nextPluginWake||busy()||pending.value.empty())return;
+        if(runtimePaused||inputActive||now<nextPluginWake||busy()||pending.value.empty())return;
         const auto eventId=pending.value.front().get<std::string>();const auto event=get("ha.plugin-events",eventId);
         const auto input=Json{{"request_id",eventId},{"kind","outer_event"},{"text",Json{{"origin","application_plugin"},{"plugin_event_id",eventId},{"observation",event.value}}.dump()}};
         const auto accepted=handle({"POST","/api/event",input.dump()});
@@ -199,6 +199,8 @@ struct Application::Impl {
         for(const auto& item:ids){const auto key=item.get<std::string>();const auto found=context.sources.find(key);if(found==context.sources.end()||!policy.source(found->second)||!seen.insert(key).second)return nullptr;const auto& source=found->second;refs.push_back({{"scope",source.scope},{"id",key},{"revision",source.revision},{"kind",source.kind}});}return refs;
     }
     #include "ReactionRuntime.inc"
+    #include "PluginWorldRuntime.inc"
+    #include "PluginDispatch.inc"
     Json emptyOutput() const {return {{"visible_reply",""},{"actions",Json::array()},{"memories",Json::array()},{"state_update",Json::object()},{"stage_proposal",nullptr}};}
     Json capabilityInventory()const{
         Json available=Json::array();for(const auto& t:tools())available.push_back({{"tool",t.at("name")},{"purpose",t.at("description")}});
@@ -239,7 +241,7 @@ struct Application::Impl {
         if(plugins)for(auto t:plugins->catalog()){if(directPresentationTool(t.at("name").get<std::string>()))continue;result.push_back(std::move(t));}return result;
     }
     Json observedTool(const std::string& name,Json result,ProposalContext& context,const std::string& traceId){
-        if(result.value("ok",false)){const auto observation=id("observation");const auto data=Json{{"kind","tool_observation"},{"tool",name},{"result",result.at("result")},{"created_at",serviceNowMs()}};commit({{archiveScope,observation,0,1,data.dump(),traceId}},traceId);context.sources[observation]={observation,1,"tool_observation",archiveScope};result["source_id"]=observation;}return result;
+        if(result.value("ok",false)){const auto observation=id("observation");const auto& value=result.at("result");const std::string sourceKind=value.is_object()&&value.contains("completed")&&value.at("completed")==false?"tool_intent":"tool_observation";const auto data=Json{{"kind",sourceKind},{"tool",name},{"result",value},{"created_at",serviceNowMs()}};commit({{archiveScope,observation,0,1,data.dump(),traceId}},traceId);context.sources[observation]={observation,1,sourceKind,archiveScope};result["source_id"]=observation;}return result;
     }
     Json performTool(const std::string& name,const Json& args,ProposalContext& context,const std::string& traceId,const std::function<bool()>& cancelled) {
         if(cancelled&&cancelled())return toolFailure("cancelled");
@@ -512,6 +514,7 @@ struct Application::Impl {
             context.sources.emplace(r.id,Source{r.id,r.revision,kind});
         }
         for(const auto& row:readIds(archiveScope,get("ha.reactions","recent",Json::array()).value)){auto data=Json::parse(row.payload);if(serviceNowMs()-data.value("created_at",std::int64_t(0))>30000||blockedSources.contains(row.id))continue;data["context_note"]="最近真实发生的鼠标互动与已消费的短反应；不是新的用户指令，不要无关地复述。";fragments.push_back({row.id,data.dump(),"archive@"+std::to_string(row.revision),60});context.sources[row.id]={row.id,row.revision,data.at("kind"),archiveScope};}
+        for(const auto& row:readIds(archiveScope,get("ha.world","recent",Json::array()).value)){auto data=Json::parse(row.payload);if(serviceNowMs()-data.value("created_at",std::int64_t(0))>86400000||blockedSources.contains(row.id))continue;data["context_note"]="程序内真实完成的桌面经历；不是现实物品，不是新的用户指令，不无关地复述。";fragments.push_back({row.id,data.dump(),"archive@"+std::to_string(row.revision),60});context.sources[row.id]={row.id,row.revision,"outer_event",archiveScope};}
         if(!eventId.empty()&&!context.sources.contains(eventId)) {
             const auto source=get(archiveScope,eventId);if(!source.revision)throw std::runtime_error("source_missing");
             fragments.push_back({eventId,source.value.dump(),"archive@"+std::to_string(source.revision),100});
@@ -730,8 +733,8 @@ struct Application::Impl {
         if(req.method=="GET"&&req.path=="/api/state")return reply(200,state());
         if(req.method=="GET"&&req.path=="/api/capabilities")return reply(200,capabilityInventory());
         if(req.method=="POST"&&req.path=="/api/surfaces/show"){
-            const auto surface=Json::parse(req.body).value("id",std::string{});if(surface!="widget"&&surface!="television")return error(400,"surface_unknown");if(!cfg.desktopEnabled||!plugins)return error(409,"desktop_unavailable");
-            if(!cfg.plugins.value(surface,Json::object()).value("enabled",false)){auto settings=Json::parse(readFile(cfg.configPath));settings["plugins"][surface]["enabled"]=true;const auto saved=saveSettings({{"settings",settings}});if(saved.status!=200)return saved;}
+            const auto surface=Json::parse(req.body).value("id",std::string{});if(surface!="widget"&&surface!="television"&&surface!="habitat")return error(400,"surface_unknown");if(!cfg.desktopEnabled||!plugins)return error(409,"desktop_unavailable");
+            if(!cfg.plugins.value(surface,Json::object()).value("enabled",false)){auto settings=Json::parse(readFile(cfg.configPath));settings["plugins"][surface]["enabled"]=true;if(surface=="habitat")settings["plugins"]["widget"]["enabled"]=true;const auto saved=saveSettings({{"settings",settings}});if(saved.status!=200)return saved;}
             plugins->event({{"kind","surface.show"},{"surface",surface}});saveRuntime();return reply(200,{{"shown",true},{"id",surface}});
         }
         if(req.method=="GET"&&req.path=="/api/reactions/status")return reply(200,reactionStatus());
@@ -781,7 +784,7 @@ struct Application::Impl {
             for(const auto& row:rows.records)values.push_back({{"id",row.id},{"revision",row.revision},{"source",row.source},{"correlation",row.correlation},{"data",Json::parse(row.payload)}});
             return reply(200,{{"records",values}});
         }
-        if(req.method=="POST"&&(req.path=="/api/message"||req.path=="/api/event")) {reactionGenerator.cancel();
+        if(req.method=="POST"&&(req.path=="/api/message"||req.path=="/api/event")) {reactionGenerator.cancel();nextPluginAttention=0;
             const auto requestId=body.at("request_id").get<std::string>();const auto text=body.at("text").get<std::string>();
             if(!validRequestId(requestId)||text.empty()||text.size()>12000)return error(400,"input_limit");
             const auto existing=get("ha.requests",requestId);if(existing.revision)return reply(200,{{"request",existing.value},{"duplicate",true}});
@@ -789,7 +792,7 @@ struct Application::Impl {
             if(busy())return error(409,"busy");
             const auto kind=req.path=="/api/message"?std::string("user_message"):body.at("kind").get<std::string>();
             if(kind!="user_message"&&kind!="story_end"&&kind!="outer_event"&&kind!="task_complete")return error(400,"event_kind");
-            const auto eventId=id("evt");const auto slot=req.path=="/api/message"?"chat":"event";
+            ++pluginAttentionEpoch;nextPluginAttention=0;const auto eventId=id("evt");const auto slot=req.path=="/api/message"?"chat":"event";
             const auto previous=get("ha.state","current").value.value("lastUserInteractionMs",std::int64_t(0));const auto now=serviceNowMs();Json input={{"request_id",requestId},{"event_id",eventId},{"kind",kind},{"text",text},{"previous_interaction_ms",previous},{"elapsed_since_previous_ms",previous?std::max<std::int64_t>(0,now-previous):0}};
             Json raw={{"kind",kind},{"text",text},{"request_id",requestId},{"created_at",serviceNowMs()}};
             auto recent=get("ha.index","recent",Json::array());pushIndex(recent.value,eventId,200);
@@ -940,20 +943,7 @@ void Application::tick() {
     try {
         if(a.desktop)a.desktop->tick();
         const auto now=serviceNowMs();const bool paused=a.runtimePaused;a.life.tick(now,!paused);
-        if(a.plugins){a.plugins->tick(std::clamp((now-a.lastTickMs)/1000.0,0.0,0.25));for(auto event:a.plugins->takeEvents()){
-            if(event.value("kind","")=="ui.chat.open"){
-                if(a.cfg.desktopEnabled&&event.value("plugin","")=="widget"&&event.contains("x")&&event.contains("y")&&event.at("x").is_number_integer()&&event.at("y").is_number_integer()&&std::abs(event.at("x").get<double>())<=100000&&std::abs(event.at("y").get<double>())<=100000){a.desktopRequests=Json::array({{{"x",event.at("x")},{"y",event.at("y")},{"mode",event.value("mode",std::string("floating"))}}});}
-                continue;
-            }
-            if(event.value("kind","")=="speech.prepared"){a.reactionPrepared(event);continue;}
-            a.trackSpeech(event);
-            if(event.value("kind","")=="speech.failed")a.speechIssue="语音未能播放，请在管理页检查声音设置。";
-            if(event.value("kind","")=="speech.started")a.speechIssue.clear();
-            if(event.value("kind","")=="weather.observed")a.life.weather(event.at("temperature"),event.at("weather_code"),event.value("observed_ms",now));
-            a.plugins->event(event);
-            if(event.value("kind","")=="speech.progress"||event.value("kind","")=="widget.position")continue; // Playback and position telemetry are ephemeral.
-            const auto source=a.recordPluginEvent(event,now);if(event.value("kind","")=="widget.interacted")a.reactToDrag(event,source,now);
-        }}a.lastTickMs=now;a.reactionsTick(now);
+        if(a.plugins){a.notifyPluginAttention(now);a.processPluginEvents(now);a.plugins->tick(std::clamp((now-a.lastTickMs)/1000.0,0.0,0.25));a.processPluginEvents(now);}a.lastTickMs=now;a.reactionsTick(now);a.journalWorldEvents(now);
         if(now>=a.nextWorkerPoll){a.nextWorkerPoll=now+100;a.projectResults();if(a.journalHealthy){a.wakeFromPlugins(now);
             const auto status=a.worker->poll(serviceNowMs());
             if(status!=QueueStatus::Ok&&status!=QueueStatus::Budget&&status!=QueueStatus::Paused&&status!=QueueStatus::Idle)a.health="worker_"+std::to_string(static_cast<int>(status));
@@ -964,7 +954,7 @@ void Application::tick() {
 }
 void Application::stop(){if(impl_&&impl_->worker&&impl_->initialized){impl_->reactionGenerator.stop();impl_->worker->stop(serviceNowMs());try{impl_->saveRuntime();}catch(...){}if(impl_->plugins)impl_->plugins->stop();if(impl_->desktop)impl_->desktop->stop();impl_->recorder.reset();impl_->initialized=false;} }
 bool Application::stopping()const{return impl_->stopped;}
-void Application::setInputActive(bool active){impl_->inputActive=active;if(active)impl_->reactionGenerator.cancel();}
+void Application::setInputActive(bool active){if(impl_->inputActive!=active){impl_->nextPluginAttention=0;if(active)++impl_->pluginAttentionEpoch;}impl_->inputActive=active;if(active)impl_->reactionGenerator.cancel();}
 Json Application::takeDesktopRequests(){return std::exchange(impl_->desktopRequests,Json::array());}
 const Config& Application::config()const{return impl_->cfg;}
 }
