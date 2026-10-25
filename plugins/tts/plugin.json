@@ -1,1 +1,1 @@
-{"id":"tts","name":"文本转语音","description":"系统棒读或兼容 HTTP 语音服务，可中断并限制朗读时长。","version":"0.3.0","api_version":2,"library":"Hibernation_Speech.dll","capabilities":["audio.speech","network.optional-tts"]}
+{"id":"tts","name":"文本转语音","description":"系统棒读、Mei中文假名或兼容HTTP语音，同步对白并检查输出状态。","version":"0.4.0","api_version":2,"library":"Hibernation_Speech.dll","capabilities":["audio.speech","network.optional-tts","audio.output-diagnostics"]}

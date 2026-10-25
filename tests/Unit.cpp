@@ -1,3 +1,4 @@
+#include <Hibernation/AudioDelivery.h>
 #include <Hibernation/Application.h>
 #include <Hibernation/TurnProtocol.h>
 #include <Hibernation/RoleState.h>
@@ -254,6 +255,15 @@ TEST_CASE(quiet_rest_restart_records_only_actual_elapsed_time_and_never_replays_
 }
 TEST_CASE(television_layout_keeps_the_real_media_view_inside_its_frame){
     for(const int width:{320,480,900,1280})for(const int height:{220,320,500,900})for(const bool framed:{false,true}){const auto layout=televisionLayout(width,height,framed);CHECK(layout.screen.width()>0&&layout.screen.height()>0);CHECK(layout.screen.left>=0&&layout.screen.top>=0&&layout.screen.right<=width&&layout.screen.bottom<=height);CHECK(layout.footer.top>=layout.screen.bottom);if(framed){CHECK(layout.play.left>layout.screen.right);CHECK(layout.power.right<=width&&layout.stop.bottom<height);}}
+}
+TEST_CASE(audio_output_observations_preserve_unknowns_and_never_confirm_user_audibility){
+    Json volume={{"known",true},{"muted",false},{"master",.75},{"channels",Json::array({1.0,1.0})}};
+    Json normal={{"checked_at_ms",1000},{"query_state","ok"},{"console",{{"available",true},{"volume",volume}}},{"multimedia",{{"available",true},{"volume",volume}}},{"own_sessions",Json::array()}};
+    CHECK(assessAudioDelivery(normal,false,75,1001).at("code")=="device_unavailable");CHECK(assessAudioDelivery(normal,true,0,1001).at("code")=="app_volume_zero");CHECK(assessAudioDelivery(normal,true,75,17000).at("code")=="observation_stale");CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="idle_or_unknown");
+    Json session={{"state","active"},{"default_for_console",true},{"session",volume},{"endpoint",volume}};normal["own_sessions"].push_back(session);CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="no_known_blocker");CHECK(!assessAudioDelivery(normal,true,75,1001).at("heard_confirmed").get<bool>());
+    normal["own_sessions"][0]["session"]["channels"]=Json::array({0.0,0.0});CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="active_sessions_muted");normal["own_sessions"].push_back(session);CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="no_known_blocker");
+    normal["own_sessions"]=Json::array({session});normal["own_sessions"][0]["session"]={{"known",false}};CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="volume_unknown");normal["query_state"]="partial";CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="partially_unknown");
+    normal["query_state"]="ok";normal["own_sessions"]=Json::array({session});normal["own_sessions"][0]["default_for_console"]=false;CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="different_output");normal["own_sessions"]=Json::array();normal["console"]["available"]=false;normal["multimedia"]["available"]=false;CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="default_missing");
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

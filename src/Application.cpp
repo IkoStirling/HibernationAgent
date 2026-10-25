@@ -153,6 +153,7 @@ struct Application::Impl {
         return (exists?queue->reschedule(job,serviceNowMs()):queue->enqueue(job,serviceNowMs()))==QueueStatus::Ok;
     }
 #include "ForegroundScheduling.inc"
+#include "PauseControl.inc"
     bool fact(const std::string& key,const std::string& kind,Json body,std::int64_t occurred) {
         // The event index is intentionally metadata-only. Memory, model/tool
         // bodies and media observations live in the encrypted record ledger.
@@ -313,7 +314,7 @@ struct Application::Impl {
         if(name=="schedule.list") {Json values=Json::array();for(const auto& job:jobs())if(job.spec.id.starts_with("routine."))values.push_back({{"id",job.spec.id.substr(8)},{"state",stateName(job.state)},{"due_ms",job.spec.dueAtMs},{"interval_ms",job.spec.intervalMs},{"topic",Json::parse(job.spec.payload).value("topic","")}});return toolSuccess({{"tasks",values}});}
         if(name=="schedule.create"||name=="schedule.cancel") {
             const auto key=args.at("id").get<std::string>();if(!validRequestId(key))return toolFailure("schedule_id");const auto slot="routine."+key;
-            if(name=="schedule.cancel"){const auto status=queue->pauseJob(slot,true,serviceNowMs());if(status==QueueStatus::Ok)forgetBackgroundYield(slot);return status==QueueStatus::Ok?toolSuccess({{"paused",true}}):toolFailure("schedule_missing_or_running");}
+            if(name=="schedule.cancel"){const auto status=queue->pauseJob(slot,true,serviceNowMs());if(status==QueueStatus::Ok){forgetBackgroundYield(slot);forgetPauseOwnership(slot);}return status==QueueStatus::Ok?toolSuccess({{"paused",true}}):toolFailure("schedule_missing_or_running");}
             const auto interval=args.value("interval_ms",std::int64_t(0));if(interval&&interval<300000)return toolFailure("schedule_interval_too_short");
             Json task={{"force",true},{"topic",args.at("topic")},{"created_at",serviceNowMs()},{"created_from",context.eventId},{"task_id",key},{"references",Json::array()}};
             if(args.contains("source_ids")){task["references"]=checkedSources(args.at("source_ids"),context);if(task["references"].is_null())return toolFailure("schedule_source_not_available");}
@@ -781,9 +782,9 @@ struct Application::Impl {
         if(req.method=="POST"&&req.path=="/api/plugin/test"){
             if(get("ha.control","current").value.at("paused")==true)return error(409,"paused");
             if(busy())return error(409,"busy");if(!plugins)return error(409,"plugins_unavailable");const auto name=body.at("tool").get<std::string>();const auto catalog=plugins->catalog();if(std::none_of(catalog.begin(),catalog.end(),[&](const auto& t){return t.at("name")==name;}))return error(400,"plugin_tool_missing");
-            if(!schedule(spec("operator.tool","operator.tool",{{"tool",name},{"args",body.value("args",Json::object())}},serviceNowMs())))return error(409,"operator_tool_busy");return reply(202,{{"queued",true}});
+            const auto requestId=body.value("request_id",id("operator"));if(!validRequestId(requestId))return error(400,"operator_request_id");if(!schedule(spec("operator.tool","operator.tool",{{"tool",name},{"args",body.value("args",Json::object())},{"request_id",requestId}},serviceNowMs())))return error(409,"operator_tool_busy");return reply(202,{{"queued",true},{"request_id",requestId}});
         }
-        if(req.method=="GET"&&req.path=="/api/plugin/result"){for(const auto& job:jobs())if(job.spec.id=="operator.tool")return reply(200,{{"state",stateName(job.state)},{"result",job.result.empty()?Json():Json::parse(job.result)}});return reply(200,{{"state","none"}});}
+        if(req.method=="GET"&&req.path=="/api/plugin/result"){for(const auto& job:jobs())if(job.spec.id=="operator.tool"){const auto payload=Json::parse(job.spec.payload);auto result=job.result.empty()?Json():Json::parse(job.result,nullptr,false);if(result.is_discarded())result=toolFailure(job.state==JobState::Paused?"operator_paused":"operator_execution_failed");return reply(200,{{"state",stateName(job.state)},{"request_id",payload.value("request_id",std::string{})},{"tool",payload.value("tool",std::string{})},{"run_token",job.runToken},{"result",result}});}return reply(200,{{"state","none"}});}
         if(req.method=="POST"&&req.path=="/api/archive") {
             const auto key=body.at("id").get<std::string>();if(key.size()>200)return error(400,"archive_id");
             RecordQuery q;q.scope=archiveScope;q.id=key;q.history=true;q.limit=32;q.maxPayloadBytes=1024*1024;
@@ -819,11 +820,7 @@ struct Application::Impl {
             return reply(202,{{"status","queued"}});
         }
         if(req.method=="POST"&&req.path=="/api/control") {
-            const bool paused=body.at("paused").get<bool>();const auto now=serviceNowMs();
-            if(queue->setPaused(paused,now)!=QueueStatus::Ok)return error(503,"queue_pause");
-            for(const auto& job:jobs())if((paused&&(job.state==JobState::Running||job.state==JobState::Pending))||(!paused&&job.state==JobState::Paused))
-                if((paused||!yieldedBackground(job.spec.id))&&queue->pauseJob(job.spec.id,paused,now)!=QueueStatus::Ok)return error(503,"job_pause");
-            auto before=get("ha.control","current");auto value=before.value;value["paused"]=paused;commit({mutation("ha.control","current",before,value)},"control");runtimePaused=paused;if(plugins)plugins->event({{"kind","runtime.paused"},{"paused",paused}});return reply(200,value);
+            return reply(200,controlPause(body.at("paused").get<bool>(),serviceNowMs()));
         }
         if(req.method=="POST"&&req.path=="/api/model") {
             if(busy())return error(409,"busy");const auto key=body.at("id").get<std::string>();(void)profile(key);
@@ -926,6 +923,7 @@ bool Application::initialize() {
     if(a.cfg.plugins.contains("tts")){const auto secret=a.cfg.dataRoot/"runtime"/"secrets/plugin-tts.dpapi";const auto environment=a.cfg.plugins.at("tts").value("credentialEnvironment",std::string{});if(!environment.empty()&&std::filesystem::exists(secret)){const auto value=loadUserSecret(secret);if(_putenv_s(environment.c_str(),value.c_str()))return false;}}
     QueueOptions options;options.name="hibernation";options.maxJobs=32;options.maxStartsPerWindow=a.cfg.maxStartsPerHour;
     a.queue=std::make_unique<DurableQueue>(a.store,options);a.worker=std::make_unique<WorkerHost>(*a.queue,1);
+    a.restorePauseControl();
     a.worker->registerHandler("role.turn",[&a](const auto& claim,auto token){return a.run(claim,token);});
     a.worker->registerHandler("role.solitude",[&a](const auto& claim,auto token){return a.run(claim,token);});
     a.worker->registerHandler("operator.tool",[&a](const auto& claim,auto token){const auto input=Json::parse(claim.job.spec.payload);return JobOutcome{true,false,a.plugins->invoke(input.at("tool"),input.at("args"),[token]{return token.requested();}).dump(),{}};});
