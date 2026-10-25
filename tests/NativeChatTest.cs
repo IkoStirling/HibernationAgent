@@ -15,12 +15,15 @@ public static class ChatWindowTest {
  [DllImport("user32.dll")]public static extern bool PrintWindow(IntPtr h,IntPtr dc,uint flags);
  [DllImport("user32.dll")]public static extern bool GetClientRect(IntPtr h,out Rect rect);
  [DllImport("user32.dll")]public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr value);
+ [DllImport("user32.dll")]static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
+ public static void UseWindowCoordinates(IntPtr window){SetThreadDpiAwarenessContext(GetWindowDpiAwarenessContext(window));}
  [DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);
  [DllImport("user32.dll")]public static extern bool GetWindowRect(IntPtr h,out Rect rect);
  [DllImport("user32.dll")]static extern bool ClientToScreen(IntPtr h,ref Point point);
  [DllImport("user32.dll")]static extern bool GetCursorPos(out Point point);
  [DllImport("user32.dll")]static extern bool SetCursorPos(int x,int y);
+ [DllImport("user32.dll")]static extern bool LogicalToPhysicalPointForPerMonitorDPI(IntPtr window,ref Point point);
  [DllImport("user32.dll")]static extern IntPtr WindowFromPoint(Point point);
  [DllImport("user32.dll")]static extern uint SendInput(uint n,Input[] data,int size);
  [DllImport("user32.dll")]static extern bool GetGUIThreadInfo(uint thread,ref Gui info);
@@ -31,7 +34,7 @@ public static class ChatWindowTest {
  [StructLayout(LayoutKind.Explicit)]struct Payload{[FieldOffset(0)]public Mouse mouse;[FieldOffset(0)]public Key key;}
  [StructLayout(LayoutKind.Sequential)]struct Input{public uint type;public Payload payload;}
  public static IntPtr Focus(IntPtr window){uint pid;var thread=GetWindowThreadProcessId(window,out pid);var info=new Gui{size=Marshal.SizeOf<Gui>()};return GetGUIThreadInfo(thread,ref info)?info.focus:IntPtr.Zero;}
- public static void MiddleClick(IntPtr widget,int x,int y){Point previous;GetCursorPos(out previous);var point=new Point{x=x,y=y};ClientToScreen(widget,ref point);try{SetCursorPos(point.x,point.y);if(WindowFromPoint(point)!=widget)throw new Exception("fixture_widget_not_at_cursor");var inputs=new[]{new Input{type=0,payload=new Payload{mouse=new Mouse{flags=0x20}}},new Input{type=0,payload=new Payload{mouse=new Mouse{flags=0x40}}}};if(SendInput(2,inputs,Marshal.SizeOf<Input>())!=2)throw new Exception("middle_input_failed");}finally{Point current;GetCursorPos(out current);if(current.x==point.x&&current.y==point.y)SetCursorPos(previous.x,previous.y);}}
+ public static void MiddleClick(IntPtr widget,int x,int y){Point previous;GetCursorPos(out previous);var point=new Point{x=x,y=y};ClientToScreen(widget,ref point);LogicalToPhysicalPointForPerMonitorDPI(widget,ref point);var previousDpi=SetThreadDpiAwarenessContext(new IntPtr(-4));GetCursorPos(out previous);try{for(int attempt=0;attempt<20&&WindowFromPoint(point)!=widget;attempt++)Thread.Sleep(25);SetCursorPos(point.x,point.y);if(WindowFromPoint(point)!=widget){var actual=WindowFromPoint(point);uint pid;GetWindowThreadProcessId(actual,out pid);var cls=new StringBuilder(128);GetClassName(actual,cls,128);Rect r;GetClientRect(widget,out r);throw new Exception("fixture_widget_not_at_cursor point="+point.x+","+point.y+" local="+x+","+y+" client="+r.right+","+r.bottom+" actual="+cls+" pid="+pid);}var inputs=new[]{new Input{type=0,payload=new Payload{mouse=new Mouse{flags=0x20}}},new Input{type=0,payload=new Payload{mouse=new Mouse{flags=0x40}}}};if(SendInput(2,inputs,Marshal.SizeOf<Input>())!=2)throw new Exception("middle_input_failed");}finally{Point current;GetCursorPos(out current);if(current.x==point.x&&current.y==point.y)SetCursorPos(previous.x,previous.y);SetThreadDpiAwarenessContext(previousDpi);}}
  public static void TypeUnicode(IntPtr window,IntPtr input,string text){foreach(char c in text){if(GetForegroundWindow()!=window||Focus(window)!=input)throw new Exception("fixture_input_lost_focus");var keys=new[]{new Input{type=1,payload=new Payload{key=new Key{scan=c,flags=4}}},new Input{type=1,payload=new Payload{key=new Key{scan=c,flags=6}}}};if(SendInput(2,keys,Marshal.SizeOf<Input>())!=2)throw new Exception("text_input_failed");}}
  [StructLayout(LayoutKind.Sequential)]public struct Rect{public int left,top,right,bottom;}
  [DllImport("ole32.dll")]static extern int OleInitialize(IntPtr x);

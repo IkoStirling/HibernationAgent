@@ -9,6 +9,7 @@
 #include <Hibernation/ReactionCache.h>
 #include <Hibernation/WidgetAppearance.h>
 #include <Hibernation/SmallWorld.h>
+#include <Hibernation/SplashPixels.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -210,6 +211,24 @@ TEST_CASE(planted_seeds_grow_only_during_active_elapsed_time){
     CHECK(world.object("seed").at("kind")=="sprout");CHECK(world.object("seed").at("growth")==0);for(int i=0;i<2401;++i)world.tick(.25,true,.3,.4,true);CHECK(world.object("seed").at("growth")==1);
     const auto saved=world.snapshot();SmallWorld restored;CHECK(restored.restore(saved));restored.tick(86400,true,.3,.4,true);CHECK(restored.object("seed").at("growth")==1);CHECK(restored.clock()-world.clock()<=.251);
     auto invalid=saved;invalid["appetite"]=2;CHECK(!restored.restore(invalid));CHECK(restored.object("seed").at("kind")=="sprout");
+}
+TEST_CASE(startup_pixels_have_real_transparency_and_valid_premultiplied_color){
+    using namespace splashPixels;std::vector<std::uint32_t> pixels(width*height);
+    for(const auto name:{"forest","mist","amber"})for(bool reduced:{false,true})for(double time:{0,100,400,650,1200}){
+        render(pixels.data(),time,0,reduced,appearance::palette(name));CHECK(pixels.front()==0);CHECK(pixels.back()==0);unsigned visible=0;bool valid=true;for(auto pixel:pixels){const auto alpha=pixel>>24;valid=valid&&((pixel>>16)&255)<=alpha&&((pixel>>8)&255)<=alpha&&(pixel&255)<=alpha;if(alpha)++visible;}CHECK(valid);if(time>0)CHECK(visible>50);
+    }
+    render(pixels.data(),1000,1,false,appearance::palette("forest"));CHECK(std::all_of(pixels.begin(),pixels.end(),[](auto pixel){return pixel==0;}));
+}
+TEST_CASE(frontend_preferences_keep_defaults_and_reject_malformed_configuration){
+    ayt::test::ScratchDirectory scratch("frontend-preferences");std::ifstream input(std::filesystem::path(HA_PROJECT_ROOT)/"config/example.json");auto settings=Json::parse(input);const auto file=scratch.path()/"config.json";
+    auto write=[&]{std::ofstream stream(file);stream<<settings.dump();};write();auto normal=loadConfig(file);CHECK(normal.frontend.at("startupAnimation")==true);
+    settings["frontend"]={{"startupAnimation",false},{"reducedMotion",true}};write();auto reduced=loadConfig(file);CHECK(reduced.frontend.at("reducedMotion")==true);
+    for(const auto& invalid:{Json{{"startupAnimation","yes"}},Json{{"transitionMs",999999}},Json(nullptr)}){settings["frontend"]=invalid;write();bool rejected=false;try{loadConfig(file);}catch(...){rejected=true;}CHECK(rejected);}
+}
+TEST_CASE(tool_failure_hints_follow_the_failed_capability){
+    auto memory=toolFailureGuidance("memory.remember","memory_category_requires_experience");CHECK(memory.find("television")==std::string::npos);CHECK(memory.find("推测")!=std::string::npos);
+    auto video=toolFailureGuidance("television.open","video_source_outside_workspace");CHECK(video.find("television.sources")!=std::string::npos);
+    auto food=toolFailureGuidance("habitat.act","world_not_hungry");CHECK(food.find("不必解释内部数值")!=std::string::npos);CHECK(food.find("视频")==std::string::npos);
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

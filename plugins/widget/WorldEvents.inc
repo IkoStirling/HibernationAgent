@@ -1,4 +1,4 @@
-        if(kind=="runtime.attention"&&(e.value("busy",false)||e.value("input_active",false))){cancelWorld("attention_changed");return;}
+        if(kind=="runtime.attention"){if(e.value("busy",false)||e.value("input_active",false)){cancelWorld("attention_changed");if(!dragged_&&(state_=="idle"||state_=="curious")){state_="listening";stateUntil_=clock_+600;}}else if(state_=="listening"){state_="idle";stateUntil_=clock_+2;}return;}
         if(kind=="habitat.navigate"&&e.value("plugin",std::string{})=="habitat"){
             const auto token=e.value("token",std::string{});const double x=e.value("x",-1.0),y=e.value("y",-1.0);
             if(token.empty()||token.size()>96||!std::isfinite(x)||!std::isfinite(y)||x<0||x>1||y<0||y>1)return;

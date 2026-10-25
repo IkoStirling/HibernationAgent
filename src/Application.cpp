@@ -451,7 +451,7 @@ struct Application::Impl {
                     if(failedAttempts.contains(signature)){output=failedAttempts.at(signature);output["deduplicated"]=true;}
                     else if(cap&&mediaAttempts[name]>=cap)output=toolFailure("media_attempt_limit_use_existing_results");
                     else{if(cap)++mediaAttempts[name];try{output=performTool(name,call.at("args"),context,traceId,cancelled);}catch(...){output=toolFailure("tool_execution_failed");}}
-                    if(!output.value("ok",false)&&!output.value("error",Json::object()).value("retryable",false)){output["guidance"]="该操作没有成功，不重复相同参数。依据当前工具清单和回执选择一个有依据的替代方案，视频路径可用 television.sources 核对；同一故障已经说明时只补充新变化或所缺的关键项，不反复宣讲限制，不猜测未支持的协议。";failedAttempts[signature]=output;}
+                    if(!output.value("ok",false)&&!output.value("error",Json::object()).value("retryable",false)){output["guidance"]=toolFailureGuidance(name,output.value("error",Json::object()).value("code",std::string{}));failedAttempts[signature]=output;}
                     auto started=get("ha.calls",key);commit({mutation("ha.calls",key,started,{{"call",call},{"status","completed"},{"output",output}},traceId)},traceId);
                 }
                 // A retried job reuses completed side effects, but reconstructs

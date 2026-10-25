@@ -1,6 +1,21 @@
 #include <Hibernation/Review.h>
 #include <AYSerializer/JsonSchema.h>
 namespace hibernation {
+std::string toolFailureGuidance(std::string_view tool,std::string_view code){
+    const std::string base="本次操作未成功。同一轮不重复相同参数；依据真实回执选择有依据的下一步，只补充新的变化，不反复宣讲限制，不把失败写成完成经历。";
+    if(tool.starts_with("television.")&&(code.find("source")!=std::string_view::npos||code.find("path")!=std::string_view::npos))return base+" 可用 television.sources 核对素材与草稿中的实际视频，网页使用已配置的平台入口；不猜测未支持的播放协议。";
+    if(tool.starts_with("habitat.")){
+        if(code=="world_not_hungry")return "当前并不想吃，可以忽略或选择别的活动，不必解释内部数值，也不反复尝试同一件食物。";
+        if(code=="world_action_busy")return "已经有一个动作在进行。不要叠加相同动作或不断轮询；可以先结束本轮，之后再依据实际结果判断。";
+        return base+" 重新观察实际存在的小物；accepted只是意图，完成另有回执。中断的动作不应在之后补做。";
+    }
+    if(tool.starts_with("memory.")){
+        if(code=="memory_category_requires_experience")return "计划或待完成的回执不足以支持事实类记忆。可以等待真实完成经历；若确有必要保留预期，只能作为有来源的推测，不提升为事实。";
+        return base+" 来源必须在本轮授权范围；可先检索或读取真实记忆，核对来源和版本，不编造编号。";
+    }
+    if(tool.starts_with("computer.")||tool.starts_with("workspace."))return base+" 依据当前允许的程序与工作区范围处理，不猜测路径或声称获得额外权限。";
+    return base;
+}
 Json rolePersona(const Json& persona){
     Json view={{"name",persona.at("displayName")}};
     const auto character=persona.value("character",Json::object());

@@ -8,3 +8,6 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 button:active{transform:translateY(1px)}
 #toast:not([hidden]){animation:notice-arrive .16s ease-out both}
 @media(prefers-reduced-motion:reduce){.page.active,#toast:not([hidden]){animation:none}button,input,select{transition:none}button:active{transform:none}}
+.reduce-motion .page.active,.reduce-motion #toast:not([hidden]){animation:none}
+.reduce-motion button,.reduce-motion input,.reduce-motion select{transition:none}
+.reduce-motion button:active{transform:none}

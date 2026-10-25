@@ -73,10 +73,10 @@ Config loadConfig(const std::filesystem::path& path) {
     const auto text=readFile(path,64*1024);
     if(!ayt::serializer::validateJsonDocument(text,"{}")) throw std::runtime_error("config_json");
     const auto j=Json::parse(text);
-    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer"};
+    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer","frontend"};
     for(auto it=j.begin();it!=j.end();++it) if(!allowed.contains(it.key())) throw std::runtime_error("config_unknown_field");
     if(j.at("schemaVersion")!=1) throw std::runtime_error("config_version");
-    Config c;const auto base=std::filesystem::absolute(path).parent_path();
+    Config c;c.frontend=j.value("frontend",c.frontend);if(!c.frontend.is_object())throw std::runtime_error("frontend_config");for(auto it=c.frontend.begin();it!=c.frontend.end();++it)if((it.key()!="startupAnimation"&&it.key()!="reducedMotion")||!it.value().is_boolean())throw std::runtime_error("frontend_config");const auto base=std::filesystem::absolute(path).parent_path();
     auto integer=[](const Json& object,const char* key,std::int64_t fallback,std::int64_t minimum,std::int64_t maximum){
         auto it=object.find(key);if(it==object.end())return fallback;if(!it->is_number_integer())throw std::runtime_error("config_integer");
         if(it->is_number_unsigned()&&it->get<std::uint64_t>()>static_cast<std::uint64_t>(maximum))throw std::runtime_error("config_range");

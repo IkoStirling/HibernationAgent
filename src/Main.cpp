@@ -1,5 +1,6 @@
 #include <Hibernation/Application.h>
 #include <Hibernation/DesktopHost.h>
+#include <Hibernation/StartupSplash.h>
 #include <AYNetwork/HttpClient.h>
 #include <AYIO/File.h>
 #include <atomic>
@@ -44,6 +45,11 @@ int launch(int argc,char** argv) {
     std::filesystem::path configFile,readyFile;bool desktop=false;
     for(int i=1;i<argc;++i){const std::string option=argv[i];if(option=="--config"&&i+1<argc)configFile=std::filesystem::u8path(argv[++i]);else if(option=="--ready-file"&&i+1<argc)readyFile=std::filesystem::u8path(argv[++i]);else if(option=="--desktop")desktop=true;else {std::cerr<<"usage: hibernation-agent --config <path> --ready-file <path> [--desktop]\n";return 2;}}
     if(configFile.empty()||readyFile.empty())return 2;
+#ifdef _WIN32
+    // Establish one physical coordinate space before plugins create layered
+    // surfaces; DPI virtualization otherwise disagrees with color-key hit tests.
+    if(desktop)SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+#endif
     try {
         std::signal(SIGINT,signalHandler);std::signal(SIGTERM,signalHandler);
         auto cfg=loadConfig(configFile);cfg.desktopEnabled=desktop;std::filesystem::create_directories(cfg.dataRoot/"runtime");
@@ -55,6 +61,7 @@ int launch(int argc,char** argv) {
 #endif
         }
         InstanceLock instance(cfg.dataRoot/"runtime"/"service.lock");if(!instance.valid()){std::cerr<<"archive_already_in_use\n";return 7;}
+        StartupSplash splash(desktop&&cfg.frontend.value("startupAnimation",true),cfg.frontend.value("reducedMotion",false));
         Application app(std::move(cfg));if(!app.initialize()){std::cerr<<"application_initialize_failed\n";return 3;}
         std::mutex mutex;std::deque<std::shared_ptr<Command>> mailbox;std::atomic<bool> accepting=true;
         LocalService service;LocalServiceOptions options;options.credentialEnvironment=app.config().credentialEnvironment;options.port=app.config().port;
@@ -77,7 +84,7 @@ int launch(int argc,char** argv) {
         const auto ready=Json{{"version",1},{"port",service.port()},{"pid",pid},{"application","HibernationAgent"},{"desktop",desktop}}.dump();
         std::filesystem::create_directories(readyFile.parent_path());auto name=readyFile.u8string();
         if(!ayt::io::File::atomicWriteUtf8({reinterpret_cast<const char*>(name.data()),name.size()},ready.data(),ready.size()))return 5;
-        std::cout<<"HibernationAgent ready on loopback port "<<service.port()<<"\n"<<std::flush;
+        splash.ready();std::cout<<"HibernationAgent ready on loopback port "<<service.port()<<"\n"<<std::flush;
         while(!interrupted&&!app.stopping()) {
             if(desktopHost&&!desktopHost->pump())break;
             std::deque<std::shared_ptr<Command>> batch;{std::lock_guard guard(mutex);batch.swap(mailbox);}

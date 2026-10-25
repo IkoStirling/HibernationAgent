@@ -32,6 +32,7 @@ struct Config {
     std::filesystem::path configPath,projectRoot,pluginRoot,draftsRoot,materialsRoot;
     Json computer={{"enabled",true},{"allowScreenCapture",false},{"readRoots",Json::array()}};
     Json plugins=Json::object(),remoteStorage={{"kind","none"},{"url",""},{"enabled",false}};
+    Json frontend={{"startupAnimation",true},{"reducedMotion",false}};
     std::size_t maxToolRounds=6;
     bool reviewEnabled=false;
     std::string reviewProfileId;

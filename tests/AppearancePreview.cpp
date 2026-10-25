@@ -2,11 +2,20 @@
 #include <objidl.h>
 #include <gdiplus.h>
 #include <filesystem>
+#include <Hibernation/SplashPixels.h>
+#include <vector>
 
 int wmain(int argc,wchar_t** argv){
-    if(argc!=2)return 2;
+    if(argc!=2&&argc!=3)return 2;
     Gdiplus::GdiplusStartupInput startup;ULONG_PTR token=0;
     if(Gdiplus::GdiplusStartup(&token,&startup,nullptr)!=Gdiplus::Ok)return 3;
+    if(argc==3){
+        if(std::wstring_view(argv[2])!=L"--splash"){Gdiplus::GdiplusShutdown(token);return 2;}
+        std::vector<std::uint32_t> pixels(hibernation::splashPixels::width*hibernation::splashPixels::height);
+        hibernation::splashPixels::render(pixels.data(),650,0,false,hibernation::appearance::palette("forest"));int result=0;
+        {Gdiplus::Bitmap image(hibernation::splashPixels::width,hibernation::splashPixels::height,hibernation::splashPixels::width*4,PixelFormat32bppPARGB,reinterpret_cast<BYTE*>(pixels.data()));const CLSID png={0x557cf406,0x1a04,0x11d3,{0x9a,0x73,0x00,0x00,0xf8,0x1e,0xf3,0x2e}};if(image.Save(argv[1],&png,nullptr)!=Gdiplus::Ok)result=4;}
+        Gdiplus::GdiplusShutdown(token);return result;
+    }
     constexpr int width=1400,height=510;
     auto screen=GetDC(nullptr),dc=CreateCompatibleDC(screen);auto bitmap=CreateCompatibleBitmap(screen,width,height);auto old=SelectObject(dc,bitmap);
     auto paper=CreateSolidBrush(RGB(247,248,243));RECT all{0,0,width,height};FillRect(dc,&all,paper);DeleteObject(paper);

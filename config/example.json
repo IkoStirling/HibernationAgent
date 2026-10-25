@@ -1,5 +1,9 @@
 {
   "schemaVersion": 1,
+  "frontend": {
+    "startupAnimation": true,
+    "reducedMotion": false
+  },
   "dataRoot": "../data",
   "characterRoot": "../character",
   "uiRoot": "../ui",
