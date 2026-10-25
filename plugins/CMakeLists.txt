@@ -24,4 +24,4 @@ add_custom_command(TARGET Hibernation_Speech POST_BUILD
     "${CMAKE_CURRENT_SOURCE_DIR}/tts/kana_reading.py"
     "$<TARGET_FILE_DIR:Hibernation_Speech>" COMMAND_EXPAND_LISTS)
 ha_role_plugin(television Hibernation_Television television/Television.cpp)
-target_link_libraries(Hibernation_Television PRIVATE AYVideoPlayback user32 gdi32 ole32 windowscodecs crypt32 winmm)
+target_link_libraries(Hibernation_Television PRIVATE AYVideoPlayback user32 gdi32 ole32 windowscodecs crypt32 winmm comctl32)

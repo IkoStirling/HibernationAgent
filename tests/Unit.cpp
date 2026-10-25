@@ -12,6 +12,7 @@
 #include <Hibernation/SplashPixels.h>
 #include <Hibernation/DeskObjectAppearance.h>
 #include <Hibernation/QuietRhythm.h>
+#include <Hibernation/TelevisionLayout.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -250,6 +251,9 @@ TEST_CASE(quiet_rest_requires_a_real_pose_and_preserves_pause_and_attention_boun
 TEST_CASE(quiet_rest_restart_records_only_actual_elapsed_time_and_never_replays_an_intent){
     QuietRhythm rhythm;CHECK(rhythm.request("rest-3",60,4,"automatic").empty());rhythm.tick(.25,true,false,false,true,"idle",4);CHECK(rhythm.acknowledged("rest-3"));for(int i=0;i<20;++i)rhythm.tick(.25,true,false,false,true,"resting",4);const auto saved=rhythm.snapshot();QuietRhythm restored;CHECK(restored.restore(saved));CHECK(restored.phase()=="idle");int interruptions=0;for(const auto& event:restored.takeEvents())if(event.at("kind")=="rhythm.rest_interrupted"){++interruptions;CHECK(event.at("elapsed_seconds")==5);CHECK(event.at("reason")=="application_restarted");}CHECK(interruptions==1);restored.tick(86400,true,false,false,true,"idle",5);CHECK(restored.phase()=="idle");CHECK(restored.clock()-rhythm.clock()<=.251);
     CHECK(QuietRhythm::mayRest(23,.8,"idle"));CHECK(!QuietRhythm::mayRest(12,.8,"idle"));CHECK(QuietRhythm::mayRest(12,.2,"idle"));CHECK(!QuietRhythm::mayRest(23,.2,"watching"));CHECK(!QuietRhythm::restfulHour(-1)&&!QuietRhythm::restfulHour(24));
+}
+TEST_CASE(television_layout_keeps_the_real_media_view_inside_its_frame){
+    for(const int width:{320,480,900,1280})for(const int height:{220,320,500,900})for(const bool framed:{false,true}){const auto layout=televisionLayout(width,height,framed);CHECK(layout.screen.width()>0&&layout.screen.height()>0);CHECK(layout.screen.left>=0&&layout.screen.top>=0&&layout.screen.right<=width&&layout.screen.bottom<=height);CHECK(layout.footer.top>=layout.screen.bottom);if(framed){CHECK(layout.play.left>layout.screen.right);CHECK(layout.power.right<=width&&layout.stop.bottom<height);}}
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

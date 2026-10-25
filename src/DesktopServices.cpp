@@ -32,7 +32,10 @@ struct DesktopServices::Impl {
         if(op=="resize"){if(view)view->bounds(a.at("width"),a.at("height"));return toolSuccess();}
         if(op=="visible"){if(view)view->visible(a.at("visible"));return toolSuccess();}
         if(op=="open"){
-            const auto handle=a.at("parent").get<std::uintptr_t>();DWORD pid=0;GetWindowThreadProcessId(reinterpret_cast<HWND>(handle),&pid);wchar_t type[128]{};GetClassNameW(reinterpret_cast<HWND>(handle),type,128);if(pid!=GetCurrentProcessId()||std::wstring(type)!=L"HibernationFloatingTelevision")return toolFailure("browser_parent_denied");
+            const auto handle=a.at("parent").get<std::uintptr_t>();const auto window=reinterpret_cast<HWND>(handle);DWORD pid=0;GetWindowThreadProcessId(window,&pid);wchar_t type[128]{};GetClassNameW(window,type,128);
+            bool allowedParent=std::wstring(type)==L"HibernationFloatingTelevision";
+            if(std::wstring(type)==L"HibernationTelevisionSurface"){const auto parentWindow=GetParent(window);DWORD ownerPid=0;GetWindowThreadProcessId(parentWindow,&ownerPid);wchar_t ownerType[128]{};GetClassNameW(parentWindow,ownerType,128);allowedParent=ownerPid==GetCurrentProcessId()&&std::wstring(ownerType)==L"HibernationFloatingTelevision";}
+            if(pid!=GetCurrentProcessId()||!allowedParent)return toolFailure("browser_parent_denied");
             const auto hosts=a.at("hosts").get<std::vector<std::string>>();const auto key=std::to_string(handle)+a.at("platform").get<std::string>()+a.at("hosts").dump();
             const auto platform=a.at("platform").get<std::string>();if(platform.empty()||platform.size()>40||platform.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-_")!=std::string::npos||hosts.empty()||hosts.size()>16)return toolFailure("platform_configuration");
             auto allows=[hosts](const std::string& url){const auto host=hostOf(url);if(host.empty())return false;for(const auto& allowed:hosts)if(host==allowed||(host.size()>allowed.size()&&host.ends_with("."+allowed)))return true;return false;};
@@ -53,10 +56,10 @@ struct DesktopServices::Impl {
             });return Json{{"pending",true}};
         }
         if(op=="control"){
-            const auto action=a.at("action").get<std::string>();if(action!="play"&&action!="pause"&&action!="seek"&&action!="stop")return toolFailure("webpage_control_unavailable");
+            const auto action=a.at("action").get<std::string>();if(action!="play"&&action!="pause"&&action!="seek"&&action!="stop"&&action!="toggle")return toolFailure("webpage_control_unavailable");
             const auto seconds=a.value("seconds",0.0);if(!std::isfinite(seconds)||seconds<0||seconds>86400)return toolFailure("invalid_video_position");
             auto code="(()=>{const v=document.querySelector('video');if(!v)return {accepted:false,reason:'no_accessible_video'};";
-            std::string script=code;if(action=="play")script+="v.play().catch(()=>{});";else if(action=="seek")script+="v.currentTime="+std::to_string(seconds)+";";else script+="v.pause();";if(action=="stop")script+="v.currentTime=0;";script+="return {requested:true,paused:v.paused,current_time:v.currentTime};})()";
+            std::string script=code;if(action=="play")script+="v.play().catch(()=>{});";else if(action=="toggle")script+="if(v.paused)v.play().catch(()=>{});else v.pause();";else if(action=="seek")script+="v.currentTime="+std::to_string(seconds)+";";else script+="v.pause();";if(action=="stop")script+="v.currentTime=0;";script+="return {requested:true,paused:v.paused,current_time:v.currentTime};})()";
             view->script(script,[command](bool ok,std::string text){auto result=Json::parse(text,nullptr,false);command->complete(ok&&result.is_object()?toolSuccess(result):toolFailure("webpage_control_failed"));});return Json{{"pending",true}};
         }
 #endif

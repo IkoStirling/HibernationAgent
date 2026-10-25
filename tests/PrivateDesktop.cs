@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 // Own-process test fixture only. It creates an inactive desktop and never
 // calls SwitchDesktop or changes the user's active desktop / window focus.
@@ -23,10 +24,39 @@ public sealed class PrivateDesktop : IDisposable {
     [DllImport("user32.dll")]static extern bool EnumDesktopWindows(IntPtr desktop,WindowCallback callback,IntPtr context);
     [DllImport("user32.dll")]static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern int GetClassName(IntPtr window,StringBuilder name,int capacity);
+    [DllImport("user32.dll")]static extern bool SetThreadDesktop(IntPtr desktop);
+    [DllImport("user32.dll")]static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")]static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
+    [StructLayout(LayoutKind.Sequential)]struct ClientRect{public int left,top,right,bottom;}
+    [StructLayout(LayoutKind.Sequential)]struct BitmapInfo{public uint size;public int width,height;public ushort planes,bits;public uint compression,imageSize;public int xResolution,yResolution;public uint used,important;}
+    [DllImport("user32.dll")]static extern bool GetClientRect(IntPtr window,out ClientRect rect);
+    [DllImport("user32.dll")]static extern bool PrintWindow(IntPtr window,IntPtr dc,uint flags);
+    [DllImport("gdi32.dll")]static extern IntPtr CreateCompatibleDC(IntPtr dc);
+    [DllImport("gdi32.dll")]static extern IntPtr CreateDIBSection(IntPtr dc,ref BitmapInfo info,uint usage,out IntPtr pixels,IntPtr section,uint offset);
+    [DllImport("gdi32.dll")]static extern IntPtr SelectObject(IntPtr dc,IntPtr value);
+    [DllImport("gdi32.dll")]static extern bool DeleteObject(IntPtr value);
+    [DllImport("gdi32.dll")]static extern bool DeleteDC(IntPtr dc);
     [DllImport("kernel32.dll")]public static extern uint SetThreadExecutionState(uint flags);
     IntPtr desktop;
     public Process Child {get;private set;}
     public string Name {get;private set;}
+    public sealed class CapturedClient {public int Width,Height;public byte[] Bgra;}
+    // A DC must belong to the inactive fixture desktop, not the user's visible
+    // desktop. Use a fresh windowless thread and only the fixture's own HWND.
+    public CapturedClient CaptureClient(IntPtr window){
+        uint pid;GetWindowThreadProcessId(window,out pid);if(pid!=Child.Id)throw new ArgumentException("capture_requires_own_fixture_window");
+        CapturedClient result=null;Exception failure=null;
+        var thread=new Thread(()=>{IntPtr dc=IntPtr.Zero,bitmap=IntPtr.Zero,old=IntPtr.Zero;try{
+            if(!SetThreadDesktop(desktop))throw new Win32Exception(Marshal.GetLastWin32Error(),"capture_desktop_failed");
+            SetThreadDpiAwarenessContext(GetWindowDpiAwarenessContext(window));
+            ClientRect rect;if(!GetClientRect(window,out rect)||rect.right<=0||rect.bottom<=0||rect.right>4096||rect.bottom>2160)throw new Exception("capture_client_bounds");
+            var info=new BitmapInfo{size=(uint)Marshal.SizeOf<BitmapInfo>(),width=rect.right,height=-rect.bottom,planes=1,bits=32};
+            dc=CreateCompatibleDC(IntPtr.Zero);IntPtr pixels;bitmap=CreateDIBSection(dc,ref info,0,out pixels,IntPtr.Zero,0);if(dc==IntPtr.Zero||bitmap==IntPtr.Zero||pixels==IntPtr.Zero)throw new Exception("capture_bitmap_failed");old=SelectObject(dc,bitmap);
+            if(!PrintWindow(window,dc,1))throw new Exception("capture_print_failed");
+            var data=new byte[rect.right*rect.bottom*4];Marshal.Copy(pixels,data,0,data.Length);result=new CapturedClient{Width=rect.right,Height=rect.bottom,Bgra=data};
+        }catch(Exception e){failure=e;}finally{if(old!=IntPtr.Zero)SelectObject(dc,old);if(bitmap!=IntPtr.Zero)DeleteObject(bitmap);if(dc!=IntPtr.Zero)DeleteDC(dc);}});
+        thread.Start();thread.Join();if(failure!=null)throw failure;return result;
+    }
     public IntPtr Find(string className){IntPtr found=IntPtr.Zero;EnumDesktopWindows(desktop,(window,context)=>{uint pid;GetWindowThreadProcessId(window,out pid);if(pid==Child.Id){var name=new StringBuilder(128);GetClassName(window,name,128);if(name.ToString()==className){found=window;return false;}}return true;},IntPtr.Zero);return found;}
     public PrivateDesktop(string executable,string config,string ready,string directory){
         foreach(string value in new[]{executable,config,ready,directory})if(value.IndexOfAny(new[]{'"','\0','\r','\n'})>=0)throw new ArgumentException("invalid_fixture_path");
