@@ -59,13 +59,20 @@ try{
  $null=Message '视觉输入验证';$capture=Capture;Check ($capture.messages[-1].content[1].image_url.url.StartsWith('data:image/jpeg;base64,')) 'real frame attached using multimodal provider shape'
  $null=Plugin 'television.control' @{action='pause'}
  $speech=Plugin 'speech.speak' @{text='语音时长验证';max_seconds=1};Check ($speech.ok-and$speech.result.started) 'HTTP WAV begins actual local playback';Start-Sleep -Milliseconds 1300;$spoken=Plugin 'speech.status';Check (!$spoken.result.active-and$spoken.result.last_duration_seconds-le1.3-and$spoken.result.last_duration_seconds-ge0.7) 'playback enforces one second duration limit'
+ $voiceSettings=(Call '/api/dashboard').settings|ConvertTo-Json -Depth 40|ConvertFrom-Json -AsHashtable;$voiceSettings.plugins.tts.autoSpeak=$true;$voiceSettings.plugins.tts.maxSeconds=5;$voiceSettings.plugins.tts.volume=0;$null=Call '/api/settings' @{settings=$voiceSettings};$beforeVoice=(Plugin 'speech.status').result.started_count
+ Plan @((Reply '自动朗读第一句。'));$null=Message '自动朗读用户偏好验证';Wait-For { (Plugin 'speech.status').result.started_count-gt$beforeVoice } 'automatic speech starts despite model speech false'
+ Plan @((Reply '自动朗读第二句。'));$null=Message '后续朗读排队验证';$voice=(Plugin 'speech.status').result;Check ($voice.started_count-eq$beforeVoice+1-and$voice.queued-ge1) 'new reply queues without interrupting current whole utterance'
+ Wait-For { $v=(Plugin 'speech.status').result;return $v.started_count-ge$beforeVoice+2-and$v.completed_count-ge$beforeVoice+2 } 'both automatic utterances complete';$voice=(Plugin 'speech.status').result;Check ($voice.last_duration_seconds-ge2.7) 'full WAV stays continuous across reply display pages'
+ $voiceSettings.plugins.tts.autoSpeak=$false;$voiceSettings.plugins.tts.maxSeconds=1;$null=Call '/api/settings' @{settings=$voiceSettings}
+ $voiceSettings.plugins.tts.path='/missing-voice';$null=Call '/api/settings' @{settings=$voiceSettings};$badSpeech=Plugin 'speech.speak' @{text='失败提示验证'};Check (!$badSpeech.ok) 'broken speech service reports failure';Wait-For { (Call '/api/chat').speech_error.Length-gt0 } 'speech failure visible in chat status'
+ $voiceSettings.plugins.tts.path='/v1/audio/speech';$null=Call '/api/settings' @{settings=$voiceSettings};$null=Plugin 'speech.speak' @{text='恢复验证';max_seconds=1};Wait-For { (Call '/api/chat').speech_error-eq'' } 'successful playback clears speech failure';Start-Sleep -Milliseconds 1100
  $widget=Plugin 'widget.status';Check (!$widget.result.desktop) 'headless integration creates no desktop overlay';$widget=Plugin 'widget.move' @{x=0.5;y=0.5};Check (!$widget.ok-and$widget.error.code-eq'desktop_required') 'desktop-only action reports explicit unavailable result'
  $settings=(Call '/api/dashboard').settings;$bad=$settings|ConvertTo-Json -Depth 40|ConvertFrom-Json -AsHashtable;$bad.plugins.tts.rate=999;Rejected '/api/settings' @{settings=$bad} 400;Check ((Call '/api/dashboard').plugins.Where({$_.enabled}).Count-eq4) 'rejected plugin reconfiguration preserves all enabled plugins'
  $bad=$settings|ConvertTo-Json -Depth 40|ConvertFrom-Json -AsHashtable;$bad.draftsRoot=Join-Path $config.dataRoot 'archive';Rejected '/api/settings' @{settings=$bad} 400
- Plan @(@{version=1;kind='silence';text=$null;calls=@()})
+ $beforeMovie=(Call '/api/chat').messages.Count;Plan @(@{version=1;kind='silence';text=$null;calls=@()})
  $null=Plugin 'television.control' @{action='seek';seconds=7.7};$null=Plugin 'television.control' @{action='play'}
  Wait-For {try{$r=Capture;$data=$r.messages[-1].content|ConvertFrom-Json -Depth 40;return $data.event_kind-eq'outer_event'-and$data.input.Contains('television.ended')}catch{return $false}} 'movie completion reaches role event loop' 15
- Idle;Check ((Call '/api/chat').messages[-1].text-eq'只分析实际提供的画面。') 'movie completion may remain silent without an extra chat bubble'
+ Idle;Check ((Call '/api/chat').messages.Count-eq$beforeMovie) 'movie completion may remain silent without an extra chat bubble'
  $null=Plugin 'television.control' @{action='stop'}
  Plan @(@{visible_reply='只分析实际提供的画面。';actions=@();memories=@();state_update=@{open_questions=@('检查后台重试的连续性')};stage_proposal=$null});$null=Message '留一个待审的问题'
  $beforeRetry=(Call '/api/chat').messages.Count

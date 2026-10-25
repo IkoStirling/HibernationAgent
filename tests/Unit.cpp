@@ -4,6 +4,7 @@
 #include <Hibernation/Vault.h>
 #include <Hibernation/PluginRuntime.h>
 #include <Hibernation/Review.h>
+#include <Hibernation/TextPlayback.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -12,6 +13,11 @@ Json valid(){return {{"visible_reply","允许没有固定结论。"},{"actions",
 ProposalContext context(){ProposalContext c;c.eventKind="user_message";c.eventId="e1";c.stage="initial";c.nextStage="exploring";c.sources={{"e1",{"e1",1,"user_message"}},{"e2",{"e2",1,"story_end"}}};return c;}
 }
 TEST_SUITE(RolePolicy)
+TEST_CASE(paged_text_preserves_every_character_and_prefers_sentence_endings){
+    const std::string text="第一句话。第二句话很长，需要在逗号后继续展示，没有删掉内容。最后一句！";const auto pages=textPages(text,12);std::string joined;for(const auto& page:pages){CHECK(textOffsets(page).size()-1<=12);joined+=page;}CHECK(joined==text);CHECK(pages.front()=="第一句话。");
+    const std::string unicode="你🙂好🌙，这是连续的对白，没有句号也不会丢字";joined.clear();for(const auto& page:textPages(unicode,5)){CHECK(ayt::serializer::validateJsonDocument(Json(page).dump(),"true"));joined+=page;}CHECK(joined==unicode);
+    TextPlayback playback;playback.reset("你好世界。下一句。",5,10,0.2);CHECK(playback.visibleText().empty());CHECK(playback.tick(0.1));CHECK(playback.visibleText()=="你");playback.tick(0.4);CHECK(playback.visibleText()=="你好世界。");CHECK(playback.pageIndex()==0);playback.tick(0.1);CHECK(playback.pageIndex()==0);playback.tick(0.1);CHECK(playback.pageIndex()==1);for(int i=0;i<20&&!playback.finished();++i)playback.tick(0.1);CHECK(playback.finished());CHECK(playback.visibleText()=="下一句。");
+}
 TEST_CASE(role_projection_excludes_admin_notes_and_review_is_closed){
     auto persona=Json::parse(readFile(std::filesystem::path(HA_PROJECT_ROOT)/"character/persona.json"));auto view=rolePersona(persona);CHECK(view.contains("identity"));CHECK(!view.contains("notice"));CHECK(!view.contains("reference"));CHECK(view.dump().find("实验代称")==std::string::npos);
     CHECK(isLegacyMetaReply({{"kind","assistant_message"},{"text","小爱是实验代称"}}));CHECK(!isLegacyMetaReply({{"kind","user_message"},{"text","实验代称是什么？"}}));CHECK(!isLegacyMetaReply({{"kind","assistant_message"},{"text","我们可以谈谈故事设定。"}}));
@@ -96,6 +102,12 @@ TEST_CASE(configuration_keeps_secrets_out_of_plaintext_and_rejects_system_enviro
     value=base;value["profiles"][0]["credentialEnvironment"]="hibernation_session_key";CHECK(rejects(value));value=base;value["profiles"][0]["id"]="plugin-tts";CHECK(rejects(value));value=base;value["profiles"][0]["proxyOrigin"]="http://user:password@proxy";CHECK(rejects(value));
 }
 #ifdef HA_TEST_PLUGIN_ROOT
+TEST_CASE(widget_reveals_and_pages_without_truncating_or_following_model_display_flags){
+    ayt::test::ScratchDirectory scratch("role-widget-playback");PluginRuntime plugins(std::filesystem::path(HA_TEST_PLUGIN_ROOT),{scratch.path(),std::filesystem::path(HA_PROJECT_ROOT),false,{}});std::string issue;
+    CHECK(plugins.configure({{"widget",{{"enabled",true},{"roam",false},{"bubbleMaxCharacters",20},{"charactersPerSecond",40},{"pageHoldSeconds",0.2}}}},issue));
+    plugins.event({{"kind","assistant.reply"},{"reply_id","fixture"},{"text","这是第一句话。然后还有很长的一句话，需要继续显示到下一个页面，最后也不会丢掉。"},{"presentation",{{"bubble",false}}}});
+    auto result=plugins.invoke("widget.status",Json::object(),{}).at("result");CHECK(result.at("bubble_pages").get<int>()>1);CHECK(result.at("bubble_visible_characters")==0);plugins.tick(0.1);result=plugins.invoke("widget.status",Json::object(),{}).at("result");CHECK(result.at("bubble_visible_characters")==4);for(int i=0;i<15;++i)plugins.tick(0.1);result=plugins.invoke("widget.status",Json::object(),{}).at("result");CHECK(result.at("bubble_page").get<int>()>0);CHECK(result.dump().find("第一句话")==std::string::npos);
+}
 TEST_CASE(plugin_configuration_stages_and_rolls_back_without_replacing_the_core){
     ayt::test::ScratchDirectory scratch("role-plugin-lifecycle");PluginRuntime plugins(std::filesystem::path(HA_TEST_PLUGIN_ROOT),{scratch.path(),std::filesystem::path(HA_PROJECT_ROOT),false,{}});std::string issue;
     CHECK(plugins.configure(Json::object(),issue));CHECK(plugins.catalog().empty());

@@ -83,7 +83,7 @@ struct Application::Impl {
     std::atomic<std::int64_t> nextWorkerPoll=0;
     bool runtimePaused=false;
     std::string health="ok";
-    std::string pluginIssue;
+    std::string pluginIssue,speechIssue;
     std::int64_t nextActionAt=0,nextPluginWake=0;
     explicit Impl(Config c):cfg(std::move(c)){}
     Doc get(const std::string& scope,const std::string& key,Json fallback=Json::object()) const {
@@ -579,7 +579,7 @@ struct Application::Impl {
             if(result.contains("reply_id")&&plugins){auto shown=get("ha.presentation",job.spec.id);if(shown.value.value("token",std::int64_t(0))!=job.runToken){
                 const auto answer=get(archiveScope,result.at("reply_id").get<std::string>());
                 commit({mutation("ha.presentation",job.spec.id,shown,{{"token",job.runToken}})},key);
-                plugins->event({{"kind","assistant.reply"},{"text",answer.value.at("text")},{"presentation",answer.value.value("presentation",Json::object())}});
+                plugins->event({{"kind","assistant.reply"},{"reply_id",result.at("reply_id")},{"text",answer.value.at("text")},{"presentation",answer.value.value("presentation",Json::object())}});
             }}
             projected.insert(key);
         }
@@ -634,7 +634,7 @@ struct Application::Impl {
                 if(info.is_object()&&info.contains("call_error"))failure=info.at("call_error");
                 else {auto trace=info.is_object()?info.value("trace",Json::object()):Json::object();if(info.is_object()&&info.contains("trace_id"))trace=get("ha.trace",info.at("trace_id")).value;if(!trace.is_object())trace=Json::object();failure=callFailure(trace.value("provider_status",-1),trace.value("http_status",0));}
             }
-            return reply(200,{{"messages",messages},{"busy",busy()},{"paused",get("ha.control","current").value.at("paused")},{"health",health},{"call_failed",failed},{"call_error",failure},{"mock",profile(get("ha.settings","model").value.at("id")).model.protocol==ayt::inference::Protocol::Mock}});
+            return reply(200,{{"messages",messages},{"busy",busy()},{"paused",get("ha.control","current").value.at("paused")},{"health",health},{"call_failed",failed},{"call_error",failure},{"speech_error",speechIssue},{"mock",profile(get("ha.settings","model").value.at("id")).model.protocol==ayt::inference::Protocol::Mock}});
         }
         Json body=Json::object();
         if(req.method=="POST"){if(req.body.size()>64*1024||!ayt::serializer::validateJsonDocument(req.body,"{\"type\":\"object\"}"))return error(400,"request_json");body=Json::parse(req.body);}
@@ -822,6 +822,8 @@ void Application::tick() {
     try {
         const auto now=serviceNowMs();const bool paused=a.runtimePaused;a.life.tick(now,!paused);
         if(a.plugins){a.plugins->tick(std::clamp((now-a.lastTickMs)/1000.0,0.0,0.25));for(auto event:a.plugins->takeEvents()){
+            if(event.value("kind","")=="speech.failed")a.speechIssue="语音未能播放，请在管理页检查声音设置。";
+            if(event.value("kind","")=="speech.started")a.speechIssue.clear();
             if(event.value("kind","")=="weather.observed")a.life.weather(event.at("temperature"),event.at("weather_code"),event.value("observed_ms",now));
             a.plugins->event(event);
             a.recordPluginEvent(std::move(event),now);

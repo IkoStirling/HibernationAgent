@@ -56,11 +56,12 @@
       "topmost": true
     },
     "tts": {
-      "maxSeconds": 18,
+      "maxSeconds": 60,
       "rate": 5,
       "enabled": false,
       "autoSpeak": true,
-      "backend": "system"
+      "backend": "system",
+      "respectModelSpeech": false
     },
     "weather": {
       "enabled": false,
@@ -71,7 +72,11 @@
       "enabled": false,
       "size": 112,
       "roam": true,
-      "showBubble": true
+      "showBubble": true,
+      "bubbleMaxCharacters": 72,
+      "charactersPerSecond": 24,
+      "pageHoldSeconds": 1.2,
+      "respectModelBubble": false
     }
   },
   "remoteStorage": {
