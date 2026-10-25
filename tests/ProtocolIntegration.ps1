@@ -63,6 +63,14 @@ try{
  $null=Plugin 'television.control' @{action='pause'}
  $speech=Plugin 'speech.speak' @{text='语音时长验证';max_seconds=1};Check ($speech.ok-and$speech.result.started) 'HTTP WAV begins actual local playback';Start-Sleep -Milliseconds 1300;$spoken=Plugin 'speech.status';Check (!$spoken.result.active-and$spoken.result.last_duration_seconds-le1.3-and$spoken.result.last_duration_seconds-ge0.7) 'playback enforces one second duration limit'
  $voiceSettings=(Call '/api/dashboard').settings|ConvertTo-Json -Depth 40|ConvertFrom-Json -AsHashtable;$voiceSettings.plugins.tts.autoSpeak=$true;$voiceSettings.plugins.tts.maxSeconds=5;$voiceSettings.plugins.tts.volume=0;$null=Call '/api/settings' @{settings=$voiceSettings};$beforeVoice=(Plugin 'speech.status').result.started_count
+ # A model used to call speech.speak during inference, then the final reply was
+ # spoken again. The first utterance had no reply_id and could not drive text.
+ Plan @((Calls @((Tool 'early-speech' 'speech.speak' @{text='不应提前播放的草稿。'}),(Tool 'early-stop' 'speech.stop' @{}),(Tool 'early-bubble' 'widget.say' @{text='不应提前显示的草稿。'}))),(Reply '这一句只应该朗读一次。'));$null=Message '模型发声入口互斥验证';$managed=Feedback
+ Check (@($managed|Where-Object {$_.error.code-eq'reply_presentation_managed'}).Count-eq3) 'model presentation tools cannot speak interrupt or reveal before the final reply'
+ Wait-For {$v=(Plugin 'speech.status').result;return $v.completed_count-ge$beforeVoice+1} 'single managed reply finishes'
+ $afterManaged=(Plugin 'speech.status').result;Check ($afterManaged.started_count-eq$beforeVoice+1-and$afterManaged.completed_count-eq$beforeVoice+1) 'tool attempts plus final reply produce exactly one utterance'
+ $modelInput=(Capture).messages[0].content;Check (!$modelInput.Contains('"name":"speech.speak"')-and!$modelInput.Contains('"name":"speech.stop"')-and!$modelInput.Contains('"name":"widget.say"')) 'direct presentation controls are absent from the model tool catalog'
+ $beforeVoice=$afterManaged.started_count
  Plan @((Reply '自动朗读第一句。'));$null=Message '自动朗读用户偏好验证';Wait-For { (Plugin 'speech.status').result.started_count-gt$beforeVoice } 'automatic speech starts despite model speech false'
  Plan @((Reply '自动朗读第二句。'));$null=Message '后续朗读排队验证';$voice=(Plugin 'speech.status').result;Check ($voice.started_count-eq$beforeVoice+1-and$voice.queued-ge1) 'new reply queues without interrupting current whole utterance'
  Wait-For { $v=(Plugin 'speech.status').result;return $v.started_count-ge$beforeVoice+2-and$v.completed_count-ge$beforeVoice+2 } 'both automatic utterances complete';$voice=(Plugin 'speech.status').result;Check ($voice.last_duration_seconds-ge2.7) 'full WAV stays continuous across reply display pages'
