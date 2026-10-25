@@ -42,6 +42,12 @@ runtime.paused 事件用于停止朗读、暂停电视/角色游走及天气刷�
 历史语音或电影。当前四个插件可作为实现参考。桌面角色的 showInTaskSwitcher 为
 可选可访问性设置，默认不加入任务切换列表。
 
+widget.skin 支持 dinosaur / moonbird / lumen，widget.palette 支持 forest / mist / amber；
+由用户配置，不改变角色人格。reducedMotion 或 Windows 关闭客户端区域动画时停用
+呼吸、步态和拉伸。朗读嘴部由实际 speech.progress 的字符推进驱动，拖拽释放经过
+landing 再回到 curious；失去鼠标捕获会恢复，不遗留 dragged 状态。暂停冻结动画
+时钟，恢复不补播暂停期间的帧。全部图形为本项目的代码像素素材。
+
 电视本地入口会解析到素材根或草稿根内，并限制文件协议和普通容器格式；网络入口仅允许
 HTTP(S)及必要的内部传输协议，不允许播放列表转开本地 file/pipe/concat 路径。
 这层限制由引擎 DemuxerOpenParams 的正向列表提供机制，具体范围由插件选择。

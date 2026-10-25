@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <cstdlib>
 #ifdef HA_TEST_MEDIA
 #include "FFmpegTestMedia.h"
 #endif
@@ -18,7 +19,7 @@ void substitute(Json& value,const Json& variables){if(value.is_string()){auto te
 std::string tone(){const int samples=16000*3;std::string bytes(44+samples*2,'\0');auto u16=[&](size_t at,uint16_t x){std::memcpy(bytes.data()+at,&x,2);};auto u32=[&](size_t at,uint32_t x){std::memcpy(bytes.data()+at,&x,4);};std::memcpy(bytes.data(),"RIFF",4);u32(4,static_cast<uint32_t>(bytes.size()-8));std::memcpy(bytes.data()+8,"WAVEfmt ",8);u32(16,16);u16(20,1);u16(22,1);u32(24,16000);u32(28,32000);u16(32,2);u16(34,16);std::memcpy(bytes.data()+36,"data",4);u32(40,samples*2);for(int n=0;n<samples;++n)u16(44+n*2,static_cast<int16_t>(std::sin(n*440.0*6.283185307/16000)*1500));return bytes;}
 }
 int main(int argc,char** argv){
-    if(argc!=2)return 2;const auto root=std::filesystem::u8path(argv[1]);std::filesystem::create_directories(root);httplib::Server server;server.new_task_queue=[]{return new httplib::ThreadPool(4);};server.set_payload_max_length(2*1024*1024);std::atomic<int> calls=0,audioCalls=0;std::mutex mutex;std::string lastPlan,reviewPlan;size_t planAt=0,reviewAt=0;
+    if(argc!=2&&argc!=3)return 2;const int lifetime=argc==3?std::atoi(argv[2]):7200;if(lifetime<60||lifetime>43200)return 2;const auto root=std::filesystem::u8path(argv[1]);std::filesystem::create_directories(root);httplib::Server server;server.new_task_queue=[]{return new httplib::ThreadPool(4);};server.set_payload_max_length(2*1024*1024);std::atomic<int> calls=0,audioCalls=0;std::mutex mutex;std::string lastPlan,reviewPlan;size_t planAt=0,reviewAt=0;
 #ifdef HA_TEST_MEDIA
     std::string issue;if(!ayt::testmedia::generateClip((root/"clip.mp4").string(),true,200,64,48,25,issue))return 5;
 #endif
@@ -46,5 +47,5 @@ int main(int argc,char** argv){
     server.Get("/fixture/video/watch",[](const auto&,auto& response){response.set_content("<html><meta charset='utf-8'><title>选择后的影片页面</title><body style='background:#dfead8'>这是实际选择的影片页面。</body></html>","text/html; charset=utf-8");});
     server.Get("/fixture/tone.wav",[](const auto&,auto& response){response.set_content(tone(),"audio/wav");});
     const auto port=server.bind_to_any_port("127.0.0.1");if(port<=0)return 3;std::ofstream(root/"port")<<port;
-    std::jthread host([&]{server.listen_after_bind();});std::this_thread::sleep_for(std::chrono::seconds(7200));server.stop();host.join();return 0;
+    std::jthread host([&]{server.listen_after_bind();});std::this_thread::sleep_for(std::chrono::seconds(lifetime));server.stop();host.join();return 0;
 }

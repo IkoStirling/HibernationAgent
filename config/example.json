@@ -70,6 +70,9 @@
     },
     "widget": {
       "enabled": false,
+      "skin": "dinosaur",
+      "palette": "forest",
+      "reducedMotion": false,
       "size": 112,
       "roam": true,
       "showBubble": true,

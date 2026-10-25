@@ -7,6 +7,7 @@
 #include <Hibernation/TextPlayback.h>
 #include <Hibernation/MemoryContext.h>
 #include <Hibernation/ReactionCache.h>
+#include <Hibernation/WidgetAppearance.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -163,6 +164,9 @@ TEST_CASE(plugin_settings_reject_wrong_types_before_background_threads_use_them)
         {{"tts",{{"enabled",true},{"backend","http"},{"origin","http://127.0.0.1:9"},{"model",42}}}},
         {{"television",{{"enabled",true},{"useSystemProxy","yes"}}}},
         {{"widget",{{"enabled",true},{"showBubble","yes"}}}},
+        {{"widget",{{"enabled",true},{"skin","../external"}}}},
+        {{"widget",{{"enabled",true},{"reactionProbability",1.1}}}},
+        {{"widget",{{"enabled",true},{"reducedMotion","yes"}}}},
         {{"tts",{{"enabled",true},{"backend","http"},{"origin","http://127.0.0.1:9"},{"proxyOrigin","http://user:password@127.0.0.1:9"}}}}
     };
     for(const auto& settings:invalid){CHECK(!plugins.configure(settings,issue));CHECK(plugins.catalog().empty());}
@@ -175,6 +179,17 @@ TEST_CASE(memory_content_grouping_keeps_categories_and_authentic_source_versions
 TEST_CASE(reaction_cache_validates_candidates_and_consumes_each_ready_entry_once){
     auto value=Json{{"version",1},{"reactions",Json::array({{{"text","先停在这里。"},{"animation","idle"}}})}};CHECK(validateReactions(value.dump()).ok);value["reactions"].push_back(value["reactions"][0]);CHECK(!validateReactions(value.dump()).ok);value["reactions"].erase(1);value["reactions"][0]["shell"]="not permitted";CHECK(!validateReactions(value.dump()).ok);
     Json pool={{"entries",Json::array({{{"id","expired"},{"text","过期"},{"expires",100},{"ready",true}},{{"id","pending"},{"text","未准备"},{"expires",999},{"ready",false}},{{"id","one"},{"text","先停在这里。"},{"expires",999},{"ready",true}}})},{"used",Json::array()}};auto first=takeReaction(pool,101);CHECK(first.at("id")=="one");CHECK(pool.at("entries").size()==1);CHECK(pool.at("used").size()==1);CHECK(takeReaction(pool,102).is_null());CHECK(pool.at("used").size()==1);
+}
+TEST_CASE(widget_appearances_keep_valid_pixels_and_distinct_continuous_poses){
+    using namespace appearance;CHECK(validSkin("dinosaur"));CHECK(!validSkin("../external"));CHECK(validPalette("mist"));CHECK(!validPalette("#ff00ff"));
+    for(const auto skin:{"dinosaur","moonbird","lumen"}){
+        const auto idle=make(skin,"idle",1);std::size_t visible=0;for(const auto cell:idle.cells){CHECK(cell<=5);if(cell)++visible;}CHECK(visible>90);
+        const auto blink=make(skin,"idle",6.6);CHECK(blink.blink);CHECK(blink.cells!=idle.cells);CHECK(make(skin,"resting",1).scaleY<idle.scaleY);
+        const auto speaking=make(skin,"speaking",1,false,1,true);CHECK(speaking.mouthOpen);CHECK(speaking.cells!=idle.cells);
+        const auto landing=make(skin,"landing",1,false,0.2);CHECK(landing.scaleX>1);CHECK(landing.scaleY<1);const auto still=make(skin,"landing",1,true,0.2);CHECK(still.scaleX==1);CHECK(still.scaleY==1);
+        for(int i=0;i<64;++i){auto pose=make(skin,"walk",i*.11);CHECK(std::isfinite(pose.offsetY));for(const auto cell:pose.cells)CHECK(cell<=5);}
+    }
+    CHECK(make("dinosaur","walk",.1).cells!=make("dinosaur","walk",.5).cells);
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}
