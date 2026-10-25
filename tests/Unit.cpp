@@ -9,6 +9,7 @@
 #include <Hibernation/MemoryContext.h>
 #include <Hibernation/ReactionCache.h>
 #include <Hibernation/WidgetAppearance.h>
+#include <Hibernation/AppearanceCatalog.h>
 #include <Hibernation/SmallWorld.h>
 #include <Hibernation/SplashPixels.h>
 #include <Hibernation/DeskObjectAppearance.h>
@@ -202,6 +203,14 @@ TEST_CASE(widget_appearances_keep_valid_pixels_and_distinct_continuous_poses){
         for(int i=0;i<64;++i){auto pose=make(skin,"walk",i*.11);CHECK(std::isfinite(pose.offsetY));for(const auto cell:pose.cells)CHECK(cell<=5);}
     }
     CHECK(make("dinosaur","walk",.1).cells!=make("dinosaur","walk",.5).cells);
+}
+TEST_CASE(dashboard_appearance_catalog_uses_native_frames_without_role_data){
+    const auto value=appearance::catalog();CHECK(value.at("extent")==24);CHECK(value.at("skins").size()==3);CHECK(value.at("palettes").size()==3);
+    for(const auto& skin:value.at("skins")){CHECK(appearance::validSkin(skin.at("id").get<std::string>()));CHECK(skin.at("poses").size()==4);
+        for(const auto& pose:skin.at("poses")){const auto expected=appearance::make(skin.at("id").get<std::string>(),pose.at("state").get<std::string>(),.15,false,1,true);const auto cells=pose.at("cells").get<std::string>();CHECK(cells.size()==576);bool same=true;for(std::size_t i=0;i<cells.size();++i)same=same&&cells[i]==static_cast<char>('0'+expected.cells[i]);CHECK(same);}
+    }
+    for(const auto& colors:value.at("palettes")){CHECK(appearance::validPalette(colors.at("id").get<std::string>()));CHECK(colors.at("colors").size()==6);for(const auto& color:colors.at("colors"))CHECK(color.get<std::string>().size()==7);}
+    CHECK(!value.contains("state"));CHECK(!value.contains("memory"));
 }
 TEST_CASE(desk_objects_need_a_real_arrival_and_completed_action){
     SmallWorld world;CHECK(world.place("berry-1","berry",.4,.5));CHECK(world.request("berry-1","eat","action-1").empty());CHECK(world.size()==1);CHECK(world.queued());

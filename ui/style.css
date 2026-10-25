@@ -11,3 +11,5 @@ button:active{transform:translateY(1px)}
 .reduce-motion .page.active,.reduce-motion #toast:not([hidden]){animation:none}
 .reduce-motion button,.reduce-motion input,.reduce-motion select{transition:none}
 .reduce-motion button:active{transform:none}
+.avatar-preview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;background:#edf2e7;border:1px solid var(--border);border-radius:12px;padding:12px 4px;margin-bottom:12px;overflow:hidden}
+.avatar-pose{margin:0;min-width:0;text-align:center}.avatar-pose canvas{display:block;width:100%;max-width:96px;height:auto;margin:auto;image-rendering:pixelated}.avatar-pose figcaption{color:#6d8068;font-size:10px;line-height:1.5;margin-top:4px}

@@ -8,6 +8,7 @@
 #include <Hibernation/TextPlayback.h>
 #include <Hibernation/DesktopServices.h>
 #include <Hibernation/ReactionCache.h>
+#include <Hibernation/AppearanceCatalog.h>
 #include <AYSerializer/JsonSchema.h>
 #include <algorithm>
 #include <atomic>
@@ -740,6 +741,7 @@ struct Application::Impl {
         return {{"version","0.1.0"},{"name",persona.at("displayName")},{"persona_version",persona.at("version")},{"notice",persona.at("notice")},{"state",get("ha.state","current").value},{"continuous_state",life.snapshot()},{"stage",get("ha.stage","current").value},{"stage_definition",stageDefinition(get("ha.stage","current").value.at("id"))},{"model",get("ha.settings","model").value},{"profiles",profileValues},{"control",get("ha.control","current").value},{"messages",messages},{"jobs",jobValues},{"reviews",reviewValues},{"busy",busy()},{"health",health},{"data_root",utf8(cfg.dataRoot)},{"context_bytes",cfg.contextBytes}};
     }
     LocalReply handle(const LocalRequest& req) {
+        if(req.method=="GET"&&req.path=="/api/appearance"){static const auto value=appearance::catalog();return reply(200,value);}
         if(req.method=="GET"&&req.path=="/api/state")return reply(200,state());
         if(req.method=="GET"&&req.path=="/api/capabilities")return reply(200,capabilityInventory());
         if(req.method=="POST"&&req.path=="/api/surfaces/show"){
