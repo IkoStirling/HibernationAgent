@@ -32,6 +32,9 @@ struct Config {
     std::filesystem::path configPath,projectRoot,pluginRoot,draftsRoot,materialsRoot;
     Json plugins=Json::object(),remoteStorage={{"kind","none"},{"url",""},{"enabled",false}};
     std::size_t maxToolRounds=6;
+    bool reviewEnabled=false;
+    std::string reviewProfileId;
+    std::size_t maxReviewRewrites=2;
     bool desktopEnabled=false;
     bool pluginRootExplicit=false;
     int port=0;

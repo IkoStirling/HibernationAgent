@@ -12,6 +12,8 @@ function Stop-Backend{$null=Call '/api/shutdown' @{};$script:service.WaitForExit
 function Idle{Wait-For {!(Call '/api/chat').busy} 'turn complete'}
 function Plan($Responses){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Responses|ForEach-Object{if($_ -is [hashtable] -and $_.ContainsKey('fixture_status')){@{response='';http_status=$_.fixture_status}}else{@{response=$_}}})}|ConvertTo-Json -Depth 40|Set-Content -LiteralPath (Join-Path $providerRoot 'plan.json') -Encoding utf8}
 function Reply([string]$Text){@{version=1;kind='reply';text=$Text;calls=@();presentation=@{speech=$false;bubble=$true}}}
+function ReviewPlan($Responses){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Responses|ForEach-Object{if($_ -is [hashtable] -and $_.ContainsKey('fixture_status')){@{response='';http_status=$_.fixture_status}}else{@{response=$_}}})}|ConvertTo-Json -Depth 40|Set-Content -LiteralPath (Join-Path $providerRoot 'review-plan.json') -Encoding utf8}
+function Verdict([string]$Decision='approve',[string]$Reason='ok'){@{decision=$Decision;reason=$Reason;guidance=if($Decision-eq'approve'){''}else{'保留自身判断，用自然的角色话语重新表达。'}}}
 function Tool([string]$Id,[string]$Name,$ToolArguments){@{id=$Id;tool=$Name;args=$ToolArguments}}
 function Calls($Items){@{version=1;kind='call';text=$null;calls=@($Items);presentation=@{speech=$false;bubble=$false}}}
 function Message([string]$Text){$r=Call '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$Text};Idle;return $r}
@@ -99,6 +101,31 @@ try{
  @{nonce=[Guid]::NewGuid().ToString('N');responses=@(@{response=(Reply '迟到的回复');delay_ms=1000})}|ConvertTo-Json -Depth 40|Set-Content -LiteralPath (Join-Path $providerRoot 'plan.json') -Encoding utf8
  $null=Message '连接超时提示验证';Check ((Call '/api/chat').call_error.code-eq'timeout') 'exhausted timeout retries expose timeout failure'
  $settings.profiles.Where({$_.id-eq'fixture'})[0].timeoutMs=10000;$null=Call '/api/settings' @{settings=$settings};Plan @((Reply '连接已恢复。'));$null=Message '恢复连接验证';$chat=Call '/api/chat';Check (!$chat.call_failed-and$null-eq$chat.call_error-and$chat.messages[-1].text-eq'连接已恢复。') 'successful next turn clears failure without hiding dialogue'
+ # Independent reviewer checks proposals before side effects and replies before publication.
+ Plan @((Reply '旧版实验代称，运行结果不是小说正式设定。'));$null=Message '旧版历史保留验证';Check ((Call '/api/chat').messages[-1].text.Contains('旧版实验代称')) 'legacy metadata reply remains in original dialogue archive'
+ $settings=(Call '/api/dashboard').settings|ConvertTo-Json -Depth 40|ConvertFrom-Json -AsHashtable
+ $settings.profiles+=@(@{id='reviewer';label='Reviewer';protocol='chat-completions';enabled=$true;origin=$fixture;basePath='/v1';model='fixture-reviewer';credentialEnvironment='';supportsJsonSchema=$true;timeoutMs=3000;maxOutputTokens=1024})
+ $settings.review=@{enabled=$true;profileId='reviewer';maxRewrites=2};$null=Call '/api/settings' @{settings=$settings}
+ ReviewPlan @((Verdict 'rewrite' 'meta_leak'),(Verdict));Plan @((Reply '我是实验代称，状态由程序维护。'),(Reply '我叫小爱。你呢？'));$null=Message '你是谁';$chat=Call '/api/chat';Check ($chat.messages[-1].text-eq'我叫小爱。你呢？') 'review rewrite exposes only approved persona reply'
+ $capture=Capture;$system=$capture.messages[0].content;Check (!$system.Contains('实验代称')-and!$system.Contains('小说正式设定')-and!$system.Contains('HibernationStoriesSetting')) 'role prompt excludes creation metadata'
+ Check (!($capture|ConvertTo-Json -Depth 50).Contains('我是实验代称，状态由程序维护。')) 'rejected draft is absent from regeneration context'
+ Check (!($capture|ConvertTo-Json -Depth 50).Contains('旧版实验代称')) 'legacy metadata reply is excluded from new role context without deleting archive'
+ $reviewCapture=Get-Content (Join-Path $providerRoot 'review-last-request.json') -Raw|ConvertFrom-Json -Depth 50;Check ($reviewCapture.model-eq'fixture-reviewer'-and!$reviewCapture.tools-and$reviewCapture.messages.Count-eq2) 'reviewer has isolated context and no execution tools'
+ ReviewPlan @((Verdict 'rewrite' 'tool_intent'),(Verdict));Plan @((Calls @((Tool 'unapproved' 'workspace.write' @{path='rejected-review.md';content='must not run'}))),(Reply '先不写下它。'));$null=Message '未批准写入验证';Check (!(Test-Path (Join-Path $config.dataRoot 'drafts/rejected-review.md'))) 'review-rejected tool does not execute'
+ $beforeMemory=(Call '/api/memories').memories.Count;ReviewPlan @((Verdict 'deny' 'unsupported_claim'));Plan @((Calls @((Tool 'unapproved-memory' 'memory.remember' @{kind='conversation';text='未批准记忆';source_ids=@('${event_id}')}))));$null=Message '未批准记忆验证';Check (((Call '/api/memories').memories.Count-eq$beforeMemory)-and(Call '/api/chat').call_error.code-eq'review_rejected') 'denied memory is not committed and failure is explicit'
+ ReviewPlan @((Verdict),(Verdict 'reset' 'persona'),(Verdict));Plan @((Calls @((Tool 'approved-once' 'workspace.write' @{path='review-once.md';content='first'}))),(Reply '应当驳回的候选'),(Calls @((Tool 'approved-once' 'workspace.write' @{path='review-once.md';content='changed'}))),(Reply '已经写下了。'))
+ # The conflicting repeated call remains subject to the durable program ledger.
+ ReviewPlan @((Verdict),(Verdict 'reset' 'persona'),(Verdict),(Verdict));$null=Message '重建与已执行回执验证';Check ((Get-Content (Join-Path $config.dataRoot 'drafts/review-once.md') -Raw)-eq'first') 'context reset never repeats or overwrites an approved effect'
+ Check ((Feedback)[0].error.code-eq'call_id_reused_with_different_arguments') 'review approval cannot bypass call id fencing'
+ $capture=Capture;Check (!($capture|ConvertTo-Json -Depth 50).Contains('应当驳回的候选')-and($capture|ConvertTo-Json -Depth 50).Contains('tool_results')) 'rebuilt context retains executed receipts and drops rejected draft'
+ $rebuilt=$capture.messages[1].content|ConvertFrom-Json -Depth 50;Check (@($rebuilt.authorized_context|Where-Object {$_.data.kind-eq'assistant_message'}).Count-eq0) 'context rebuild drops prior assistant phrasing while retaining evidence and state'
+ ReviewPlan @((Verdict));Plan @((Calls @((Tool 'traversal' 'workspace.write' @{path='../character/persona.json';content='forbidden'}))),(Reply '这里不能改写。'));$null=Message '审核权限边界验证';Check (!(Feedback)[0].ok) 'reviewer approval never grants workspace permissions'
+ ReviewPlan @((Verdict));Plan @(@{version=1;kind='silence';text=$null;calls=@();presentation=@{speech=$false;bubble=$false}});$count=(Call '/api/chat').messages.Count;$null=Message '允许沉默';Check ((Call '/api/chat').messages.Count-eq$count+1-and!(Call '/api/chat').call_failed) 'approved silence remains a valid character choice'
+ ReviewPlan @('broken review JSON');Plan @((Reply '不能展示这段未审核回复'));$null=Message '审核格式故障';Check ((Call '/api/chat').call_error.code-eq'review_unavailable') 'malformed reviewer output fails closed'
+ ReviewPlan @(@{fixture_status=402});Plan @((Reply '也不能展示这段未审核回复'));$null=Message '审核连接故障';$chat=Call '/api/chat';Check ($chat.call_error.code-eq'review_unavailable'-and$chat.call_error.http_status-eq402) 'review connection failure is distinct from role silence'
+ ReviewPlan @((Verdict 'rewrite' 'persona'));Plan @((Reply '持续被驳回'));$null=Message '审核次数限制';Check ((Call '/api/chat').call_error.code-eq'review_rejected') 'bounded rewrites stop without publishing rejected output'
+ ReviewPlan @((Verdict));Plan @((Reply '不，我暂时不想。'));$null=Message '角色可以拒绝';Check ((Call '/api/chat').messages[-1].text-eq'不，我暂时不想。') 'review preserves a valid refusal'
+ Stop-Backend;Start-Backend;Check ((Call '/api/dashboard').settings.review.enabled) 'review settings survive restart'
  Stop-Backend
  [pscustomobject]@{completed=$true;checks=$checks;root=$root;timestamp=[DateTime]::UtcNow.ToString('O')}|ConvertTo-Json|Set-Content (Join-Path $root 'acceptance.json') -Encoding utf8;Write-Output "Protocol integration passed: $checks checks. Evidence: $root"
 }finally{if($service){$service.Refresh();if(!$service.HasExited){try{$null=Call '/api/shutdown' @{};$service.WaitForExit(5000)|Out-Null}catch{};$service.Refresh();if(!$service.HasExited){Stop-Process -Id $service.Id}}};if($provider){$provider.Refresh();if(!$provider.HasExited){Stop-Process -Id $provider.Id}}}

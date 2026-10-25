@@ -73,7 +73,7 @@ Config loadConfig(const std::filesystem::path& path) {
     const auto text=readFile(path,64*1024);
     if(!ayt::serializer::validateJsonDocument(text,"{}")) throw std::runtime_error("config_json");
     const auto j=Json::parse(text);
-    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds"};
+    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review"};
     for(auto it=j.begin();it!=j.end();++it) if(!allowed.contains(it.key())) throw std::runtime_error("config_unknown_field");
     if(j.at("schemaVersion")!=1) throw std::runtime_error("config_version");
     Config c;const auto base=std::filesystem::absolute(path).parent_path();
@@ -125,6 +125,10 @@ Config loadConfig(const std::filesystem::path& path) {
         profile.model.timeout=std::chrono::milliseconds(timeout);profile.model.maxRequestBytes=512*1024;profile.model.maxResponseBytes=256*1024;c.profiles.push_back(std::move(profile));
     }
     if(c.profiles.empty()||c.profiles.size()>16||!std::any_of(c.profiles.begin(),c.profiles.end(),[](const auto& p){return p.enabled&&p.model.protocol==ayt::inference::Protocol::Mock;})) throw std::runtime_error("mock_required");
+    const auto review=j.value("review",Json::object());if(!review.is_object())throw std::runtime_error("review_config");
+    for(auto it=review.begin();it!=review.end();++it)if(it.key()!="enabled"&&it.key()!="profileId"&&it.key()!="maxRewrites")throw std::runtime_error("review_field");
+    c.reviewEnabled=review.value("enabled",false);c.reviewProfileId=review.value("profileId",std::string{});c.maxReviewRewrites=static_cast<std::size_t>(integer(review,"maxRewrites",2,0,3));
+    if(c.reviewEnabled&&std::none_of(c.profiles.begin(),c.profiles.end(),[&](const auto& p){return p.id==c.reviewProfileId&&p.enabled&&p.model.protocol!=ayt::inference::Protocol::Mock;}))throw std::runtime_error("review_profile");
     return c;
 }
 }

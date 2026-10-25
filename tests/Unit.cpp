@@ -3,6 +3,7 @@
 #include <Hibernation/RoleState.h>
 #include <Hibernation/Vault.h>
 #include <Hibernation/PluginRuntime.h>
+#include <Hibernation/Review.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 using namespace hibernation;
@@ -11,6 +12,11 @@ Json valid(){return {{"visible_reply","允许没有固定结论。"},{"actions",
 ProposalContext context(){ProposalContext c;c.eventKind="user_message";c.eventId="e1";c.stage="initial";c.nextStage="exploring";c.sources={{"e1",{"e1",1,"user_message"}},{"e2",{"e2",1,"story_end"}}};return c;}
 }
 TEST_SUITE(RolePolicy)
+TEST_CASE(role_projection_excludes_admin_notes_and_review_is_closed){
+    auto persona=Json::parse(readFile(std::filesystem::path(HA_PROJECT_ROOT)/"character/persona.json"));auto view=rolePersona(persona);CHECK(view.contains("identity"));CHECK(!view.contains("notice"));CHECK(!view.contains("reference"));CHECK(view.dump().find("实验代称")==std::string::npos);
+    CHECK(isLegacyMetaReply({{"kind","assistant_message"},{"text","小爱是实验代称"}}));CHECK(!isLegacyMetaReply({{"kind","user_message"},{"text","实验代称是什么？"}}));CHECK(!isLegacyMetaReply({{"kind","assistant_message"},{"text","我们可以谈谈故事设定。"}}));
+    CHECK(validateReview(R"({"decision":"approve","reason":"ok","guidance":""})").ok);CHECK(!validateReview(R"({"decision":"approve","reason":"meta_leak","guidance":""})").ok);CHECK(!validateReview(R"({"decision":"approve","reason":"ok","guidance":"","tool":"shell"})").ok);CHECK(!validateReview("not JSON").ok);
+}
 TEST_CASE(schema_rejects_unknown_fields_duplicate_keys_and_thoughts){auto value=valid();CHECK(validateOutput(value.dump(),context()).ok);value["thoughts"]="private";CHECK(!validateOutput(value.dump(),context()).ok);CHECK(!validateOutput("{\"visible_reply\":\"a\",\"visible_reply\":\"b\"}",context()).ok);}
 TEST_CASE(memory_categories_and_sources_cannot_be_promoted){auto value=valid();value["memories"].push_back({{"kind","story"},{"text","未经经历的故事事实"},{"source_ids",Json::array({"e1"})}});CHECK(!validateOutput(value.dump(),context()).ok);value["memories"][0]["kind"]="conversation";CHECK(validateOutput(value.dump(),context()).ok);value["memories"][0]["source_ids"]=Json::array({"invented"});CHECK(!validateOutput(value.dump(),context()).ok);}
 TEST_CASE(stage_requires_distinct_existing_experiences_and_next_stage){auto value=valid();value["stage_proposal"]={{"stage_id","exploring"},{"reason","两次具体经历"},{"evidence_ids",Json::array({"e1","e2"})}};CHECK(validateOutput(value.dump(),context()).ok);value["stage_proposal"]["evidence_ids"]=Json::array({"e1","e1"});CHECK(!validateOutput(value.dump(),context()).ok);value["stage_proposal"]["evidence_ids"]=Json::array({"e1","e2"});value["stage_proposal"]["stage_id"]="continuity";CHECK(!validateOutput(value.dump(),context()).ok);}

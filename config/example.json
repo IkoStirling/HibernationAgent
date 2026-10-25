@@ -78,5 +78,10 @@
     "enabled": false,
     "url": "",
     "kind": "none"
+  },
+  "review": {
+    "enabled": false,
+    "profileId": "",
+    "maxRewrites": 2
   }
 }
