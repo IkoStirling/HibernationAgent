@@ -1,0 +1,331 @@
+{
+  "completed": true,
+  "started_utc": "2026-10-24T19:06:56+00:00",
+  "finished_utc": "2026-10-25T00:07:47.792330+00:00",
+  "real_elapsed_seconds": 18051.8,
+  "implementation_commit": "979b9a1fb197a29927e49b59b153fa59f4222aad",
+  "engine_commit": "8561685f26bd61d89196908bd00eec333b9b1cf7",
+  "ctest": {
+    "desktop": 12,
+    "core_only": 10,
+    "protocol_checks": 57,
+    "process_checks": 38,
+    "launcher_checks": 4,
+    "dashboard_checks": 20
+  },
+  "case_reports": [
+    {
+      "module": "AYNetworkHttp",
+      "cases": 3,
+      "assertions": 27
+    },
+    {
+      "module": "AYInference",
+      "cases": 7,
+      "assertions": 54
+    },
+    {
+      "module": "HibernationAgent",
+      "cases": 17,
+      "assertions": 137
+    },
+    {
+      "module": "AYStorage",
+      "cases": 57,
+      "assertions": 299
+    },
+    {
+      "module": "AYVideoDecode",
+      "cases": 3,
+      "assertions": 129
+    },
+    {
+      "module": "AYApplicationServices",
+      "cases": 11,
+      "assertions": 96
+    },
+    {
+      "module": "AYApplicationServiceIntegration",
+      "cases": 1,
+      "assertions": 19
+    }
+  ],
+  "sdk_doctor": {
+    "ok": true,
+    "capability_count": 172,
+    "module_count": 59,
+    "error_count": 0,
+    "warning_count": 0,
+    "search_case_count": 130,
+    "documented_entry_symbol_count": 817,
+    "undocumented_entry_symbol_baseline_count": 25,
+    "errors": [],
+    "warnings": []
+  },
+  "sustained_runs": [
+    {
+      "root": "E:\\Aliyat\\Validation\\HibernationAgent\\soak-20261024-213517",
+      "duration_minutes": 90.011,
+      "cycles": 90,
+      "checks": 941,
+      "private_mib_max": 25.86,
+      "handles_max": 335,
+      "ended": "2026-10-24T23:05:19.4595141Z"
+    },
+    {
+      "root": "E:\\Aliyat\\Validation\\HibernationAgent\\soak-20261024-222500",
+      "duration_minutes": 60.012,
+      "cycles": 60,
+      "checks": 627,
+      "private_mib_max": 25.06,
+      "handles_max": 323,
+      "ended": "2026-10-24T23:25:02.8193467Z"
+    },
+    {
+      "root": "E:\\Aliyat\\Validation\\HibernationAgent\\soak-20261024-225018",
+      "duration_minutes": 60.011,
+      "cycles": 60,
+      "checks": 627,
+      "private_mib_max": 24.84,
+      "handles_max": 325,
+      "ended": "2026-10-24T23:50:20.2689060Z"
+    },
+    {
+      "root": "E:\\Aliyat\\Validation\\HibernationAgent\\soak-20261024-230027",
+      "duration_minutes": 45.006,
+      "cycles": 45,
+      "checks": 468,
+      "private_mib_max": 24.41,
+      "handles_max": 325,
+      "ended": "2026-10-24T23:45:29.2050474Z"
+    },
+    {
+      "root": "E:\\Aliyat\\Validation\\HibernationAgent\\soak-20261024-232207",
+      "duration_minutes": 30.005,
+      "cycles": 30,
+      "checks": 313,
+      "private_mib_max": 24.0,
+      "handles_max": 325,
+      "ended": "2026-10-24T23:52:09.0989786Z"
+    }
+  ],
+  "delivery_files": [
+    {
+      "file": "hibernation-agent.exe",
+      "sha256": "2E0A77089A64CE4E16F1849B558FA83A40D2B67F61D61B9C20A94817EF3DA75C"
+    },
+    {
+      "file": "argon2.dll",
+      "sha256": "C052BE208995372D487F0B96F446A52D2D5AE7A2F106BCD2E97045B25E91EBA3"
+    },
+    {
+      "file": "avcodec-62.dll",
+      "sha256": "A62AE387541007F7045B7D7B21938911FF9B2AB45C07386EB6A0E72E0161E956"
+    },
+    {
+      "file": "avformat-62.dll",
+      "sha256": "E52C1A91CD8ACE93A359F51BC3BDFDE61CCEC0A6D02FD4281DA552352DAF7F21"
+    },
+    {
+      "file": "avutil-60.dll",
+      "sha256": "3C059529843FD469D358F8ED27584ECE699AC622CF9B9DFD6F688ABA33E46D0B"
+    },
+    {
+      "file": "brotlicommon.dll",
+      "sha256": "4E8DF7C054AF02574C737F2E7C07642482E52B1B70A3136D49013D57C8E86C07"
+    },
+    {
+      "file": "brotlidec.dll",
+      "sha256": "7300A67ED2A63521E5994658452FCD69DFD0D210CB6DA857C95BBCED38662234"
+    },
+    {
+      "file": "brotlienc.dll",
+      "sha256": "DBF7AE679895C96E06F8EB7107AAE6072AFC6D66B250DD2813A88E58906E9DDF"
+    },
+    {
+      "file": "bz2d.dll",
+      "sha256": "CFF99DA26E827A98735125B2FE1EA904F05DC3B8144C22333EA3D959D0C5F1C2"
+    },
+    {
+      "file": "fmtd.dll",
+      "sha256": "8B55AC5EFBCA0FC94524586CD2BACC9D3E0A85F3D3742114E2016E9537E7CAB3"
+    },
+    {
+      "file": "freetyped.dll",
+      "sha256": "471C304F4968E2EC9ECBAC35165F313E0442F7561C92F1DA3A908A0B3D04C990"
+    },
+    {
+      "file": "harfbuzz.dll",
+      "sha256": "3CA3D5118A5B143FDEBF2A29ABAA5D30147954B7B7560C0F54C0ECF4D5A55EC8"
+    },
+    {
+      "file": "libcrypto-3-x64.dll",
+      "sha256": "1B4B0EA26529A491A7AACF3E9C626B07E32A8FE42EE66619FE36C7F1683FE39E"
+    },
+    {
+      "file": "libpng16d.dll",
+      "sha256": "10982D9616B99B4558FB8525C9D3A650E54C5C75791F2B2DA426651AD8A94EB0"
+    },
+    {
+      "file": "libsodium.dll",
+      "sha256": "B06CF8E946683AE25734BE66AE7C2E801DDF70688434BBC9E082D6FC0593EEAB"
+    },
+    {
+      "file": "libssl-3-x64.dll",
+      "sha256": "B8F7340E8A47B0CC8C476CC01182CC7096A796CFE241B35D8679DF731C2B5B66"
+    },
+    {
+      "file": "lz4d.dll",
+      "sha256": "B9479008C0C1F9272A6DEF656A818865FDECB2A502BC9D9170196F157E59D557"
+    },
+    {
+      "file": "miniz.dll",
+      "sha256": "1F0C90B7058644A1E7A389E5D7F6FD9271EF40D5875FA36CC72BC9038C602B67"
+    },
+    {
+      "file": "spdlogd.dll",
+      "sha256": "A1B6F3C20D555EEB2C4702068396577067E871182FF583FE9CE4BF57F3A4199A"
+    },
+    {
+      "file": "sqlite3.dll",
+      "sha256": "E30770389D7BABF0413DB4D094CB5527DB8A39201EA49A8DC37F83376AA1DBB2"
+    },
+    {
+      "file": "swresample-6.dll",
+      "sha256": "F2B7739CE32909BFA002D6E61D7FBC9C77C57FF9F3E0490A9AF4B3B8905CA236"
+    },
+    {
+      "file": "zd.dll",
+      "sha256": "ECEE1A639B925E164C820491F45A1D115329C9C10F65B9ABEE9D12A2197D9C73"
+    },
+    {
+      "file": "zstd.dll",
+      "sha256": "3A52EA9174B3ADFD29BDE21DF4953139636682DEEC70D5A7EC165D810DF66FB0"
+    },
+    {
+      "file": "plugins\\television\\brotlicommon.dll",
+      "sha256": "6A6DB129C186D7A326D18064311695DB140062FAF15A9B6B78A6E5F268DF86F5"
+    },
+    {
+      "file": "plugins\\television\\brotlidec.dll",
+      "sha256": "6C53E8BA8B2D518CA7BDA497A529E9763E22BBDD091D527D12731CD1B3976764"
+    },
+    {
+      "file": "plugins\\television\\brotlienc.dll",
+      "sha256": "DBF7AE679895C96E06F8EB7107AAE6072AFC6D66B250DD2813A88E58906E9DDF"
+    },
+    {
+      "file": "plugins\\television\\Hibernation_Television.dll",
+      "sha256": "64B2DFE6A45A8784D5E4BDAF62038624A8D0C3AE703F18B543FD093FA2696CF1"
+    },
+    {
+      "file": "plugins\\television\\libcrypto-3-x64.dll",
+      "sha256": "1B4B0EA26529A491A7AACF3E9C626B07E32A8FE42EE66619FE36C7F1683FE39E"
+    },
+    {
+      "file": "plugins\\television\\libssl-3-x64.dll",
+      "sha256": "B8F7340E8A47B0CC8C476CC01182CC7096A796CFE241B35D8679DF731C2B5B66"
+    },
+    {
+      "file": "plugins\\tts\\brotlicommon.dll",
+      "sha256": "6A6DB129C186D7A326D18064311695DB140062FAF15A9B6B78A6E5F268DF86F5"
+    },
+    {
+      "file": "plugins\\tts\\brotlidec.dll",
+      "sha256": "6C53E8BA8B2D518CA7BDA497A529E9763E22BBDD091D527D12731CD1B3976764"
+    },
+    {
+      "file": "plugins\\tts\\brotlienc.dll",
+      "sha256": "DBF7AE679895C96E06F8EB7107AAE6072AFC6D66B250DD2813A88E58906E9DDF"
+    },
+    {
+      "file": "plugins\\tts\\Hibernation_Speech.dll",
+      "sha256": "9501F90C5CC1ABB9857F7D6F5CBB44C730FAC13B676C8D86A63CE403F800E0CE"
+    },
+    {
+      "file": "plugins\\tts\\libcrypto-3-x64.dll",
+      "sha256": "1B4B0EA26529A491A7AACF3E9C626B07E32A8FE42EE66619FE36C7F1683FE39E"
+    },
+    {
+      "file": "plugins\\tts\\libssl-3-x64.dll",
+      "sha256": "B8F7340E8A47B0CC8C476CC01182CC7096A796CFE241B35D8679DF731C2B5B66"
+    },
+    {
+      "file": "plugins\\weather\\brotlicommon.dll",
+      "sha256": "6A6DB129C186D7A326D18064311695DB140062FAF15A9B6B78A6E5F268DF86F5"
+    },
+    {
+      "file": "plugins\\weather\\brotlidec.dll",
+      "sha256": "6C53E8BA8B2D518CA7BDA497A529E9763E22BBDD091D527D12731CD1B3976764"
+    },
+    {
+      "file": "plugins\\weather\\brotlienc.dll",
+      "sha256": "DBF7AE679895C96E06F8EB7107AAE6072AFC6D66B250DD2813A88E58906E9DDF"
+    },
+    {
+      "file": "plugins\\weather\\Hibernation_Weather.dll",
+      "sha256": "D24A6952E36DEDE6C757B1FB1588F4C5BA7E3D1D1655309FB92A4257C82B618A"
+    },
+    {
+      "file": "plugins\\weather\\libcrypto-3-x64.dll",
+      "sha256": "1B4B0EA26529A491A7AACF3E9C626B07E32A8FE42EE66619FE36C7F1683FE39E"
+    },
+    {
+      "file": "plugins\\weather\\libssl-3-x64.dll",
+      "sha256": "B8F7340E8A47B0CC8C476CC01182CC7096A796CFE241B35D8679DF731C2B5B66"
+    },
+    {
+      "file": "plugins\\widget\\brotlicommon.dll",
+      "sha256": "6A6DB129C186D7A326D18064311695DB140062FAF15A9B6B78A6E5F268DF86F5"
+    },
+    {
+      "file": "plugins\\widget\\brotlidec.dll",
+      "sha256": "6C53E8BA8B2D518CA7BDA497A529E9763E22BBDD091D527D12731CD1B3976764"
+    },
+    {
+      "file": "plugins\\widget\\brotlienc.dll",
+      "sha256": "DBF7AE679895C96E06F8EB7107AAE6072AFC6D66B250DD2813A88E58906E9DDF"
+    },
+    {
+      "file": "plugins\\widget\\Hibernation_Widget.dll",
+      "sha256": "440098DF9DB377E92B5A2AE7D99BA39E47FD84A61AAAB571EC8CC3BD71B7C507"
+    },
+    {
+      "file": "plugins\\widget\\libcrypto-3-x64.dll",
+      "sha256": "1B4B0EA26529A491A7AACF3E9C626B07E32A8FE42EE66619FE36C7F1683FE39E"
+    },
+    {
+      "file": "plugins\\widget\\libssl-3-x64.dll",
+      "sha256": "B8F7340E8A47B0CC8C476CC01182CC7096A796CFE241B35D8679DF731C2B5B66"
+    }
+  ],
+  "production": {
+    "health": "ok",
+    "archive": "E:\\Aliyat\\Archives\\HibernationAgent",
+    "memory_encrypted": true,
+    "selected_profile": "mock",
+    "enabled_plugins": 0,
+    "pid": 238080,
+    "port": 60126,
+    "desktop": true,
+    "privateMiB": 8.14,
+    "workingMiB": 32.81,
+    "freeGiB": 18.6,
+    "checked_utc": "2026-10-25T00:07:47.3228566Z"
+  },
+  "archive": {
+    "format": 2,
+    "payload_rows": 587,
+    "unprotected_rows": 0,
+    "integrity": "ok"
+  },
+  "paid_model_calls_by_tests": 0,
+  "remote_sync": "deferred; no uploads",
+  "limitations": [
+    "No live paid-model compatibility/personality evaluation",
+    "No whole-film transcription or automatic continuous video understanding",
+    "Fast SAPI/compatible HTTP WAV; not the original AquesTalk voice",
+    "No remote synchronization, cross-account key export or installer",
+    "No full game Runtime/Renderer/Editor, Release, ASan or cross-platform acceptance"
+  ]
+}
