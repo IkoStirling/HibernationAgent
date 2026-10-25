@@ -152,6 +152,7 @@ struct Application::Impl {
         auto values=jobs();const bool exists=std::any_of(values.begin(),values.end(),[&](const auto& j){return j.spec.id==job.id;});
         return (exists?queue->reschedule(job,serviceNowMs()):queue->enqueue(job,serviceNowMs()))==QueueStatus::Ok;
     }
+#include "ForegroundScheduling.inc"
     bool fact(const std::string& key,const std::string& kind,Json body,std::int64_t occurred) {
         // The event index is intentionally metadata-only. Memory, model/tool
         // bodies and media observations live in the encrypted record ledger.
@@ -312,7 +313,7 @@ struct Application::Impl {
         if(name=="schedule.list") {Json values=Json::array();for(const auto& job:jobs())if(job.spec.id.starts_with("routine."))values.push_back({{"id",job.spec.id.substr(8)},{"state",stateName(job.state)},{"due_ms",job.spec.dueAtMs},{"interval_ms",job.spec.intervalMs},{"topic",Json::parse(job.spec.payload).value("topic","")}});return toolSuccess({{"tasks",values}});}
         if(name=="schedule.create"||name=="schedule.cancel") {
             const auto key=args.at("id").get<std::string>();if(!validRequestId(key))return toolFailure("schedule_id");const auto slot="routine."+key;
-            if(name=="schedule.cancel"){const auto status=queue->pauseJob(slot,true,serviceNowMs());return status==QueueStatus::Ok?toolSuccess({{"paused",true}}):toolFailure("schedule_missing_or_running");}
+            if(name=="schedule.cancel"){const auto status=queue->pauseJob(slot,true,serviceNowMs());if(status==QueueStatus::Ok)forgetBackgroundYield(slot);return status==QueueStatus::Ok?toolSuccess({{"paused",true}}):toolFailure("schedule_missing_or_running");}
             const auto interval=args.value("interval_ms",std::int64_t(0));if(interval&&interval<300000)return toolFailure("schedule_interval_too_short");
             Json task={{"force",true},{"topic",args.at("topic")},{"created_at",serviceNowMs()},{"created_from",context.eventId},{"task_id",key},{"references",Json::array()}};
             if(args.contains("source_ids")){task["references"]=checkedSources(args.at("source_ids"),context);if(task["references"].is_null())return toolFailure("schedule_source_not_available");}
@@ -730,7 +731,7 @@ struct Application::Impl {
         auto index=get("ha.index","recent",Json::array());Json messages=Json::array();
         for(const auto& row:readIds(archiveScope,index.value)){auto data=Json::parse(row.payload);data["id"]=row.id;data["revision"]=row.revision;messages.push_back(std::move(data));}
         std::sort(messages.begin(),messages.end(),[](const auto& a,const auto& b){if(a.at("created_at")==b.at("created_at"))return a.at("id")<b.at("id");return a.at("created_at")<b.at("created_at");});
-        Json jobValues=Json::array();for(const auto& j:jobs())jobValues.push_back({{"id",j.spec.id},{"state",stateName(j.state)},{"due_at",j.spec.dueAtMs},{"attempts",j.attempts},{"run_token",j.runToken},{"result",j.result.substr(0,512)}});
+        Json jobValues=Json::array();for(const auto& j:jobs())jobValues.push_back({{"id",j.spec.id},{"state",stateName(j.state)},{"pause_requested",j.pauseRequested},{"due_at",j.spec.dueAtMs},{"attempts",j.attempts},{"run_token",j.runToken},{"result",j.result.substr(0,512)}});
         Json profileValues=Json::array();for(const auto& p:cfg.profiles)profileValues.push_back({{"id",p.id},{"label",p.label},{"enabled",p.enabled},{"protocol",static_cast<int>(p.model.protocol)},{"credential_environment",p.model.credentialEnvironment}});
         Json reviewValues=Json::array();for(const auto& row:readIds("ha.reviews",get("ha.index","reviews",Json::array()).value)){auto v=Json::parse(row.payload);v["id"]=row.id;reviewValues.push_back(std::move(v));}
         return {{"version","0.1.0"},{"name",persona.at("displayName")},{"persona_version",persona.at("version")},{"notice",persona.at("notice")},{"state",get("ha.state","current").value},{"continuous_state",life.snapshot()},{"stage",get("ha.stage","current").value},{"stage_definition",stageDefinition(get("ha.stage","current").value.at("id"))},{"model",get("ha.settings","model").value},{"profiles",profileValues},{"control",get("ha.control","current").value},{"messages",messages},{"jobs",jobValues},{"reviews",reviewValues},{"busy",busy()},{"health",health},{"data_root",utf8(cfg.dataRoot)},{"context_bytes",cfg.contextBytes}};
@@ -757,7 +758,7 @@ struct Application::Impl {
                 if(info.is_object()&&info.contains("call_error"))failure=info.at("call_error");
                 else {auto trace=info.is_object()?info.value("trace",Json::object()):Json::object();if(info.is_object()&&info.contains("trace_id"))trace=get("ha.trace",info.at("trace_id")).value;if(!trace.is_object())trace=Json::object();failure=callFailure(trace.value("provider_status",-1),trace.value("http_status",0));}
             }
-            return reply(200,{{"messages",messages},{"busy",busy()},{"paused",get("ha.control","current").value.at("paused")},{"health",health},{"call_failed",failed},{"call_error",failure},{"speech_error",speechIssue},{"mock",profile(get("ha.settings","model").value.at("id")).model.protocol==ayt::inference::Protocol::Mock}});
+            return reply(200,{{"messages",messages},{"busy",busy()},{"can_send",foregroundAvailable()&&!runtimePaused},{"paused",get("ha.control","current").value.at("paused")},{"health",health},{"call_failed",failed},{"call_error",failure},{"speech_error",speechIssue},{"mock",profile(get("ha.settings","model").value.at("id")).model.protocol==ayt::inference::Protocol::Mock}});
         }
         Json body=Json::object();
         if(req.method=="POST"){if(req.body.size()>64*1024||!ayt::serializer::validateJsonDocument(req.body,"{\"type\":\"object\"}"))return error(400,"request_json");body=Json::parse(req.body);}
@@ -795,9 +796,10 @@ struct Application::Impl {
             if(!validRequestId(requestId)||text.empty()||text.size()>12000)return error(400,"input_limit");
             const auto existing=get("ha.requests",requestId);if(existing.revision)return reply(200,{{"request",existing.value},{"duplicate",true}});
             if(get("ha.control","current").value.at("paused")==true)return error(409,"paused");
-            if(busy())return error(409,"busy");
+            if(!foregroundAvailable())return error(409,"busy");
             const auto kind=req.path=="/api/message"?std::string("user_message"):body.at("kind").get<std::string>();
             if(kind!="user_message"&&kind!="story_end"&&kind!="outer_event"&&kind!="task_complete")return error(400,"event_kind");
+            yieldBackground(serviceNowMs());
             ++pluginAttentionEpoch;nextPluginAttention=0;const auto eventId=id("evt");const auto slot=req.path=="/api/message"?"chat":"event";
             const auto previous=get("ha.state","current").value.value("lastUserInteractionMs",std::int64_t(0));const auto now=serviceNowMs();Json input={{"request_id",requestId},{"event_id",eventId},{"kind",kind},{"text",text},{"previous_interaction_ms",previous},{"elapsed_since_previous_ms",previous?std::max<std::int64_t>(0,now-previous):0}};
             Json raw={{"kind",kind},{"text",text},{"request_id",requestId},{"created_at",serviceNowMs()}};
@@ -820,7 +822,7 @@ struct Application::Impl {
             const bool paused=body.at("paused").get<bool>();const auto now=serviceNowMs();
             if(queue->setPaused(paused,now)!=QueueStatus::Ok)return error(503,"queue_pause");
             for(const auto& job:jobs())if((paused&&(job.state==JobState::Running||job.state==JobState::Pending))||(!paused&&job.state==JobState::Paused))
-                if(queue->pauseJob(job.spec.id,paused,now)!=QueueStatus::Ok)return error(503,"job_pause");
+                if((paused||!yieldedBackground(job.spec.id))&&queue->pauseJob(job.spec.id,paused,now)!=QueueStatus::Ok)return error(503,"job_pause");
             auto before=get("ha.control","current");auto value=before.value;value["paused"]=paused;commit({mutation("ha.control","current",before,value)},"control");runtimePaused=paused;if(plugins)plugins->event({{"kind","runtime.paused"},{"paused",paused}});return reply(200,value);
         }
         if(req.method=="POST"&&req.path=="/api/model") {
@@ -950,7 +952,7 @@ void Application::tick() {
         if(a.desktop)a.desktop->tick();
         const auto now=serviceNowMs();const bool paused=a.runtimePaused;a.life.tick(now,!paused);
         if(a.plugins){a.notifyPluginAttention(now);a.processPluginEvents(now);a.plugins->tick(std::clamp((now-a.lastTickMs)/1000.0,0.0,0.25));a.processPluginEvents(now);}a.lastTickMs=now;a.reactionsTick(now);a.journalWorldEvents(now);
-        if(now>=a.nextWorkerPoll){a.nextWorkerPoll=now+100;a.projectResults();if(a.journalHealthy){a.wakeFromPlugins(now);
+        if(now>=a.nextWorkerPoll){a.nextWorkerPoll=now+100;a.projectResults();if(a.journalHealthy){a.reconcileBackground(now);a.wakeFromPlugins(now);
             const auto status=a.worker->poll(serviceNowMs());
             if(status!=QueueStatus::Ok&&status!=QueueStatus::Budget&&status!=QueueStatus::Paused&&status!=QueueStatus::Idle)a.health="worker_"+std::to_string(static_cast<int>(status));
             a.projectResults();if(a.journalHealthy&&!paused&&a.worker->running()==0)a.actions();
