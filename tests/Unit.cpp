@@ -151,6 +151,12 @@ TEST_CASE(configuration_keeps_secrets_out_of_plaintext_and_rejects_system_enviro
     value=base;value["profiles"][0]["credentialEnvironment"]="hibernation_session_key";CHECK(rejects(value));value=base;value["profiles"][0]["id"]="plugin-tts";CHECK(rejects(value));value=base;value["profiles"][0]["proxyOrigin"]="http://user:password@proxy";CHECK(rejects(value));
 }
 #ifdef HA_TEST_PLUGIN_ROOT
+TEST_CASE(widget_routes_input_attention_and_preparation_through_the_plugin_runtime){
+    ayt::test::ScratchDirectory scratch("role-widget-preparation");PluginRuntime plugins(std::filesystem::path(HA_TEST_PLUGIN_ROOT),{scratch.path(),std::filesystem::path(HA_PROJECT_ROOT),false,{}});std::string issue;
+    CHECK(plugins.configure({{"widget",{{"enabled",true},{"roam",false}}}},issue));plugins.event({{"kind","runtime.attention"},{"input_active",true},{"busy",false}});CHECK(plugins.snapshots().at("widget").at("dialogue_phase")=="receiving");plugins.tick(.1);CHECK(plugins.snapshots().at("widget").at("state")=="receiving");
+    plugins.event({{"kind","runtime.attention"},{"input_active",false},{"busy",false}});CHECK(plugins.snapshots().at("widget").at("dialogue_phase")=="idle");CHECK(plugins.snapshots().at("widget").at("state")=="idle");
+    plugins.event({{"kind","conversation.received"}});plugins.tick(.2);CHECK(plugins.snapshots().at("widget").at("dialogue_phase")=="receiving");plugins.tick(.2);CHECK(plugins.snapshots().at("widget").at("state")=="preparing");plugins.event({{"kind","conversation.finished"},{"has_reply",false}});CHECK(plugins.snapshots().at("widget").at("dialogue_phase")=="idle");
+}
 TEST_CASE(widget_reveals_and_pages_without_truncating_or_following_model_display_flags){
     ayt::test::ScratchDirectory scratch("role-widget-playback");PluginRuntime plugins(std::filesystem::path(HA_TEST_PLUGIN_ROOT),{scratch.path(),std::filesystem::path(HA_PROJECT_ROOT),false,{}});std::string issue;
     CHECK(plugins.configure({{"widget",{{"enabled",true},{"roam",false},{"bubbleMaxCharacters",20},{"charactersPerSecond",40},{"pageHoldSeconds",0.2}}}},issue));
