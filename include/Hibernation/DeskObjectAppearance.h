@@ -9,6 +9,7 @@ struct Frame {
     std::array<std::uint8_t,extent*extent> cells{};
     std::array<std::uint32_t,5> colors{};
     int offsetY=0,pixelSize=3;
+    bool operator==(const Frame&)const=default;
     void put(int x,int y,int color){if(x>=0&&x<extent&&y>=0&&y<extent)cells[y*extent+x]=static_cast<std::uint8_t>(color);}
     int at(int x,int y)const{return x>=0&&x<extent&&y>=0&&y<extent?cells[y*extent+x]:0;}
 };
