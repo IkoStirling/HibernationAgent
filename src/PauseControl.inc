@@ -43,6 +43,7 @@
             commit({mutation("ha.control","current",before,value)},"control-resume");runtimePaused=false;
             if(queue->setPaused(false,now)!=QueueStatus::Ok)throw std::runtime_error("queue_resume");
         }
+        if(pause)cancelActivities("paused");
         if(plugins)plugins->event({{"kind","runtime.paused"},{"paused",pause}});nextWorkerPoll=0;return value;
     }
     void restorePauseControl(){

@@ -6,7 +6,7 @@ using namespace hibernation::plugins;
 namespace {
 class Rhythm final:public BasePlugin {
     PluginHostContext host_;PluginJson cfg_;mutable std::recursive_mutex mutex_;QuietRhythm rhythm_;
-    bool paused_=false,busy_=false,input_=false,actor_=false,bound_=false;double energy_=.72;std::string activity_="idle",actorState_="idle";std::int64_t actorSeen_=0;
+    bool autonomous_=false,paused_=false,busy_=false,input_=false,actor_=false,bound_=false;double energy_=.72;std::string activity_="idle",actorState_="idle";std::int64_t actorSeen_=0;
     std::uint64_t epoch_=0,sequence_=0;std::mt19937 random_{std::random_device{}()};
     static int localHour(){SYSTEMTIME time{};GetLocalTime(&time);return time.wHour;}
     std::string nextToken(){return "rest-"+std::to_string(nowMs())+"-"+std::to_string(sequence_++);}
@@ -33,13 +33,15 @@ public:
     void tick(double dt)override{
         std::lock_guard lock(mutex_);const bool actor=actor_&&nowMs()-actorSeen_<2500;
         rhythm_.tick(dt,!paused_,busy_,input_,actor,actorState_,epoch_);
-        if(!paused_&&host_.desktopEnabled&&cfg_.value("automaticRest",true)&&actor&&!busy_&&!input_&&rhythm_.phase()=="idle"&&rhythm_.idle()>=cfg_.value("idleBeforeRestSeconds",300.0)&&rhythm_.clock()>=rhythm_.nextAutomatic()){
+        if(!autonomous_&&!paused_&&host_.desktopEnabled&&cfg_.value("automaticRest",true)&&actor&&!busy_&&!input_&&rhythm_.phase()=="idle"&&rhythm_.idle()>=cfg_.value("idleBeforeRestSeconds",300.0)&&rhythm_.clock()>=rhythm_.nextAutomatic()){
             rhythm_.postponeAutomatic(60);if(QuietRhythm::mayRest(localHour(),energy_,activity_)&&std::bernoulli_distribution(cfg_.value("automaticProbability",.3))(random_))rhythm_.request(nextToken(),cfg_.value("restSeconds",180.0),epoch_,"automatic");
         }
         drain();
     }
     void event(const PluginJson& event)override{
         std::lock_guard lock(mutex_);const auto kind=event.value("kind",std::string{});
+        if(kind=="runtime.autonomy")autonomous_=event.value("enabled",false);
+        if(kind=="runtime.activity_cancel")rhythm_.wake("activity_cancelled");
         if(kind=="runtime.paused")paused_=event.value("paused",false);
         if(kind=="runtime.attention"){busy_=event.value("busy",false);input_=event.value("input_active",false);epoch_=event.value("epoch",std::uint64_t(0));}
         if(kind=="runtime.character"){const auto energy=event.value("energy",energy_);if(std::isfinite(energy)&&energy>=0&&energy<=1)energy_=energy;activity_=event.value("activity",activity_);}

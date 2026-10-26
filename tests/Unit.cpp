@@ -7,6 +7,9 @@
 #include <Hibernation/Review.h>
 #include <Hibernation/TextPlayback.h>
 #include <Hibernation/MemoryContext.h>
+#include <Hibernation/MemoryLibrary.h>
+#include <Hibernation/ActivityPlan.h>
+#include <Hibernation/DialoguePreparation.h>
 #include <Hibernation/ReactionCache.h>
 #include <Hibernation/WidgetAppearance.h>
 #include <Hibernation/AppearanceCatalog.h>
@@ -273,6 +276,22 @@ TEST_CASE(audio_output_observations_preserve_unknowns_and_never_confirm_user_aud
     normal["own_sessions"][0]["session"]["channels"]=Json::array({0.0,0.0});CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="active_sessions_muted");normal["own_sessions"].push_back(session);CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="no_known_blocker");
     normal["own_sessions"]=Json::array({session});normal["own_sessions"][0]["session"]={{"known",false}};CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="volume_unknown");normal["query_state"]="partial";CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="partially_unknown");
     normal["query_state"]="ok";normal["own_sessions"]=Json::array({session});normal["own_sessions"][0]["default_for_console"]=false;CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="different_output");normal["own_sessions"]=Json::array();normal["console"]["available"]=false;normal["multimedia"]["available"]=false;CHECK(assessAudioDelivery(normal,true,75,1001).at("code")=="default_missing");
+}
+TEST_CASE(memory_library_pages_are_utf8_bounded_and_preserve_originals){
+    Json original={{"kind","conversation"},{"text",std::string("星空")+std::string(3000,'x')},{"sources",Json::array()}};
+    auto page=libraryPage(original,1,256);CHECK(page.at("offset")==0);CHECK(page.at("next_offset")==256);CHECK(page.at("truncated").get<bool>());CHECK(original.at("text").get<std::string>().size()==3006);
+    auto tail=libraryPage(original,4000,256);CHECK(tail.at("text")=="");CHECK(!tail.at("truncated").get<bool>());CHECK(tail.at("next_offset")==3006);
+    CHECK(libraryContext(original).at("text").get<std::string>().size()<=1200);CHECK(libraryArchiveKind("user_message"));CHECK(!libraryArchiveKind("tool_observation"));CHECK(!libraryArchiveKind("trace"));
+    Json summary={{"summary","原文没有说行动已完成。"},{"keywords",Json::array({"星空","未完成"})},{"uncertainties",Json::array({"只是一项计划。"})}};CHECK(validateDigest(summary.dump()).ok);summary["sql"]="DROP TABLE";CHECK(!validateDigest(summary.dump()).ok);summary.erase("sql");summary["keywords"]=Json::array({"同词","同词"});CHECK(!validateDigest(summary.dump()).ok);
+    CHECK(memoryRelevance("星空",memorySearchText({{"text","一段摘要"},{"keywords",Json::array({"星空"})}}))>0);
+}
+TEST_CASE(activity_batches_accept_only_bounded_semantic_commands){
+    Json plan={{"version",1},{"commands",Json::array({{{"kind","eat_nearest"},{"seconds",0}},{{"kind","rest"},{"seconds",30}},{{"kind","wait"},{"seconds",1}}})}};CHECK(validateActivities(plan.dump()).ok);
+    plan["commands"][0]["kind"]="computer.launch";CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["kind"]="eat_nearest";plan["commands"][0]["seconds"]=1;CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["seconds"]=0;plan["commands"][1]["seconds"]=1801;CHECK(!validateActivities(plan.dump()).ok);
+    plan["commands"]=Json::array();CHECK(validateActivities(plan.dump()).ok);for(int i=0;i<7;++i)plan["commands"].push_back({{"kind","wait"},{"seconds",1}});CHECK(!validateActivities(plan.dump()).ok);
+}
+TEST_CASE(dialogue_preparation_has_distinct_receive_and_prepare_phases){
+    DialoguePreparation phase;CHECK(phase.phase(0)=="idle");phase.input(true);CHECK(phase.phase(0)=="receiving");phase.receive(10);phase.input(false);CHECK(phase.phase(10.2)=="receiving");CHECK(phase.phase(10.4)=="preparing");phase.finish();CHECK(phase.phase(10.5)=="idle");phase.receive(11);phase.finish();CHECK(!phase.pending());
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

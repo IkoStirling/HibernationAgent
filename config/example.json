@@ -104,7 +104,9 @@
       "respectModelBubble": false,
       "reactionCacheEnabled": false,
       "reactionCooldownMs": 8000,
-      "reactionProbability": 0.45
+      "reactionProbability": 0.45,
+      "autonomousMode": false,
+      "autonomyIdleSeconds": 30
     }
   },
   "computer": {

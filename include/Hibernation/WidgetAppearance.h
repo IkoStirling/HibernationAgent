@@ -30,7 +30,7 @@ inline void stamp(Frame& f,const char* const* rows,int count,int left=0,int top=
 }
 inline Frame make(std::string_view skin,std::string_view state,double seconds,bool reduced=false,double landingAge=1,bool mouthBeat=false){
     Frame f;const double time=std::max(0.0,seconds);f.phase=static_cast<unsigned>(time*10)%8;
-    const bool rest=state=="resting",walk=state=="walk",drag=state=="dragged",curious=state=="curious"||state=="listening";
+    const bool rest=state=="resting",walk=state=="walk",drag=state=="dragged",curious=state=="curious"||state=="listening"||state=="receiving"||state=="preparing";
     f.blink=rest||(!drag&&std::fmod(time,6.7)>6.52);f.mouthOpen=(state=="eating"&&std::fmod(time*4,1.0)<0.5)||(state=="speaking"&&mouthBeat);
     if(skin=="moonbird"){
         static const char* const rows[]={"      11      11      ","     1221    1221     ","    12222111122221    ","    12222222222221    ","   1223332222333221   ","   1233333223333321   ","   1233433223343321   ","   1233333223333321   ","   1223332222333221   ","   1222224412222221   ","  122222224222222221  ","  122222333322222221  ","  122223333332222221  ","  11223333333322111  ","   12233333333221    ","    122333333221     ","     1222222221      ","      11222211       ","       141141        ","       111111        "};
@@ -54,6 +54,8 @@ inline Frame make(std::string_view skin,std::string_view state,double seconds,bo
         if(drag&&!reduced){for(int y=21;y<24;++y)for(int x=7;x<=14;++x)f.put(x,y,0);for(int x:{8,12}){f.put(x,21,1);f.put(x,22,2);f.put(x,23,1);}}
         if(!reduced&&!rest){const int swing=static_cast<int>(std::sin(time*(walk?8:2.2))*1.4);if(swing){auto before=f.cells;for(int y=7;y<16;++y)for(int x=0;x<5;++x)f.put(x,y,0);for(int y=7;y<16;++y)for(int x=0;x<5;++x)if(before[y*24+x])f.put(x,y+swing,before[y*24+x]);}}
     }
+    if(state=="receiving"){f.lean=-.07;f.scaleY=1.035;}
+    if(state=="preparing"){f.lean=.07;f.blink=f.blink||(!reduced&&std::fmod(time,2.8)<.15);}
     if(rest){f.scaleY=0.84;f.scaleX=1.04;}
     if(!reduced){
         f.offsetY=walk?-std::abs(std::sin(time*10))*1.4:rest?0:std::sin(time*2)*0.45;

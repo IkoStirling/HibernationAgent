@@ -3,6 +3,7 @@
 **Version:** 0.2.0 · **Date:** 2026-10-26 · **Status:** Windows 本地可运行版本
 
 本轮新增与当前验证范围见[2026-10-26 更新说明](docs/update-20261026.md)。
+后续新增[记忆浓缩检索、对话准备状态与自主活动队列](docs/memory-library-and-activities.md)。
 
 源代码位于 `D:/Aliyat/HibernationAgent`。程序复用 AliyatEngine 的模型适配、JSON
 校验、版本账本、受限工作区、持久任务、事件通道、插件加载、完整视频播放与音频同步。角色协议、

@@ -13,7 +13,7 @@ constexpr COLORREF transparent=RGB(255,0,255);
 class Habitat final:public BasePlugin {
     PluginHostContext host_;PluginJson cfg_;mutable std::recursive_mutex mutex_;SmallWorld world_;
     HWND window_=nullptr;HBITMAP buffer_=nullptr;HINSTANCE instance_=nullptr;
-    int width_=1920,height_=1080,actorSize_=112;bool visible_=true,paused_=false,busy_=false,input_=false,actor_=false,reducedMotion_=false,actorResting_=false;
+    int width_=1920,height_=1080,actorSize_=112;bool autonomous_=false,visible_=true,paused_=false,busy_=false,input_=false,actor_=false,reducedMotion_=false,actorResting_=false;
     double actorX_=.1,actorY_=.5,nextSpawn_=12,nextAutonomy_=30,nextPaint_=0;std::int64_t actorSeen_=0;
     std::uint64_t sequence_=0,attentionEpoch_=0;std::mt19937 random_{std::random_device{}()};RECT previous_{};
     struct PaintItem {int x,y;deskAppearance::Frame frame;bool operator==(const PaintItem&)const=default;};
@@ -85,12 +85,14 @@ public:
         if(!paused_&&visible_&&!busy_&&!input_&&actorAvailable){
             if(cfg_.value("autoSpawn",true)&&world_.clock()>=nextSpawn_){if(world_.size()<static_cast<std::size_t>(cfg_.value("maxObjects",3)))place(std::array<const char*,4>{"berry","leaf","seed","paper_star"}[random_()%4]);nextSpawn_=world_.clock()+cfg_.value("spawnSeconds",120.0)*(.8+(random_()%401)/1000.0);}
             if(world_.queued()&&!actorResting_)world_.beginWalk();
-            if(cfg_.value("autoInteract",true)&&!actorResting_&&!world_.pending()&&!world_.objects().empty()&&world_.clock()>=nextAutonomy_){nextAutonomy_=world_.clock()+30+random_()%31;if(std::bernoulli_distribution(cfg_.value("interactionProbability",.35))(random_)){std::vector<PluginJson> candidates;for(const auto& item:world_.objects())if(SmallWorld::newObservation(item)||(world_.wantsFood()&&SmallWorld::edible(item.at("kind"))))candidates.push_back(item);if(!candidates.empty()){const auto& item=candidates.at(random_()%candidates.size());request(item.at("id"),world_.wantsFood()&&SmallWorld::edible(item.at("kind"))?"eat":"look");}}}
+            if(!autonomous_&&cfg_.value("autoInteract",true)&&!actorResting_&&!world_.pending()&&!world_.objects().empty()&&world_.clock()>=nextAutonomy_){nextAutonomy_=world_.clock()+30+random_()%31;if(std::bernoulli_distribution(cfg_.value("interactionProbability",.35))(random_)){std::vector<PluginJson> candidates;for(const auto& item:world_.objects())if(SmallWorld::newObservation(item)||(world_.wantsFood()&&SmallWorld::edible(item.at("kind"))))candidates.push_back(item);if(!candidates.empty()){const auto& item=candidates.at(random_()%candidates.size());request(item.at("id"),world_.wantsFood()&&SmallWorld::edible(item.at("kind"))?"eat":"look");}}}
         }
         drain();if(window_&&visible_&&world_.clock()>=nextPaint_){nextPaint_=world_.clock()+1.0/15;invalidate();}
     }
     void event(const PluginJson& event)override{
         std::lock_guard lock(mutex_);const auto kind=event.value("kind",std::string{});
+        if(kind=="runtime.autonomy"){autonomous_=event.value("enabled",false);return;}
+        if(kind=="runtime.activity_cancel"){world_.cancel("activity_cancelled");drain();return;}
         if(kind=="runtime.paused"){paused_=event.value("paused",false);return;}
         if(kind=="runtime.attention"){const bool busy=event.value("busy",false),input=event.value("input_active",false);const auto epoch=event.value("epoch",std::uint64_t(0));if((busy&&!busy_)||(input&&!input_)||epoch!=attentionEpoch_)world_.cancel("attention_changed");attentionEpoch_=epoch;busy_=busy;input_=input;drain();return;}
         if(kind=="widget.position"){actor_=event.value("active",false);actorX_=event.value("x",actorX_);actorY_=event.value("y",actorY_);actorSize_=event.value("size",actorSize_);actorResting_=event.value("state",std::string{})=="resting";actorSeen_=nowMs();return;}

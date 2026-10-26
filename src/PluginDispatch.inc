@@ -4,6 +4,7 @@
                 continue;
             }
             if(event.value("kind","")=="speech.prepared"){reactionPrepared(event);continue;}
+            activityEvent(event);
             trackSpeech(event);
             if(event.value("kind","")=="speech.failed")speechIssue="语音未能播放，请在管理页检查声音设置。";
             if(event.value("kind","")=="speech.started")speechIssue.clear();
