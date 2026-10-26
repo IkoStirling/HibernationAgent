@@ -3,7 +3,8 @@ param(
  [string]$BuildRoot='',
  [ValidateRange(1,720)][double]$DurationMinutes=480,
  [ValidateRange(1,120)][int]$CycleSeconds=30,
- [string]$RunRoot=''
+ [string]$RunRoot='',
+ [string]$SeedRunRoot=''
 )
 $ErrorActionPreference='Stop'
 $ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot)
@@ -11,7 +12,9 @@ if(!$BuildRoot){$BuildRoot=Join-Path $ProjectRoot 'out/staging'};$BuildRoot=[IO.
 if(!$RunRoot){$RunRoot=Join-Path $ProjectRoot ('artifacts/soak-'+[Guid]::NewGuid().ToString('N'))};$RunRoot=[IO.Path]::GetFullPath($RunRoot)
 if(Test-Path "$RunRoot/progress.json"){throw 'Choose a new, unused soak run directory.'}
 New-Item -ItemType Directory -Force $RunRoot|Out-Null
-$service=$null;$provider=$null;$checks=0;$cycle=0;$restarts=0;$busyRetries=0;$lastMemory='';$lastMessage='';$started=[DateTime]::UtcNow;$end=$started.AddMinutes($DurationMinutes)
+if($SeedRunRoot){$SeedRunRoot=[IO.Path]::GetFullPath($SeedRunRoot);if(!(Test-Path -LiteralPath (Join-Path $SeedRunRoot '.synthetic-continuity-fixture'))){throw 'Seed must be an explicitly marked synthetic continuity run.'};$sourceData=Join-Path $SeedRunRoot data;$guard=[IO.File]::Open((Join-Path $sourceData runtime/service.lock),[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$guard.Dispose();Copy-Item -LiteralPath $sourceData -Destination (Join-Path $RunRoot data) -Recurse}
+Set-Content -LiteralPath (Join-Path $RunRoot '.synthetic-continuity-fixture') -Value 'Synthetic model, conversation and credentials only.' -Encoding utf8
+$service=$null;$provider=$null;$checks=0;$cycle=0;$restarts=0;$busyRetries=0;$ownerBusyObservations=0;$ownerHealth=$null;$lastMemory='';$lastMessage='';$started=[DateTime]::UtcNow;$end=$started.AddMinutes($DurationMinutes)
 $env:HIBERNATION_SESSION_KEY='isolated-soak-session';$env:HIBERNATION_SOAK_KEY='isolated-soak-model';$env:TEMP="$RunRoot/tmp";$env:TMP=$env:TEMP;New-Item -ItemType Directory -Force $env:TEMP|Out-Null
 function Check($Condition,$Name){if(!$Condition){throw "CHECK FAILED: $Name"};$script:checks++}
 function Wait-For([scriptblock]$Probe,$Name,[int]$Seconds=30){$until=[DateTime]::UtcNow.AddSeconds($Seconds);while([DateTime]::UtcNow-lt$until){if(& $Probe){return};Start-Sleep -Milliseconds 50};throw "TIMEOUT $Name"}
@@ -32,9 +35,13 @@ function Start-Backend{
  $script:origin='http://127.0.0.1:'+((Get-Content "$RunRoot/ready.json" -Raw|ConvertFrom-Json).port)
 }
 function Stop-Backend{$null=Api '/api/shutdown' @{};Check ($service.WaitForExit(12000)-and$service.ExitCode-eq0) 'clean shutdown'}
+function Owner-Settled{
+ Wait-For {$script:ownerHealth=Api '/api/chat';if($ownerHealth.health-ne'ok'-or$ownerHealth.busy){$state=Api '/api/state';@{cycle=$cycle;health=$ownerHealth.health;busy=$ownerHealth.busy;observedUtc=[DateTime]::UtcNow.ToString('O');jobs=@($state.jobs|Select-Object id,state,pause_requested,due_at,run_token)}|ConvertTo-Json -Depth 8 -Compress|Add-Content (Join-Path $RunRoot owner-observations.jsonl) -Encoding utf8};if($ownerHealth.health-ne'ok'){throw ('Owner health: '+$ownerHealth.health)};if($ownerHealth.busy){$script:ownerBusyObservations++;return $false};return $true} 'owner settles after due scheduled work'
+ Check ($ownerHealth.health-eq'ok'-and!$ownerHealth.busy) 'owner loop healthy'
+}
 function Progress($Status,$Failure=''){
  $process=if($service-and!$service.HasExited){$service.Refresh();$service}else{$null}
- $value=@{status=$Status;startedUtc=$started.ToString('O');plannedEndUtc=$end.ToString('O');updatedUtc=[DateTime]::UtcNow.ToString('O');elapsedMinutes=([DateTime]::UtcNow-$started).TotalMinutes;cycles=$cycle;checks=$checks;restarts=$restarts;busyRetries=$busyRetries;error=$Failure;root=$RunRoot;servicePid=if($process){$process.Id}else{$null};providerPid=if($provider-and!$provider.HasExited){$provider.Id}else{$null};privateMiB=if($process){[math]::Round($process.PrivateMemorySize64/1MB,2)}else{0};handles=if($process){$process.HandleCount}else{0}}
+ $value=@{status=$Status;startedUtc=$started.ToString('O');plannedEndUtc=$end.ToString('O');updatedUtc=[DateTime]::UtcNow.ToString('O');elapsedMinutes=([DateTime]::UtcNow-$started).TotalMinutes;cycles=$cycle;checks=$checks;restarts=$restarts;busyRetries=$busyRetries;ownerBusyObservations=$ownerBusyObservations;lastHealth=$ownerHealth.health;lastBusy=$ownerHealth.busy;seedRun=$SeedRunRoot;error=$Failure;root=$RunRoot;servicePid=if($process){$process.Id}else{$null};providerPid=if($provider-and!$provider.HasExited){$provider.Id}else{$null};privateMiB=if($process){[math]::Round($process.PrivateMemorySize64/1MB,2)}else{0};handles=if($process){$process.HandleCount}else{0}}
  $text=$value|ConvertTo-Json -Depth 5;[IO.File]::WriteAllText("$RunRoot/progress.next",$text,[Text.UTF8Encoding]::new($false));[IO.File]::Move("$RunRoot/progress.next","$RunRoot/progress.json",$true)
  ($value|ConvertTo-Json -Depth 5 -Compress)|Add-Content "$RunRoot/samples.jsonl" -Encoding utf8
 }
@@ -56,7 +63,7 @@ try{
   if($cycle%6-eq0){$null=Api '/api/control' @{paused=$true};$before=(Api '/api/state').continuous_state;Check ($null-ne$before.energy-and$null-ne$before.mood) 'actual continuous numbers are present';Start-Sleep -Milliseconds 300;$after=(Api '/api/state').continuous_state;Check ($before.mood-eq$after.mood-and$before.energy-eq$after.energy) 'pause preserves numerical state';$null=Api '/api/control' @{paused=$false}}
   if($cycle%8-eq0){$settings=(Api '/api/dashboard').settings;$settings.plugins.widget.skin=@('dinosaur','moonbird','lumen')[($cycle/8)%3];$null=Api '/api/settings' @{settings=$settings};Check ((Api '/api/capabilities').plugins.Where({$_.id-eq'widget'})[0].current.skin-eq$settings.plugins.widget.skin) 'plugin hot configuration remains usable'}
   if($cycle%12-eq0){$before=(Api '/api/state').continuous_state;Check ($null-ne$before.energy-and$null-ne$before.mood) 'restart reads actual continuous numbers';$raw=Api '/api/archive' @{id=$lastMessage};Stop-Backend;Start-Backend;$restarts++;$after=(Api '/api/state').continuous_state;Check ([math]::Abs($after.mood-$before.mood)-lt.02-and[math]::Abs($after.energy-$before.energy)-lt.02) 'restart preserves continuous state';$restored=Api '/api/archive' @{id=$lastMessage};Check (($raw|ConvertTo-Json -Depth 30 -Compress)-eq($restored|ConvertTo-Json -Depth 30 -Compress)) 'original archive stays unchanged across restart'}
-  $health=Api '/api/chat';Check ($health.health-eq'ok'-and!$health.busy) 'owner loop healthy';$service.Refresh();Check ($service.PrivateMemorySize64-lt512MB-and$service.HandleCount-lt2048) 'bounded process resources';Progress 'running'
+  Owner-Settled;$service.Refresh();Check ($service.PrivateMemorySize64-lt512MB-and$service.HandleCount-lt2048) 'bounded process resources';Progress 'running'
   while([DateTime]::UtcNow-lt$cycleStart.AddSeconds($CycleSeconds)-and[DateTime]::UtcNow-lt$end){if(Test-Path "$RunRoot/stop"){break};Start-Sleep -Milliseconds 1000}
  }
  if([DateTime]::UtcNow-ge$end){Check (([DateTime]::UtcNow-$started).TotalMinutes-ge$DurationMinutes) 'real duration reached';Progress 'completed'}
@@ -65,3 +72,6 @@ finally{
  if($service){$service.Refresh();if(!$service.HasExited){try{Stop-Backend}catch{};$service.Refresh();if(!$service.HasExited){Stop-Process -Id $service.Id}}}
  if($provider){$provider.Refresh();if(!$provider.HasExited){Stop-Process -Id $provider.Id}}
 }
+
+
+
