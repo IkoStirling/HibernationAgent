@@ -186,6 +186,15 @@ pwsh -NoProfile -File scripts/PrepareWebView.ps1
 pwsh -NoProfile -File scripts/Build.ps1
 ```
 
+日常运行可另建优化版本，保留开发检查目录：
+
+```powershell
+pwsh -NoProfile -File scripts/Build.ps1 -BuildRoot out/release -Configuration Release
+```
+
+调试默认为Debug；可选Release或RelWithDebInfo。已经配置的目录若显式传入不同构建
+类型，Build/Test会拒绝，需先Configure或换独立目录，不会悄悄沿用旧类型。
+
 PrepareVideo 只需首次准备：校验官方 FFmpeg8.1.2 源码头文件，并使用本机引擎已有
 匹配 DLL 生成导入库。不会下载并替换整套引擎。Build 使用本机已有 MSVC、CMake、
 Ninja 和引擎依赖目录，输出 `out/build`。换环境需调整路径或直接通过 CMake 配置。

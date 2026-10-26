@@ -17,6 +17,6 @@ foreach($name in @('avcodec-62','avformat-62','avutil-60','swresample-6')){
  $definition=Join-Path $SdkRoot ('lib/'+$name+'.def');@(('LIBRARY "'+$name+'.dll"'),'EXPORTS')+$symbols|Set-Content -LiteralPath $definition -Encoding ascii
  & lib.exe /nologo /machine:x64 ('/def:'+$definition) ('/out:'+(Join-Path $SdkRoot ('lib/'+$name+'.lib')))|Out-Null;if($LASTEXITCODE){throw 'Import library creation failed.'}
 }
-Get-ChildItem -LiteralPath $EngineBin -Filter '*.dll'|ForEach-Object{Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $SdkRoot 'bin') -Force}
+foreach($name in @('avcodec-62','avformat-62','avutil-60','swresample-6')){Copy-Item -LiteralPath (Join-Path $EngineBin ($name+'.dll')) -Destination (Join-Path $SdkRoot 'bin') -Force}
 @{version='8.1.2';headers='https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz';sha256=$expected;binarySource=$EngineBin;note='Reuses existing engine FFmpeg DLLs; import libraries derived from their exports.'}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $SdkRoot 'provenance.json') -Encoding utf8
 Write-Output 'FFmpeg decode SDK prepared from verified upstream headers and existing engine binaries.'

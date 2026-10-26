@@ -1,0 +1,13 @@
+param([Parameter(Mandatory)][string]$BuildRoot)
+$ErrorActionPreference='Stop';$BuildRoot=[IO.Path]::GetFullPath($BuildRoot);$cache=Get-Content -LiteralPath (Join-Path $BuildRoot CMakeCache.txt)
+function Cache-Value($Name){$line=@($cache|Where-Object {$_-match('^'+[regex]::Escape($Name)+':[^=]+=(.+)$')})|Select-Object -First 1;if(!$line){throw "Missing build cache entry: $Name"};return $line.Substring($line.IndexOf('=')+1)}
+$configuration=Cache-Value CMAKE_BUILD_TYPE;$installed=Cache-Value VCPKG_INSTALLED_DIR;$bin=Join-Path $installed $(if($configuration-eq'Debug'){'x64-windows/debug/bin'}else{'x64-windows/bin'});$checks=0
+$dependencies=@{};$manifest=Join-Path $BuildRoot ('host-runtime-'+$configuration+'.txt');if(!(Test-Path -LiteralPath $manifest)){throw 'Runtime dependency manifest is missing; configure the current source first.'};foreach($path in Get-Content -LiteralPath $manifest){if($path.Trim()){$dependencies[(Split-Path $path -Leaf)]=$path}}
+# Find modules may expose UNKNOWN targets and omit their DLLs from the CMake
+# expression; check their actual shared runtime when this dependency set has it.
+foreach($name in @('libcrypto-3-x64.dll','libssl-3-x64.dll','libsodium.dll','sqlite3.dll')){$candidate=Join-Path $bin $name;if(Test-Path -LiteralPath $candidate){$dependencies[$name]=$candidate}}
+function Match-Dependency($Actual,$Expected){if(!(Test-Path -LiteralPath $Actual)-or!(Test-Path -LiteralPath $Expected)){throw 'Required runtime dependency is missing.'};if((Get-FileHash -LiteralPath $Actual -Algorithm SHA256).Hash-ne(Get-FileHash -LiteralPath $Expected -Algorithm SHA256).Hash){throw ('Runtime build configuration mismatch: '+(Split-Path $Actual -Leaf))};$script:checks++}
+foreach($name in $dependencies.Keys){Match-Dependency (Join-Path $BuildRoot $name) $dependencies[$name]}
+$plugins=Join-Path $BuildRoot plugins;if(Test-Path -LiteralPath $plugins){foreach($folder in Get-ChildItem -LiteralPath $plugins -Directory){if(!(Test-Path -LiteralPath (Join-Path $folder.FullName plugin.json))){continue};foreach($name in $dependencies.Keys){$actual=Join-Path $folder.FullName $name;if(Test-Path -LiteralPath $actual){Match-Dependency $actual $dependencies[$name]}}}}
+$sdk=Cache-Value HA_FFMPEG_SDK;foreach($name in @('avcodec-62.dll','avformat-62.dll','avutil-60.dll','swresample-6.dll')){if(Test-Path -LiteralPath (Join-Path $BuildRoot $name)){Match-Dependency (Join-Path $BuildRoot $name) (Join-Path $sdk ('bin/'+$name))}}
+Write-Output ('PASS runtime composition: '+$checks+' matching dependencies, '+$configuration+' host; engine video binaries are preserved separately.')
