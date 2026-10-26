@@ -6,7 +6,7 @@
 namespace hibernation {
 std::string reactionSchema();
 ValidatedOutput validateReactions(std::string_view text);
-struct ReactionBatch {std::string key,status;Json entries=Json::array(),proposal,review;double modelMs=0,reviewMs=0;};
+struct ReactionBatch {std::string key,status;Json entries=Json::array(),proposal,review,usage=Json::object();double modelMs=0,reviewMs=0;};
 class ReactionGenerator {
 public:
     ~ReactionGenerator();
