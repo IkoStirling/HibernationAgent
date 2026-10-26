@@ -1,19 +1,19 @@
 {
-  "testedEngineRootCommit": "1d0304ab16afda9236dd7874f26f4d26c2ddff29",
+  "testedEngineRootCommit": "cd5309555e02b97541f5c4b19c3da936302d5b66",
   "engineRelativePath": "../AliyatEngine",
   "modules": {
     "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",
     "AYFoundation/AYSerializer": "c839aa10e419a47330ffcaa7020afff556de566b",
-    "AYFoundation/AYStorage": "d921249117f8e8b9aec40967a7fba4bf58c9f4f3",
+    "AYFoundation/AYStorage": "462af90c9f2bb8446c01b8ae04511d4d77cf34b1",
     "AYFoundation/AYTask": "1ab1e4bbfb38a4ac5e12ef52fd09ecb4fca58549",
     "AYRuntime/AYInference": "7077ac9fbf4bd19c8625c90e58c49a6d5535ed44",
-    "AYRuntime/AYNetwork": "41448c3e3655600da41d748338a42f16ef6b9065",
-    "AYRuntime/AYApplication": "0fd005ec78becdd009cb35a44259f77a3fb171d1",
+    "AYRuntime/AYNetwork": "c5205d0234c67b150571596d8d90649e11d1f8f4",
+    "AYRuntime/AYApplication": "9f814eb0b5005eabd2e85db5b8e56b2dc7828c27",
     "AYRuntime/AYEventSystem": "d7296137684e2d6f8c9b859dcd317b8b72629e3f",
-    "AYFoundation/AYCrypto": "6a295093217a615507a0a8b4b7a7ab7531197c07",
+    "AYFoundation/AYCrypto": "1ba2f3918a5892a1d9ccc2fdab2ce1fe7dddfdbd",
     "AYRuntime/AYPlugin": "cef4c819d200480e0079225aaca9392356059de1",
     "AYRuntime/AYVideo": "2184c0e248dcc736a9304214b451dd6581bc0aae",
-    "AYRuntime/AYAudio": "496702ece760b2fd0f21a45c1f95e9da478a99b3",
+    "AYRuntime/AYAudio": "5a5831271a42357010a0163b91d07c72b3505547",
     "AYRuntime/AYCore": "4fe6b582a8edbc6855aeba59188487c69bca6ab5",
     "AYFoundation/AYMath": "ee4580b114ae719b3416204661607411cba7a107",
     "AYFoundation/AYTime": "7e7108d0fe31d43ce87cba011d7fd228bfad0306",
@@ -24,5 +24,9 @@
     "plain": 1,
     "protected": 2,
     "payloadSchema": 1
-  }
+  },
+  "applicationServicesCommit": "6d34206ce9a7fe86da59a5856ff1e22aa01af81c",
+  "hostConfiguration": "Release",
+  "validatedExecutableSha256": "607EAAE62D43B3D026230483F75C18F6573C74D8949BBC8852C392A1E7E66EA6",
+  "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility"
 }
