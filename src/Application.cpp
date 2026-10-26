@@ -1,3 +1,4 @@
+#include <Hibernation/DropDefinition.h>
 #include <Hibernation/Application.h>
 #include <Hibernation/Vault.h>
 #include <Hibernation/TurnProtocol.h>

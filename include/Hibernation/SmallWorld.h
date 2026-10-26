@@ -1,5 +1,6 @@
 #pragma once
 #include <nlohmann/json.hpp>
+#include <Hibernation/DropDefinition.h>
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -11,8 +12,8 @@ namespace hibernation {
 class SmallWorld {
 public:
     using Json=nlohmann::json;
-    static bool knownKind(const std::string& kind){return kind=="berry"||kind=="leaf"||kind=="seed"||kind=="paper_star"||kind=="sprout";}
-    static bool edible(const std::string& kind){return kind=="berry"||kind=="leaf"||kind=="seed";}
+    static bool knownKind(const std::string& kind){return drops::known(kind);}
+    static bool edible(const std::string& kind){return drops::edible(kind);}
     static const char* growthStage(int value){return value<=0?"newly_planted":value==1?"leaves":value==2?"bud":"flowering";}
     double clock()const{return clock_;}
     bool pending()const{return !pending_.is_null();}
@@ -26,9 +27,12 @@ public:
     static bool newObservation(const Json& item){return item.value("observed_growth",-1)!=item.value("growth",0);}
     void configure(std::size_t maximum,double ttl){maximum_=maximum;ttl_=ttl;}
     Json object(const std::string& id)const{for(const auto& item:objects_)if(item.at("id")==id)return item;return nullptr;}
-    bool place(const std::string& id,const std::string& kind,double x,double y){
-        if(id.empty()||id.size()>96||!knownKind(kind)||!std::isfinite(x)||!std::isfinite(y)||x<0||x>1||y<0||y>1||object(id).is_object()||size()>=maximum_)return false;
-        objects_.push_back({{"id",id},{"kind",kind},{"x",x},{"y",y},{"born",clock_},{"expires",clock_+ttl_},{"growth",0},{"observed_growth",-1}});
+    bool place(const std::string& id,const std::string& kind,double x,double y){return placeDetailed(id,kind,x,y,Json::object(),ttl_,0,"program");}
+    bool placeDetailed(const std::string& id,const std::string& kind,double x,double y,Json authored,double lifetime,int quality,const std::string& creator){
+        if(id.empty()||id.size()>96||!knownKind(kind)||!std::isfinite(x)||!std::isfinite(y)||x<0||x>1||y<0||y>1||object(id).is_object()||size()>=maximum_||!std::isfinite(lifetime)||lifetime<=0||lifetime>43200||quality<0||quality>2)return false;
+        if(!authored.is_object()||creator.size()>32)return false;
+        auto definition=drops::definition(kind,std::move(authored));if(!drops::validDefinition(definition))return false;
+        objects_.push_back({{"id",id},{"kind",kind},{"x",x},{"y",y},{"born",clock_},{"expires",clock_+lifetime},{"growth",0},{"observed_growth",-1},{"definition",definition},{"rules",drops::rules(kind,quality)},{"creator",creator}});
         emit("habitat.appeared",objects_.back());return true;
     }
     std::string request(const std::string& id,const std::string& action,const std::string& token){
@@ -37,6 +41,7 @@ public:
         const auto kind=item.at("kind").get<std::string>();
         if(action!="look"&&action!="eat"&&action!="plant")return "world_action_invalid";
         if(action=="eat"&&!edible(kind))return "world_object_not_food";
+        if(action!="look"&&drops::fading(item,clock_))return "world_object_fading";
         if(action=="eat"&&std::min(appetite_,targetAppetite_)<.12)return "world_not_hungry";
         if(action=="plant"&&kind!="seed")return "world_seed_required";
         if(token.empty()||token.size()>96)return "world_action_identity";
@@ -70,29 +75,32 @@ public:
         if(!acting())return;
         auto item=object(pending_.at("id"));if(item.is_null()||distance(item,actorX,actorY)>.03){cancel("character_moved");return;}
         if(clock_<pending_.at("complete_at").get<double>())return;
-        const auto action=pending_.at("action").get<std::string>(),token=pending_.at("token").get<std::string>();
+        const auto action=pending_.at("action").get<std::string>(),token=pending_.at("token").get<std::string>();const auto previousItem=item;
         if(action=="eat"){
-            targetAppetite_=std::max(0.0,targetAppetite_-.22);targetComfort_=std::min(.85,targetComfort_+.015);
+            targetAppetite_=std::max(0.0,targetAppetite_-item.at("rules").at("nutrition").get<double>()/100.0);targetComfort_=std::min(.85,targetComfort_+item.at("rules").at("comfort").get<double>());
             for(auto it=objects_.begin();it!=objects_.end();++it)if(it->at("id")==item.at("id")){objects_.erase(it);break;}
         }else if(action=="plant"){
-            for(auto& value:objects_)if(value.at("id")==item.at("id")){value["kind"]="sprout";value["born"]=clock_;value["expires"]=clock_+43200.0;value["growth"]=0;value["observed_growth"]=0;item=value;break;}
+            for(auto& value:objects_)if(value.at("id")==item.at("id")){value["kind"]="sprout";value["born"]=clock_;value["expires"]=clock_+43200.0;value["growth"]=0;value["observed_growth"]=0;value["rules"]=drops::rules("sprout",value.at("rules").at("quality"));value["definition"]["name"]=drops::name("sprout");item=value;break;}
             targetComfort_=std::min(.85,targetComfort_+.01);
         }else{targetComfort_=std::min(.85,targetComfort_+.005);for(auto& value:objects_)if(value.at("id")==item.at("id")){value["observed_growth"]=value.at("growth");item=value;break;}}
         const std::string kind=action=="eat"?"habitat.consumed":action=="plant"?"habitat.planted":"habitat.inspected";
-        emit(kind,item,token);lastActions_.push_back({{"kind",kind},{"item",item},{"at",clock_}});while(lastActions_.size()>4)lastActions_.erase(0);pending_=nullptr;
+        emit(kind,item,token);if(action=="plant")events_.back()["previous_item"]=previousItem;lastActions_.push_back({{"kind",kind},{"item",item},{"at",clock_}});while(lastActions_.size()>4)lastActions_.erase(0);pending_=nullptr;
     }
     Json observe()const{
-        Json items=Json::array();for(const auto& item:objects_){Json value={{"id",item.at("id")},{"kind",item.at("kind")},{"x",item.at("x")},{"y",item.at("y")},{"growth",item.at("growth")}};if(item.at("kind")=="sprout")value["appearance_stage"]=growthStage(item.at("growth"));items.push_back(std::move(value));}
-        return {{"objects",items},{"appetite",std::min(appetite_,targetAppetite_)<.12?"satisfied":appetite_>.6?"hungry":"mild"},{"pending",pending_},{"last_actions",lastActions_},{"guide","物件是程序内的虚拟物件。接近和动作完成有真实回执；accepted不等于已经吃掉或观察。可按自己的意愿选择或忽略，不报告内部数值。"}};
+        Json items=Json::array();for(const auto& item:objects_){Json value=item;value["remaining_seconds"]=std::max(0.0,item.at("expires").get<double>()-clock_);value["opacity"]=drops::opacity(item,clock_);value["lifecycle"]=drops::fading(item,clock_)?"fading":clock_-item.at("born").get<double>()<.9?"appearing":"present";if(item.at("kind")=="sprout")value["appearance_stage"]=growthStage(item.at("growth"));items.push_back(std::move(value));}
+        return {{"objects",items},{"appetite",std::min(appetite_,targetAppetite_)<.12?"satisfied":appetite_>.6?"hungry":"mild"},{"pending",pending_},{"last_actions",lastActions_},{"guide","物件是程序内的虚拟物件。definition是描述性自定义属性，rules由程序确定且不可改写；自定义描述不会改变可食用性、数值或权限。接近和动作完成有真实回执；accepted不等于已经吃掉或观察。可按自己的意愿选择或忽略，不报告内部数值。"}};
     }
-    Json snapshot()const{return {{"version",1},{"clock",clock_},{"objects",objects_},{"pending",pending_},{"appetite",appetite_},{"target_appetite",targetAppetite_},{"comfort",comfort_},{"target_comfort",targetComfort_},{"last_actions",lastActions_}};}
+    Json snapshot()const{return {{"version",2},{"clock",clock_},{"objects",objects_},{"pending",pending_},{"appetite",appetite_},{"target_appetite",targetAppetite_},{"comfort",comfort_},{"target_comfort",targetComfort_},{"last_actions",lastActions_}};}
     bool restore(const Json& value){
         try{
-            if(!value.is_object()||value.value("version",0)!=1)return false;
+            if(!value.is_object()||(value.value("version",0)!=1&&value.value("version",0)!=2))return false;const bool legacy=value.at("version")==1;
             auto bounded=[](const Json& j,const char* key,double lo,double hi){const double x=j.at(key);if(!std::isfinite(x)||x<lo||x>hi)throw 0;return x;};
             const double clock=bounded(value,"clock",0,1e10),appetite=bounded(value,"appetite",0,1),targetAppetite=bounded(value,"target_appetite",0,1),comfort=bounded(value,"comfort",0,1),targetComfort=bounded(value,"target_comfort",0,1);
-            const auto objects=value.at("objects"),actions=value.at("last_actions");if(!objects.is_array()||objects.size()>8||!actions.is_array()||actions.size()>4)return false;
-            std::vector<std::string> ids;for(const auto& item:objects){const auto id=item.at("id").get<std::string>(),kind=item.at("kind").get<std::string>();if(id.empty()||id.size()>96||!knownKind(kind)||std::find(ids.begin(),ids.end(),id)!=ids.end())return false;ids.push_back(id);bounded(item,"x",0,1);bounded(item,"y",0,1);bounded(item,"born",0,clock);bounded(item,"expires",0,1e10);bounded(item,"growth",0,3);}
+            auto objects=value.at("objects");const auto actions=value.at("last_actions");if(!objects.is_array()||objects.size()>8||!actions.is_array()||actions.size()>4)return false;
+            std::vector<std::string> ids;for(auto& item:objects){const auto id=item.at("id").get<std::string>(),kind=item.at("kind").get<std::string>();if(id.empty()||id.size()>96||!knownKind(kind)||std::find(ids.begin(),ids.end(),id)!=ids.end())return false;ids.push_back(id);bounded(item,"x",0,1);bounded(item,"y",0,1);bounded(item,"born",0,clock);bounded(item,"expires",0,1e10);bounded(item,"growth",0,3);if(item.at("expires").get<double>()<item.at("born").get<double>())return false;
+                if(legacy){item["definition"]=drops::definition(kind);item["rules"]=drops::rules(kind);item["creator"]="legacy";}
+                if(!drops::validDefinition(item.at("definition"))||!item.at("rules").at("quality").is_number_integer()||!item.at("creator").is_string())return false;const int quality=item.at("rules").at("quality");if(quality<0||quality>2||item.at("rules")!=drops::rules(kind,quality)||item.at("creator").get<std::string>().size()>32)return false;
+            }
             clock_=clock;appetite_=appetite;targetAppetite_=targetAppetite;comfort_=comfort;targetComfort_=targetComfort;objects_=objects;lastActions_=actions;pending_=nullptr;events_.clear();
             if(value.contains("pending")&&!value.at("pending").is_null())events_.push_back({{"kind","habitat.action_cancelled"},{"reason","application_restarted"}});
             return true;

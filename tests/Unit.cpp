@@ -16,6 +16,7 @@
 #include <Hibernation/SmallWorld.h>
 #include <Hibernation/SplashPixels.h>
 #include <Hibernation/DeskObjectAppearance.h>
+#include <Hibernation/DropPixels.h>
 #include <Hibernation/QuietRhythm.h>
 #include <Hibernation/TelevisionLayout.h>
 #include <AYTestFixtures.h>
@@ -298,6 +299,22 @@ TEST_CASE(activity_batches_accept_only_bounded_semantic_commands){
 }
 TEST_CASE(dialogue_preparation_has_distinct_receive_and_prepare_phases){
     DialoguePreparation phase;CHECK(phase.phase(0)=="idle");phase.input(true);CHECK(phase.phase(0)=="receiving");phase.receive(10);phase.input(false);CHECK(phase.phase(10.2)=="receiving");CHECK(phase.phase(10.4)=="preparing");phase.finish();CHECK(phase.phase(10.5)=="idle");phase.receive(11);phase.finish();CHECK(!phase.pending());
+}
+TEST_CASE(drop_definitions_cannot_override_program_rules){
+    const Json authored={{"name","月光布丁"},{"description","晃起来像一小块月光。"},{"tint","sky"},{"tags",Json::array({"柔软","甜点"})},{"traits",Json::array({{{"key","甜度"},{"value",3}},{{"key","发光"},{"value",true}}})}};
+    SmallWorld world;CHECK(world.placeDetailed("pudding","pudding",.3,.4,authored,20,2,"model"));const auto item=world.object("pudding");CHECK(item.at("definition")==authored);CHECK(item.at("rules").at("edible")==true);CHECK(item.at("rules").at("nutrition")==24);CHECK(item.at("rules").at("rarity")=="rare");
+    auto forged=authored;forged["nutrition"]=999;CHECK(!world.placeDetailed("forged","pudding",.3,.4,forged,20,0,"model"));forged=authored;forged["traits"][0]["key"]="nutrition";CHECK(!drops::validDefinition(forged));forged=authored;forged["traits"][0]["value"]=Json::object();CHECK(!drops::validDefinition(forged));forged=authored;forged["tags"]=Json::array({"重复","重复"});CHECK(!drops::validDefinition(forged));CHECK(world.size()==1);
+    CHECK(world.request("pudding","eat","eat").empty());CHECK(world.beginWalk());CHECK(world.arrive("eat",.3,.4));for(int i=0;i<8;++i)world.tick(.25,true,.3,.4,true);CHECK(world.size()==0);CHECK(world.snapshot().at("target_appetite").get<double>()<.17);auto events=world.takeEvents();CHECK(events.back().at("item").at("definition").at("name")=="月光布丁");
+}
+TEST_CASE(drop_lifecycle_fades_and_pauses_without_erasing_early){
+    SmallWorld world;CHECK(world.placeDetailed("drop","apple",.2,.4,Json::object(),8,0,"model"));CHECK(drops::opacity(world.object("drop"),world.clock())==0);world.tick(.25,true,0,0,false);const double early=drops::opacity(world.object("drop"),world.clock());CHECK(early>0&&early<1);for(int i=0;i<7;++i)world.tick(.25,true,0,0,false);CHECK(drops::opacity(world.object("drop"),world.clock())==1);
+    const auto frozen=world.snapshot();world.tick(100,false,0,0,false);CHECK(world.snapshot()==frozen);for(int i=0;i<21;++i)world.tick(.25,true,0,0,false);CHECK(world.size()==1);CHECK(drops::opacity(world.object("drop"),world.clock())<1);CHECK(world.request("drop","eat","late")=="world_object_fading");for(int i=0;i<4;++i)world.tick(.25,true,0,0,false);CHECK(world.size()==0);unsigned expired=0;for(const auto& event:world.takeEvents())if(event.at("kind")=="habitat.disappeared")++expired;CHECK(expired==1);
+}
+TEST_CASE(drop_save_migrates_legacy_objects_and_rejects_forged_rules){
+    SmallWorld world;CHECK(world.place("old","berry",.2,.3));auto old=world.snapshot();old["version"]=1;for(auto& item:old["objects"]){item.erase("definition");item.erase("rules");item.erase("creator");}SmallWorld restored;CHECK(restored.restore(old));CHECK(restored.object("old").at("creator")=="legacy");CHECK(restored.object("old").at("definition").at("name")=="浆果");const auto saved=restored.snapshot();SmallWorld next;CHECK(next.restore(saved));CHECK(next.snapshot()==saved);auto forged=saved;forged["objects"][0]["rules"]["nutrition"]=999;CHECK(!next.restore(forged));CHECK(next.snapshot()==saved);
+}
+TEST_CASE(drop_pixels_are_premultiplied_without_color_key_edges){
+    for(const auto& kind:drops::kinds())for(const auto alpha:{1u,63u,128u,255u}){std::vector<std::uint32_t> pixels(80*80);const auto frame=deskAppearance::make(kind.get<std::string>(),0,2,true,1,"sky",true);deskAppearance::raster(pixels.data(),80,80,frame,40,65,alpha);bool visible=false,valid=true;for(auto pixel:pixels){const auto a=pixel>>24;visible=visible||a>0;valid=valid&&a<=alpha&&((pixel>>16)&255)<=a&&((pixel>>8)&255)<=a&&(pixel&255)<=a;}CHECK(visible&&valid);CHECK(pixels.front()==0&&pixels.back()==0);}
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

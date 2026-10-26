@@ -35,9 +35,8 @@
         }
         const auto kind=event.value("kind",std::string{});if(event.value("plugin",std::string{})!="habitat"||(kind!="habitat.consumed"&&kind!="habitat.inspected"&&kind!="habitat.planted"))return;
         const auto item=event.value("item",Json::object());if(!item.is_object()||!item.contains("kind")||!item.at("kind").is_string())return;
-        const std::map<std::string,std::string> names={{"berry","一颗虚拟浆果"},{"leaf","一片虚拟叶子"},{"seed","一颗虚拟种子"},{"paper_star","一颗纸星"},{"sprout","一株芽苗"}};
-        const auto found=names.find(item.at("kind").get<std::string>());if(found==names.end())return;
-        auto objectName=found->second;if(item.at("kind")=="sprout"){const int growth=item.value("growth",0);if(growth>=3)objectName="一株已经开花的虚拟植物";else if(growth==2)objectName="一株带着花苞的虚拟植物";else if(growth==1)objectName="一株展开叶子的虚拟植物";}
+        const auto itemKind=item.at("kind").get<std::string>();if(!drops::known(itemKind))return;
+        auto objectName="虚拟小物「"+item.value("definition",Json::object()).value("name",drops::name(itemKind))+"」";if(item.at("kind")=="sprout"){const int growth=item.value("growth",0);if(growth>=3)objectName="一株已经开花的虚拟植物";else if(growth==2)objectName="一株带着花苞的虚拟植物";else if(growth==1)objectName="一株展开叶子的虚拟植物";}
         const auto text=kind=="habitat.consumed"?"角色在桌面上走近并吃掉了"+objectName+"。":kind=="habitat.planted"?"角色在桌面上种下了一颗虚拟种子，留下了一株芽苗。":"角色在桌面上走近并观察了"+objectName+"。";
         appendObservedExperience(changes,event,source,text,now);
     }

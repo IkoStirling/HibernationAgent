@@ -1,0 +1,22 @@
+param([string]$ProjectRoot=(Join-Path $PSScriptRoot '..'),[string]$BuildRoot='')
+$ErrorActionPreference='Stop';$ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot);if(!$BuildRoot){$BuildRoot=Join-Path $ProjectRoot out/release};$BuildRoot=[IO.Path]::GetFullPath($BuildRoot)
+Add-Type -Path (Join-Path $PSScriptRoot PrivateDesktop.cs);Add-Type -Path (Join-Path $PSScriptRoot NativeChatTest.cs);Add-Type -Path (Join-Path $PSScriptRoot BubbleLayoutProbe.cs)
+$root=Join-Path $ProjectRoot ('artifacts/bubble-layout-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null;$service=$null;$desktop=$null;$checks=0;$samples=@()
+$env:HIBERNATION_SESSION_KEY='bubble-layout-session';$env:TEMP=Join-Path $BuildRoot tmp;$env:TMP=$env:TEMP
+function Check($Value,$Name){if(!$Value){throw "CHECK FAILED: $Name"};$script:checks++;Write-Output "PASS $Name"}
+function Wait-For([scriptblock]$Probe,$Name){$end=[DateTime]::UtcNow.AddSeconds(25);while([DateTime]::UtcNow-lt$end){if(& $Probe){return};Start-Sleep -Milliseconds 40};throw "TIMEOUT $Name"}
+function Api($Path,$Data=$null){$p=@{Uri=$script:origin+$Path;Headers=@{Authorization='Bearer bubble-layout-session'};TimeoutSec=10};if($null-ne$Data){$p.Method='Post';$p.ContentType='application/json';$p.Body=[Text.Encoding]::UTF8.GetBytes(($Data|ConvertTo-Json -Depth 40 -Compress))};Invoke-RestMethod @p}
+try{
+ $cfg=Get-Content (Join-Path $ProjectRoot config/example.json) -Raw|ConvertFrom-Json -AsHashtable;$cfg.dataRoot=Join-Path $root data;$cfg.characterRoot=Join-Path $ProjectRoot character;$cfg.uiRoot=Join-Path $ProjectRoot ui;$cfg.pluginRoot=Join-Path $BuildRoot plugins;$cfg.frontend=@{startupAnimation=$false;reducedMotion=$true};$cfg.profiles=@($cfg.profiles[0]);$cfg.plugins=@{};$cfg.solitudeIntervalMs=600000;$cfg.idleBeforeSolitudeMs=600000;$cfg|ConvertTo-Json -Depth 40|Set-Content (Join-Path $root config.json) -Encoding utf8
+ $desktop=[PrivateDesktop]::new((Join-Path $BuildRoot hibernation-agent.exe),(Join-Path $root config.json),(Join-Path $root ready.json),$ProjectRoot);$service=$desktop.Child;Wait-For {if($service.HasExited){throw 'fixture exited'};Test-Path (Join-Path $root ready.json)} 'ready';$script:origin='http://127.0.0.1:'+((Get-Content (Join-Path $root ready.json) -Raw|ConvertFrom-Json).port)
+ $main=$desktop.Find('HibernationConversationV2');$viewport=[ChatWindowTest]::GetDlgItem($main,1203);[ChatWindowTest]::UseWindowCoordinates($main)
+ $text=('中文长段落：把每一个尚未解决的问题留在这里，末尾的文字也必须完整显示。'*12)+"`n`n第二段`r`n"+('视频路径 D:\Aliyat\materials\video\test1.mp4，标点、空行与英文混排。'*8)+"`n`n最后一段：星星和🌙都在。"
+ $null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$text};Wait-For {!(Api '/api/chat').busy} 'reply';Wait-For {@([BubbleLayoutProbe]::Inspect($viewport,$service.Id)|Where-Object Length -gt 700).Count-eq1} 'full user message'
+ foreach($width in @(700,480,950,620)){
+  [BubbleLayoutProbe]::Resize($main,$service.Id,$width,820);Start-Sleep -Milliseconds 250;$rows=[BubbleLayoutProbe]::Inspect($viewport,$service.Id);$script:samples+=@($rows|ForEach-Object {@{windowWidth=$width;textLength=$_.Length;width=$_.Width;height=$_.Height;lastY=$_.LastY;lines=$_.Lines}})
+  Check (@($rows|Where-Object {$_.LastY-lt0-or$_.LastY+20-gt$_.Height}).Count-eq0) "all paragraphs fit their native text area at width $width"
+  $long=@($rows|Where-Object Length -gt 700)[0];Check ($long.Width-gt($width-200)-and$long.Lines-gt10-and$long.Height-lt($long.Lines*36+20)) "long bubble expands without excessive empty height at width $width"
+ }
+ $row=([BubbleLayoutProbe]::Inspect($viewport,$service.Id))[0];$null=[ChatWindowTest]::Send($row.Window,0xB1,0,6);$selection=[ChatWindowTest]::Selection($row.Window);[BubbleLayoutProbe]::Resize($main,$service.Id,750,820);Start-Sleep -Milliseconds 200;Check ([ChatWindowTest]::Selection($row.Window)-eq$selection) 'resizing preserves selected text'
+ $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)-and$service.ExitCode-eq0) 'layout fixture exits cleanly';@{completed=$true;checks=$checks;samples=$samples;root=$root}|ConvertTo-Json -Depth 20|Set-Content (Join-Path $root acceptance.json);Write-Output "Chat bubble layout passed: $checks checks. $root"
+}finally{if($service){$service.Refresh();if(!$service.HasExited){try{$null=Api '/api/shutdown' @{};$service.WaitForExit(5000)|Out-Null}catch{};$service.Refresh();if(!$service.HasExited-and$service.Path-eq(Join-Path $BuildRoot hibernation-agent.exe)){Stop-Process -Id $service.Id}}};if($desktop){$desktop.Dispose()}}

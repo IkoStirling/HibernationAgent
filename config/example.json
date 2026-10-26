@@ -60,7 +60,9 @@
       "autoInteract": true,
       "maxObjects": 3,
       "spawnSeconds": 120,
-      "lifetimeSeconds": 600,
+      "lifetimeMinSeconds": 300,
+      "lifetimeMaxSeconds": 600,
+      "creationsPerMinute": 12,
       "interactionProbability": 0.35,
       "wakeOnAction": false,
       "reducedMotion": false
