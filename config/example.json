@@ -95,6 +95,9 @@
     "widget": {
       "enabled": false,
       "skin": "dinosaur",
+      "animationMode": "sequence",
+      "animationPack": "",
+      "animationCacheMiB": 64,
       "palette": "forest",
       "reducedMotion": false,
       "size": 112,

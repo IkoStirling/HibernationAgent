@@ -2,7 +2,7 @@
   "id": "widget",
   "name": "桌面小角色",
   "description": "透明桌面小恐龙，支持拖动、点击、游走和对白气泡。",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "api_version": 2,
   "library": "Hibernation_Widget.dll",
   "capabilities": [
@@ -25,6 +25,38 @@
       "min": 5,
       "max": 600,
       "step": 5
+    },
+    {
+      "label": "动画来源",
+      "key": "animationMode",
+      "type": "select",
+      "options": [
+        [
+          "sequence",
+          "像素序列帧"
+        ],
+        [
+          "procedural",
+          "内置简易动画"
+        ]
+      ],
+      "default": "sequence"
+    },
+    {
+      "label": "自定义动画包目录（留空使用当前形象）",
+      "key": "animationPack",
+      "type": "text",
+      "maxLength": 2048,
+      "default": ""
+    },
+    {
+      "label": "动画图片缓存上限（MiB）",
+      "default": 64,
+      "type": "number",
+      "max": 256,
+      "step": 16,
+      "key": "animationCacheMiB",
+      "min": 16
     }
   ],
   "settings_note": "自主模式采用有限命令队列，最多六项，执行时再寻找实际物件；新输入、拖动、暂停会清空旧计划。需要桌面小物或安静节律插件才能进食或休息。开启后替代插件原有的随机接近和自动休息。"

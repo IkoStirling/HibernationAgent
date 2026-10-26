@@ -1,0 +1,13 @@
+#pragma once
+#include "PixelAssets.h"
+#include <Hibernation/DropPixels.h>
+#include <Hibernation/WidgetAppearance.h>
+namespace hibernation::character {
+inline std::uint32_t composite(std::uint32_t target,std::uint32_t source){const auto a=source>>24,inverse=255-a;auto c=[&](int shift){return std::min(255u,((source>>shift)&255)+((((target>>shift)&255)*inverse+127)/255));};return (c(24)<<24)|(c(16)<<16)|(c(8)<<8)|c(0);}
+inline void draw(std::uint32_t* target,int width,int height,const Image& image,const ImageRef& ref,const Pack& pack,int x,int y,int size,bool right,const appearance::Palette& palette){
+    if(!regionValid(ref,image))return;const double scale=static_cast<double>(size)/std::max(pack.width,pack.height);const double footX=x+size*.5,footY=y+size;const int left=static_cast<int>(std::floor(footX-(right?pack.anchorX:pack.width-pack.anchorX)*scale)),top=static_cast<int>(std::floor(footY-pack.anchorY*scale)),w=std::max(1,static_cast<int>(std::round(pack.width*scale))),h=std::max(1,static_cast<int>(std::round(pack.height*scale)));const auto original=appearance::palette("forest");
+    for(int py=std::max(0,top);py<std::min(height,top+h);++py)for(int px=std::max(0,left);px<std::min(width,left+w);++px){int sx=std::clamp((px-left)*pack.width/w,0,pack.width-1),sy=std::clamp((py-top)*pack.height/h,0,pack.height-1);if(!right)sx=pack.width-1-sx;auto color=image.pixels[(ref.y+sy)*image.width+ref.x+sx];if(!color)continue;if(pack.recolor&&(color>>24)==255)for(unsigned i=1;i<original.rgb.size();++i)if((color&0xffffff)==original.rgb[i]){color=0xff000000|palette.rgb[i];break;}auto& pixel=target[py*width+px];pixel=composite(pixel,color);}
+}
+inline RECT bounds(const Pack& pack,int x,int y,int size,bool right){const double scale=static_cast<double>(size)/std::max(pack.width,pack.height);const double anchor=right?pack.anchorX:pack.width-pack.anchorX;const double left=x+size*.5-anchor*scale,top=y+size-pack.anchorY*scale;return {static_cast<LONG>(std::floor(left)),static_cast<LONG>(std::floor(top)),static_cast<LONG>(std::ceil(left+pack.width*scale)),static_cast<LONG>(std::ceil(top+pack.height*scale))};}
+inline RECT hitRect(const Pack& pack,int x,int y,int size,bool right){const double scale=static_cast<double>(size)/std::max(pack.width,pack.height);const double anchor=right?pack.anchorX:pack.width-pack.anchorX;const double left=x+size*.5-anchor*scale,top=y+size-pack.anchorY*scale;const int x0=right?pack.hitbox[0]:pack.width-pack.hitbox[2],x1=right?pack.hitbox[2]:pack.width-pack.hitbox[0];return {static_cast<LONG>(left+x0*scale),static_cast<LONG>(top+pack.hitbox[1]*scale),static_cast<LONG>(left+x1*scale),static_cast<LONG>(top+pack.hitbox[3]*scale)};}
+}

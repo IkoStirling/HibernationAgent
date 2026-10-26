@@ -56,7 +56,7 @@ public:
         if(!std::isfinite(x)||!std::isfinite(y)||!walking()||pending_.at("token")!=token)return false;
         const auto item=object(pending_.at("id"));if(item.is_null()||distance(item,x,y)>.025)return false;
         pending_["phase"]="acting";const auto action=pending_.at("action").get<std::string>();pending_["complete_at"]=clock_+(action=="eat"?1.6:action=="plant"?2.2:.8);
-        events_.push_back({{"kind","habitat.action_started"},{"action",action},{"token",token}});return true;
+        events_.push_back({{"kind","habitat.action_started"},{"action",action},{"token",token},{"item",item}});return true;
     }
     void cancel(const std::string& reason){
         if(!pending())return;events_.push_back({{"kind","habitat.action_cancelled"},{"token",pending_.at("token")},{"id",pending_.at("id")},{"reason",reason}});pending_=nullptr;

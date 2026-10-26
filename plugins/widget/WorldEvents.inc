@@ -6,6 +6,6 @@
             worldToken_=token;targetX_=x*(width_-size_);targetY_=y*(height_-size_);state_="walk";stateUntil_=clock_+120;return;
         }
         if(e.value("plugin",std::string{})=="habitat"&&!worldToken_.empty()){
-            if(kind=="habitat.action_started"&&e.value("token",std::string{})==worldToken_){state_=e.value("action",std::string{})=="eat"?"eating":"curious";stateUntil_=clock_+3;return;}
-            if((kind=="habitat.consumed"||kind=="habitat.planted"||kind=="habitat.inspected"||kind=="habitat.action_cancelled")&&e.value("token",std::string{})==worldToken_){worldToken_.clear();if(state_!="speaking"){state_="idle";stateUntil_=clock_+3;}return;}
+            if(kind=="habitat.action_started"&&e.value("token",std::string{})==worldToken_){heldItem_=e.value("item",PluginJson(nullptr));state_=e.value("action",std::string{})=="eat"?"eating":"curious";stateUntil_=clock_+3;return;}
+            if((kind=="habitat.consumed"||kind=="habitat.planted"||kind=="habitat.inspected"||kind=="habitat.action_cancelled")&&e.value("token",std::string{})==worldToken_){worldToken_.clear();heldItem_=nullptr;if(state_!="speaking"){state_="idle";stateUntil_=clock_+3;}return;}
         }

@@ -19,6 +19,9 @@ public sealed class PrivateDesktop : IDisposable {
     [DllImport("user32.dll")]static extern bool CloseDesktop(IntPtr desktop);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool CreateProcessW(string application,StringBuilder arguments,IntPtr processSecurity,IntPtr threadSecurity,bool inherit,uint flags,IntPtr environment,string directory,ref Startup startup,out Created result);
     [DllImport("kernel32.dll")]static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll")]static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
+    [DllImport("kernel32.dll")]static extern bool ReadProcessMemory(IntPtr process,IntPtr address,byte[] data,UIntPtr size,out UIntPtr count);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern IntPtr GetPropW(IntPtr window,string name);
     [DllImport("user32.dll")]public static extern uint GetGuiResources(IntPtr process,uint kind);
     delegate bool WindowCallback(IntPtr window,IntPtr context);
     [DllImport("user32.dll")]static extern bool EnumDesktopWindows(IntPtr desktop,WindowCallback callback,IntPtr context);
@@ -50,6 +53,11 @@ public sealed class PrivateDesktop : IDisposable {
             if(!SetThreadDesktop(desktop))throw new Win32Exception(Marshal.GetLastWin32Error(),"capture_desktop_failed");
             SetThreadDpiAwarenessContext(GetWindowDpiAwarenessContext(window));
             ClientRect rect;if(!GetClientRect(window,out rect)||rect.right<=0||rect.bottom<=0||rect.right>4096||rect.bottom>2160)throw new Exception("capture_client_bounds");
+            // Per-pixel layered windows have no PrintWindow redirection bitmap
+            // on an inactive desktop. Only this opt-in fixture publishes its
+            // OWN CPU surface; never inspect another process or desktop pixels.
+            var ownedPixels=GetPropW(window,"HibernationFixturePixels");
+            if(ownedPixels!=IntPtr.Zero){var process=OpenProcess(0x10,false,pid);try{var bytes=new byte[checked(rect.right*rect.bottom*4)];UIntPtr read;if(process==IntPtr.Zero||!ReadProcessMemory(process,ownedPixels,bytes,new UIntPtr((uint)bytes.Length),out read)||read.ToUInt64()!=(ulong)bytes.Length)throw new Exception("capture_owned_fixture_buffer_failed");result=new CapturedClient{Width=rect.right,Height=rect.bottom,Bgra=bytes};return;}finally{if(process!=IntPtr.Zero)CloseHandle(process);}}
             var info=new BitmapInfo{size=(uint)Marshal.SizeOf<BitmapInfo>(),width=rect.right,height=-rect.bottom,planes=1,bits=32};
             dc=CreateCompatibleDC(IntPtr.Zero);IntPtr pixels;bitmap=CreateDIBSection(dc,ref info,0,out pixels,IntPtr.Zero,0);if(dc==IntPtr.Zero||bitmap==IntPtr.Zero||pixels==IntPtr.Zero)throw new Exception("capture_bitmap_failed");old=SelectObject(dc,bitmap);
             if(!PrintWindow(window,dc,1))throw new Exception("capture_print_failed");
@@ -65,7 +73,10 @@ public sealed class PrivateDesktop : IDisposable {
         if(desktop==IntPtr.Zero)throw new Win32Exception(Marshal.GetLastWin32Error(),"private_test_desktop_failed");
         var startup=new Startup{size=Marshal.SizeOf<Startup>(),desktop="WinSta0\\"+Name,flags=1,show=0};Created made;
         var args=new StringBuilder("\""+executable+"\" --desktop --config \""+config+"\" --ready-file \""+ready+"\"");
-        if(!CreateProcessW(executable,args,IntPtr.Zero,IntPtr.Zero,false,0x08000000,IntPtr.Zero,directory,ref startup,out made)){
+        var captureFlag=Environment.GetEnvironmentVariable("HIBERNATION_TEST_CAPTURE");bool started;
+        try{Environment.SetEnvironmentVariable("HIBERNATION_TEST_CAPTURE","owned-native-buffer");started=CreateProcessW(executable,args,IntPtr.Zero,IntPtr.Zero,false,0x08000000,IntPtr.Zero,directory,ref startup,out made);}
+        finally{Environment.SetEnvironmentVariable("HIBERNATION_TEST_CAPTURE",captureFlag);}
+        if(!started){
             int error=Marshal.GetLastWin32Error();CloseDesktop(desktop);desktop=IntPtr.Zero;throw new Win32Exception(error,"private_test_process_failed");
         }
         // Retain a query/synchronize handle before the child exits. An attached

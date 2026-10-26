@@ -10,6 +10,7 @@
 #include <Hibernation/MemoryLibrary.h>
 #include <Hibernation/ActivityPlan.h>
 #include <Hibernation/DialoguePreparation.h>
+#include <Hibernation/CharacterAnimation.h>
 #include <Hibernation/ReactionCache.h>
 #include <Hibernation/WidgetAppearance.h>
 #include <Hibernation/AppearanceCatalog.h>
@@ -315,6 +316,12 @@ TEST_CASE(drop_save_migrates_legacy_objects_and_rejects_forged_rules){
 }
 TEST_CASE(drop_pixels_are_premultiplied_without_color_key_edges){
     for(const auto& kind:drops::kinds())for(const auto alpha:{1u,63u,128u,255u}){std::vector<std::uint32_t> pixels(80*80);const auto frame=deskAppearance::make(kind.get<std::string>(),0,2,true,1,"sky",true);deskAppearance::raster(pixels.data(),80,80,frame,40,65,alpha);bool visible=false,valid=true;for(auto pixel:pixels){const auto a=pixel>>24;visible=visible||a>0;valid=valid&&a<=alpha&&((pixel>>16)&255)<=a&&((pixel>>8)&255)<=a&&(pixel&255)<=a;}CHECK(visible&&valid);CHECK(pixels.front()==0&&pixels.back()==0);}
+}
+TEST_CASE(character_sequence_packs_supply_stages_and_consistent_canvas){
+    for(const auto* skin:{"dinosaur","moonbird","lumen"}){auto pack=character::loadPack(std::filesystem::path(HA_PROJECT_ROOT)/"plugins/widget/characters"/skin);CHECK(pack->states.contains("eating"));CHECK(pack->mouth.has_value());CHECK(!pack->states.at("resting")[0].start.frames.empty());CHECK(!pack->states.at("resting")[0].end.frames.empty());CHECK(pack->resolve("unknown_state")=="idle");CHECK(pack->resolve("thinking")=="preparing");CHECK(pack->states.at("eating")[0].loop.frames[0].hand.has_value());}
+}
+TEST_CASE(character_sequence_transitions_finish_and_urgent_input_interrupts){
+    auto pack=character::loadPack(std::filesystem::path(HA_PROJECT_ROOT)/"plugins/widget/characters/dinosaur");character::Animator animation;animation.bind(pack);CHECK(animation.select("idle",0).phase=="loop");CHECK(animation.select("resting",.1).phase=="start");CHECK(animation.select("resting",.6).phase=="loop");CHECK(animation.select("idle",.7).phase=="end");CHECK(animation.select("idle",1.2).resolved=="idle");CHECK(animation.select("resting",1.3).phase=="start");CHECK(animation.select("dragged",1.4).resolved=="dragged");auto paused=animation.select("dragged",1.4);CHECK(animation.select("dragged",1.4).index==paused.index);CHECK(animation.select("resting",1.5,true).index==0);CHECK(animation.select("resting",2.1,true).phase=="loop");
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}
