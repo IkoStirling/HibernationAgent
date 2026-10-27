@@ -682,3 +682,7 @@
 - 补最小只读creative_read，以atelier.pieces实际piece_id排队读当前全文，最多每批一次，既有有限效果线程执行，不改稿、不完成作品、不授予任意文件路径。空物件场景不再提供interact/arrange；nearest动作仍可与先创造小物组合。不是把错误interact自动改成另一操作，也不重跑旧拒绝。来源仍由真实atelier.read回执保存。
 - atelier.read与写作/续写按同一作品身份合并；纯重读弱权重0.5，同一作品已有写作权重1不因重复读而叠加。旧存档启动不重算，未把读自身状态变成新经历。
 - 新单元覆盖读命令的动态可用性、任意路径拒绝、每批上限、读后可续写及同作经历合并；真实桌面过程验证读到原文和版本1、作品数与文件版本不变、未知作品拒绝。Unit/WorldHistory/IntentionActivities/AutonomousCarry/AutonomousCrafting/ProcessIntegration 6/6通过139.42秒（personality-own-reading-tests.log）。宿主变为7B476A26B88B3752AB5A3D0565597EE9B973B3C3F74EC75724FC5DC0B4C85146，正式包未改；原BA指纹的预检/筛选需要更新，不能沿用为新候选证明。
+
+- a8a00eb已提交自主重读。主档案以新宿主接回：控制器68956（23:42:45.912265Z）、后台67672（23:42:49.2766176Z），终端session45360，报告episodes/20261027-234248-4694e44d/report.json；无新增用户提示要求使用重读。23:46一次已有规划已自行选择creative_read和实际新作品piece-1793144631568-7026b79359b4114c-c，目前应再核对真实完成回执，不能把排队写成已读。
+- 677文件（含385便携工具/入口）的筛选与宿主指纹已更新到a8a00eb/7B476A26...；两份改变的PE文件重新检查导入，未引入缺失项或新的开发CRT依赖。实际引擎46e3ad6且工作树干净，候选engine-version存于artifacts/personality-engine-version-candidate.json，正式根文件仍等部署完成再更新。
+- 日期限定发布协调脚本tools/releases/personality-20261028.ps1默认仅预检，显式-Deploy才执行，窗口结束后不再启动旧版覆盖。已对真实路径作只读预检：388个正式文件（排除正持有的空service.lock）、677运行文件；预计完整数据/配置/人设及被覆盖原运行文件备份618117887字节，E盘可用3616292864字节；正式后台停止，配置检查通过。已核对根/祖先路径非重解析点，复制按相对路径边界和SHA执行，先验证备份再覆盖；失败回滚仅涉及本脚本已覆盖的文件，保留额外声库。安装冒烟使用独立Mock/fixture和同一正式锁下的前后指纹，不启动正式角色、不给正式存档注入实验内容。预检日志personality-release-preflight.log。实际部署尚未进行。
