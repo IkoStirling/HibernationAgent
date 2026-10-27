@@ -21,6 +21,8 @@ struct ProposalContext {
     std::string nextStage;
     std::size_t minimumEvidence=2;
     std::map<std::string,Source> sources;
+    // Provenance of private views, never authority for memory/stage proposals.
+    std::map<std::string,Source> narrativeSources;
     std::string skillId,skillDigest;
     std::set<std::string> skillTools;
 };

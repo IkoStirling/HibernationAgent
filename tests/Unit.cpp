@@ -835,5 +835,17 @@ TEST_CASE(empty_autonomous_choices_back_off_without_becoming_missing_content_err
     cadence=planningOutcome(cadence,false,false,4000,30000);CHECK(cadence.at("failures")==1&&cadence.at("next_ms")==64000);
     const auto slow=planningOutcome(emptyPlanningCadence(),true,true,0,3600000);CHECK(slow.at("next_ms")==3600000);auto future=slow;future["version"]=2;CHECK(!validPlanningCadence(future));CHECK(planningOutcome(future,true,true,0,30000)==future);
 }
+TEST_CASE(activity_narrative_visibility_preserves_physical_results_and_original_snapshots){
+    const Json source={{"id","private-source"},{"revision",1},{"kind","user_message"},{"scope","ha.archive"}};
+    const Json command={{"kind","move_to"},{"x",.4},{"y",.6},{"status","completed"},{"purpose","PRIVATE_REASON"},{"intention",{{"id","PRIVATE_WISH"},{"revision",1}}},{"attempt_source_id","private-attempt"},{"narrative_sources",Json::array({source})}};
+    const Json raw={{"active",command},{"entries",Json::array({command})},{"recent",Json::array({command})}};
+    const auto snapshot=activityBodyContext(raw,true);CHECK(snapshot.at("next")[0].contains("narrative_sources"));
+    const auto hidden=activityNarrativeProjection(snapshot,[](const Json&){return false;});
+    CHECK(hidden.dump().find("PRIVATE_")==std::string::npos);CHECK(hidden.dump().find("private-attempt")==std::string::npos);CHECK(hidden.dump().find("narrative_sources")==std::string::npos);
+    CHECK(hidden.at("active").at("kind")=="move_to"&&hidden.at("recent")[0].at("status")=="completed");CHECK(hidden.at("next")[0].at("x")==.4);
+    const auto restored=activityNarrativeProjection(snapshot,[&](const Json& ref){return ref==source;});CHECK(restored.at("active").at("purpose")=="PRIVATE_REASON");CHECK(snapshot.at("active").contains("narrative_sources")&&raw.at("active")==command);
+    auto legacy=command;legacy.erase("narrative_sources");const auto unknown=activityNarrativeProjection(Json{{"active",legacy}},[](const Json&){return true;});CHECK(!unknown.at("active").contains("purpose")&&!unknown.at("active").contains("intention"));CHECK(unknown.at("active").at("status")=="completed");
+    auto supplied=command;supplied.erase("status");supplied.erase("attempt_source_id");CHECK(!validateActivities(Json{{"version",1},{"commands",Json::array({supplied})}}.dump()).ok);
+}
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

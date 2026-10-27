@@ -5,8 +5,35 @@
     std::int64_t nextActivityFill=0,nextActivityTick=0,nextActivityMaintenance=0;
     bool activityInitialized=false,activityModeNotified=false,activityLastMode=false,activitySuspended=false;
     std::string activityError;
-    Json activityCarryFeedback()const{
-        const auto value=get("ha.autonomy","carry-feedback",Json::object()).value;
+    bool activityNarrativeSourceAllowed(const Json& ref,const MemoryVisibility& policy)const{
+        if(cfg.channel)return false;
+        const Source source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")};const auto row=get(source.scope,source.id);
+        return row.revision==source.revision&&policy.source(source)&&(!row.value.contains("sources")||policy.allows(row.value));
+    }
+    void captureActivityNarrativeSources(const Json& plan,ProposalContext& context)const{
+        const auto policy=visibility();const auto capture=[&](const Json& item){
+            if(!item.is_object())return;const auto refs=item.value("narrative_sources",Json::array());
+            if(refs.empty()||!std::all_of(refs.begin(),refs.end(),[&](const Json& ref){return activityNarrativeSourceAllowed(ref,policy);}))return;
+            for(const auto& ref:refs){const Source source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")};context.narrativeSources[source.scope+":"+source.id]=source;}
+        };
+        if(plan.contains("active"))capture(plan.at("active"));for(const auto* field:{"entries","next","recent"})for(const auto& item:plan.value(field,Json::array()))capture(item);
+    }
+    Json activityForModel(const Json& plan,const MemoryVisibility* supplied=nullptr)const{
+        const auto owned=supplied?MemoryVisibility{}:visibility();const auto& policy=supplied?*supplied:owned;std::map<std::string,bool> checked;
+        return activityNarrativeProjection(plan,[&](const Json& ref){
+            const auto key=ref.dump();if(const auto found=checked.find(key);found!=checked.end())return found->second;
+            return checked[key]=activityNarrativeSourceAllowed(ref,policy);
+        });
+    }
+    Json activityNarrativeSources(const ProposalContext& context)const{
+        std::map<std::string,Source> sources=context.narrativeSources;
+        for(const auto& [key,source]:context.sources)sources[source.scope+":"+source.id]=source;
+        Json refs=Json::array();for(const auto& [key,source]:sources)refs.push_back({{"id",source.id},{"revision",source.revision},{"kind",source.kind},{"scope",source.scope}});return refs;
+    }
+    Json activityCarryFeedback(bool modelView=true)const{
+        auto value=get("ha.autonomy","carry-feedback",Json::object()).value;
+        if(modelView&&value.value("access_revision",std::int64_t(-1))!=get("ha.access","current").revision)return Json::object();
+        if(modelView){const auto refs=value.value("narrative_sources",Json::array());const auto policy=visibility();if(refs.empty()||!std::all_of(refs.begin(),refs.end(),[&](const Json& ref){return activityNarrativeSourceAllowed(ref,policy);}))return Json::object();value.erase("narrative_sources");value.erase("access_revision");}
         return serviceNowMs()-value.value("created_at",std::int64_t(0))<=600000?value:Json::object();
     }
     Json activityEvidence(const Json& plan)const{
@@ -42,7 +69,7 @@
         if(!results.empty()){
             Json summary=Json::array();for(const auto& result:results){const auto& receipt=result.at("receipt");Json item={{"id",result.at("id")},{"tool",result.at("tool")},{"ok",receipt.value("ok",false)}};
                 if(receipt.value("ok",false)){item["revision"]=receipt.at("result").at("revision");item["deduplicated"]=receipt.at("result").value("deduplicated",false);}else item["error"]=receipt.value("error",Json::object());summary.push_back(std::move(item));}
-            const auto before=get("ha.autonomy","carry-feedback");commit({mutation("ha.autonomy","carry-feedback",before,{{"generation",key},{"created_at",serviceNowMs()},{"results",summary}},key)},key);
+            const auto before=get("ha.autonomy","carry-feedback");commit({mutation("ha.autonomy","carry-feedback",before,{{"generation",key},{"created_at",serviceNowMs()},{"access_revision",get("ha.access","current").revision},{"narrative_sources",batch.narrativeSources},{"results",summary}},key)},key);
         }return results;
     }
     std::int64_t activityPlanningBase()const{return static_cast<std::int64_t>(cfg.plugins.value("widget",Json::object()).value("autonomyRefillSeconds",60.0)*1000);}
@@ -59,7 +86,7 @@
     Json activityQueue()const{return get("ha.autonomy","queue",{{"version",1},{"entries",Json::array()},{"active",nullptr},{"recent",Json::array()}}).value;}
     void stopActivities(){std::lock_guard lock(activityMutex);activityGenerator.stop();if(activityEffectCancelled)activityEffectCancelled->store(true);if(activityEffect.valid())activityEffect.wait();collectActivityEffect(serviceNowMs());}
     void saveActivities(const Json& value){auto before=get("ha.autonomy","queue");commit({mutation("ha.autonomy","queue",before,value,"autonomy")},"autonomy");}
-    Json activityStatus()const{std::lock_guard lock(activityMutex);const auto value=activityQueue();return {{"enabled",autonomousMode()},{"queued",value.at("entries").size()},{"active",value.at("active")},{"generating",activityGenerator.running()},{"last_error",activityError},{"personal_carry_feedback",activityCarryFeedback()},{"recent",value.at("recent")},{"planning_cadence",get("ha.autonomy","cadence",emptyPlanningCadence()).value},{"next_planning_ms",nextActivityFill},{"reusable_count",activityLibrary().value("items",Json::array()).size()},{"economy_local_fallback",activityEconomyFallback}};}
+    Json activityStatus(bool modelView=false)const{std::lock_guard lock(activityMutex);const auto raw=activityQueue();const auto value=modelView?activityForModel(raw):raw;return {{"enabled",autonomousMode()},{"queued",value.at("entries").size()},{"active",value.at("active")},{"generating",activityGenerator.running()},{"last_error",activityError},{"personal_carry_feedback",activityCarryFeedback(modelView)},{"recent",value.at("recent")},{"planning_cadence",get("ha.autonomy","cadence",emptyPlanningCadence()).value},{"next_planning_ms",nextActivityFill},{"reusable_count",activityLibrary().value("items",Json::array()).size()},{"economy_local_fallback",activityEconomyFallback}};}
     void finishActivity(Json& plan,const std::string& status){if(plan.at("active").is_null())return;auto result=plan.at("active");result["status"]=status;result["ended_ms"]=serviceNowMs();if(result.contains("intention"))result["attempt_source_id"]=recordIntentionAttempt(result);if(status=="completed")rememberActivity(result);plan["recent"].push_back(result);while(plan["recent"].size()>8)plan["recent"].erase(0);plan["active"]=nullptr;}
     void cancelActivities(const std::string& reason){
         std::lock_guard lock(activityMutex);++activityGenerationEpoch;activityGenerator.cancel();if(activityEffectCancelled)activityEffectCancelled->store(true);
@@ -98,7 +125,7 @@
         if(tools.contains("pocket.leave")&&game.is_object()&&game.value("status",std::string{})=="active")commands.push_back("puzzle_leave");
         if(tools.contains("rhythm.rest"))commands.push_back("rest");return commands;
     }
-    Json enqueueActivities(const Json& commands,const std::string& source){
+    Json enqueueActivities(const Json& commands,const std::string& source,const Json& narrativeSources=Json::array()){
         std::lock_guard lock(activityMutex);
         if(!autonomousMode())return toolFailure("autonomous_mode_disabled");if(get("ha.control","current").value.at("paused")==true)return toolFailure("runtime_paused");
         auto checked=validateActivities(Json{{"version",1},{"commands",commands}}.dump());if(!checked.ok)return toolFailure(checked.code.c_str());const auto& normalized=checked.value.at("commands");
@@ -124,7 +151,7 @@
             if(kind=="pose"){const auto poses=widget.value("animation_catalog",Json::array());if(std::none_of(poses.begin(),poses.end(),[&](const auto& pose){return pose.at("state")==command.at("state");}))return toolFailure("activity_pose_unavailable");if(command.at("state")=="breathing"&&life.snapshot().value("energy",1.0)>.4)return toolFailure("activity_not_fatigued");}
             if(kind=="interact"||kind=="arrange"){const auto objects=snapshots.value("habitat",Json::object()).value("objects",Json::array());if(std::none_of(objects.begin(),objects.end(),[&](const auto& item){return item.at("id")==command.at("object_id");}))return toolFailure("activity_target_unavailable");}
         }
-        for(auto item:normalized){item["id"]=id("activity");item["expires_ms"]=serviceNowMs()+600000;item["source"]=source;plan["entries"].push_back(std::move(item));}saveActivities(plan);
+        for(auto item:normalized){item["id"]=id("activity");item["expires_ms"]=serviceNowMs()+600000;item["source"]=source;item["narrative_sources"]=narrativeSources;plan["entries"].push_back(std::move(item));}saveActivities(plan);
         return toolSuccess({{"accepted",normalized.size()},{"completed",false},{"queued",plan.at("entries").size()}});
     }
     std::string activityKey()const{const auto& actor=profile(get("ha.settings","model").value.at("id"));return Json::array({actor.id,actor.model.model,persona.at("version"),cfg.reviewEnabled,cfg.reviewProfileId,cfg.plugins,pluginAttentionEpoch,activityGenerationEpoch}).dump();}
@@ -149,11 +176,13 @@
         if(now<nextActivityFill)return;std::optional<Profile> reviewer;if(cfg.reviewEnabled)reviewer=profile(cfg.reviewProfileId);
         const auto interval=static_cast<std::int64_t>(cfg.plugins.value("widget",Json::object()).value("autonomyRefillSeconds",60.0)*1000);
         nextActivityFill=now+interval;
-        Json summaries=Json::array();const auto memories=memoryRows();const auto policy=visibility();for(auto it=memories.rbegin();it!=memories.rend()&&summaries.size()<4;++it){const auto memory=Json::parse(it->payload);if(!policy.memories.contains(it->id)&&policy.allows(memory))summaries.push_back(libraryPage(memory,0,600));}
+        ProposalContext narrative;Json summaries=Json::array();const auto memories=memoryRows();const auto policy=visibility();for(auto it=memories.rbegin();it!=memories.rend()&&summaries.size()<4;++it){const auto memory=Json::parse(it->payload);if(!policy.memories.contains(it->id)&&policy.allows(memory)){summaries.push_back(libraryPage(memory,0,600));narrative.narrativeSources[it->id]={it->id,it->revision,memory.at("kind"),memoryScope};}}
+        const auto self=personalContext(),evidence=activityEvidence(plan);authorizePersonalAttempts(self,narrative);captureActivityNarrativeSources(plan,narrative);
+        for(const auto& ref:evidence)narrative.narrativeSources[ref.at("id")]=Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")};
         auto environment=snapshots;environment.erase("widget");
         for(auto it=environment.begin();it!=environment.end();++it)it.value()=pluginCharacterContext(it.key(),it.value());
         Json time={{"now_ms",now}};time.update(presentationTimeContext(now));
-        activityGenerator.start(actor,reviewer,persona,{{"time_context",time},{"state",life.snapshot()},{"self",personalContext()},{"evidence",activityEvidence(plan)},{"previous_carry_forward_results",activityCarryFeedback()},{"previous_planning_error",activityError},{"body",bodyState()},{"surfaces",environment},{"available_commands",activityCommands(snapshots,true)},{"queue_slots",6-plan.at("entries").size()-(plan.at("active").is_null()?0:1)},{"memories",summaries},{"recent_activities",plan.at("recent")}},activityKey(),[this]{return consumeModelBudget(1,true);},[this](const Profile& p,int status){providerResult(p,status);});
+        activityGenerator.start(actor,reviewer,persona,{{"_narrative_sources",activityNarrativeSources(narrative)},{"time_context",time},{"state",life.snapshot()},{"self",self},{"evidence",evidence},{"previous_carry_forward_results",activityCarryFeedback()},{"previous_planning_error",activityError},{"body",bodyState()},{"surfaces",environment},{"available_commands",activityCommands(snapshots,true)},{"queue_slots",6-plan.at("entries").size()-(plan.at("active").is_null()?0:1)},{"memories",summaries},{"recent_activities",activityForModel(plan).at("recent")}},activityKey(),[this]{return consumeModelBudget(1,true);},[this](const Profile& p,int status){providerResult(p,status);});
     }
     void collectActivityEffect(std::int64_t now){
         // Finite local effects use one separate worker, keeping disk I/O out of
@@ -178,7 +207,7 @@
             commit({{"ha.activity-generations",key,0,1,Json{{"status",batch->status},{"proposal",batch->proposal},{"review",batch->review},{"usage",batch->usage},{"timing_ms",{{"actor",batch->modelMs},{"review",batch->reviewMs}}},{"evidence_refs",refs},{"created_at",now}}.dump(),"autonomy"}},key);
             const bool current=mode&&!runtimePaused&&!inputActive&&!busy()&&batch->key==activityKey()&&std::chrono::steady_clock::now()-batch->createdAt<std::chrono::minutes(2);
             if(current){
-                if(batch->status=="ok"){const auto receipt=enqueueActivities(batch->entries,key);if(!receipt.value("ok",false))activityError=receipt.at("error").at("code");
+                if(batch->status=="ok"){const auto receipt=enqueueActivities(batch->entries,key,batch->narrativeSources);if(!receipt.value("ok",false))activityError=receipt.at("error").at("code");
                     const auto results=receipt.value("ok",false)?applyActivityCarry(*batch,key):Json::array();auto archived=get("ha.activity-generations",key);auto detail=archived.value;detail["application_status"]=receipt.value("ok",false)?"accepted":"queue_rejected";detail["carry_forward_results"]=results;commit({mutation("ha.activity-generations",key,archived,detail,key)},key);
                     planningResult(receipt.value("ok",false),batch->entries.empty(),now);}
                 else if(batch->status!="cancelled")planningResult(false,false,now);

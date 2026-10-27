@@ -295,9 +295,13 @@ struct Application::Impl {
     #include "PluginDispatch.inc"
     #include "MentorRuntime.inc"
     Json emptyOutput() const {return {{"visible_reply",""},{"actions",Json::array()},{"memories",Json::array()},{"state_update",Json::object()},{"stage_proposal",nullptr}};}
-    Json bodyState()const {
-        if(cfg.channel)return cfg.channel->body;if(!plugins)return Json::object();const auto snapshots=plugins->liveSnapshots();if(!snapshots.contains("widget"))return Json::object();
-        return {{"observed_at_ms",serviceNowMs()},{"widget",widgetBodyContext(snapshots.at("widget"))},{"activity_queue",activityBodyContext(activityQueue())},{"autonomous_enabled",autonomousMode()},{"available_commands",autonomousMode()?activityCommands(snapshots):Json::array()}};
+    Json bodyForModel(Json body)const{
+        if(body.contains("activity_queue"))body["activity_queue"]=activityForModel(body.at("activity_queue"));return body;
+    }
+    Json bodyState(bool modelView=true)const {
+        if(cfg.channel)return bodyForModel(cfg.channel->body);if(!plugins)return Json::object();const auto snapshots=plugins->liveSnapshots();if(!snapshots.contains("widget"))return Json::object();
+        Json body={{"observed_at_ms",serviceNowMs()},{"widget",widgetBodyContext(snapshots.at("widget"))},{"activity_queue",activityBodyContext(activityQueue(),true)},{"autonomous_enabled",autonomousMode()},{"available_commands",autonomousMode()?activityCommands(snapshots):Json::array()}};
+        return modelView?bodyForModel(std::move(body)):body;
     }
     Json characterCapabilities(bool ambient=false)const {
         auto value=capabilityInventory();for(auto& plugin:value["plugins"])if(plugin.contains("current")){const auto key=plugin.value("id",std::string{});auto current=pluginCharacterContext(key,plugin.at("current"));plugin["current"]=ambient?pluginDialogueContext(key,current):std::move(current);}return value;
@@ -402,8 +406,8 @@ struct Application::Impl {
         if(name=="body.observe")return observedTool(name,toolSuccess(bodyState()),context,traceId);
         if(name.starts_with("self."))return personalTool(name,args,context,traceId);
         if(name=="widget.move"&&autonomousMode())return enqueueActivities(Json::array({{{"kind","move_to"},{"seconds",0},{"x",args.at("x")},{"y",args.at("y")}}}),traceId);
-        if(name=="activity.enqueue")return enqueueActivities(args.at("commands"),traceId);
-        if(name=="activity.status")return toolSuccess(activityStatus());
+        if(name=="activity.enqueue")return enqueueActivities(args.at("commands"),traceId,activityNarrativeSources(context));
+        if(name=="activity.status")return toolSuccess(activityStatus(true));
         if(name=="activity.cancel"){cancelActivities("chosen_cancel");return toolSuccess({{"cancelled",true}});}
         if(name=="capabilities.list"){auto value=characterCapabilities();value["tools"]=scopedTools(context);value["active_skill"]=context.skillId;value["skills"]=skillRegistry?skillRegistry->catalog(tools()):Json::array();return toolSuccess(value);}
         if(name=="chat.view_media"){
@@ -891,11 +895,14 @@ struct Application::Impl {
         if(contextControl.enabled&&selectedProfile.model.supportsToolCalls)system+="\n标准函数已声明全部参数，优先将彼此独立的查询/操作放入同一批；只为真实依赖拆成多轮。QQ要求截图、拍照或自拍并发来时优先napcat.capture_and_send；包括先改变姿态再拍照的请求。需要先自行观察或裁图才拆成截图与发送，截图成功不等于送达。";
         system+="\n延续自己的生活：不必把每次相处都记成心得。某个具体细节确实留住了你的注意，或形成了还想做的小事，可以在最终reply/silence的carry_forward里留下至多两条简短私记；这些是你愿意带到以后的一点意思，不是内部推理、用户画像、固定人格或关系升级。它走self.notice同样的权限与来源检查，程序保存后下轮self中可见；source_ids选本轮真实交谈/经历，id与expected_revision参照已有self，新条目取新id和0。之后可以续接、犹豫、改变主意或放下，不必每轮提及，更不用向对方报告记录。普通应声也可以什么都不留。";
         system+="\n如果某项活动是在接续self里已有的intention，可在命令中加intention:{id,revision}。应用保留这次尝试、被打断或尚未开始的实际结果，下次在self.threads相应条目的attempts里可见；完成动作不自动等于完成整个打算。意图改变或放下后旧队列不再执行。随手玩、休息和无目的的小动作不必绑定意图；本轮新打算要立即绑定时先self.notice取得真实版本，不把尚未保存的carry_forward当成已经存在。";
-        trace["interaction_policy"]="embodied-dialogue-v6-direct-utterance";trace["plugin_context_projection"]=alone?"character-surfaces-v1":"character-surfaces-v2-dialogue-index";trace["activity_purpose_supported"]=true;trace["body_at_input"]=payload.value("body_at_input",Json::object());
+        trace["interaction_policy"]="embodied-dialogue-v6-direct-utterance";trace["plugin_context_projection"]=alone?"character-surfaces-v1":"character-surfaces-v2-dialogue-index";trace["activity_purpose_supported"]=true;trace["body_at_input"]=bodyForModel(payload.value("body_at_input",Json::object()));
         trace["dialogue_context_generation"]=dialogueProjection.value("generation",std::uint64_t(0));
         trace["personal_context"]=personalDialogueContext(payload.value("topic",text),alone);
         authorizePersonalAttempts(trace.at("personal_context"),context);
         trace["conversation_focus"]=conversationFocus(context.eventKind,context.eventId);trace["conversation_focus_at_start"]=trace.at("conversation_focus");
+        captureActivityNarrativeSources(activityQueue(),context);
+        captureActivityNarrativeSources(payload.value("body_at_input",Json::object()).value("activity_queue",Json::object()),context);
+        if(!trace.at("conversation_focus").empty()){const auto focus=get("ha.dialogue","focus").value;const auto sourceId=focus.at("source_id").get<std::string>();context.narrativeSources[sourceId]={sourceId,focus.at("source_revision"),"user_message",archiveScope};}
         req.messages={{"system",system},{"user",Json{{"event_kind",eventKind},{"event_id",eventId},{"conversation_delivery",dialogueDeliveryContext()},{"input",payload.value("topic",text)},{"perception",imageDeliveryContext(selectedProfile.model.supportsVision,0)},{"conversation_focus",trace.at("conversation_focus")},{"self",trace.at("personal_context")},{"body",bodyState()},{"body_at_input",trace.at("body_at_input")},{"time_context",trace.at("time_context")},{"open_questions",questions},{"task_context",trace.at("task_context")},{"authorized_context",contextValues}}.dump()}};
         if(selectedProfile.model.protocol==ayt::inference::Protocol::Mock) {
             auto mock=emptyOutput();
@@ -1184,7 +1191,7 @@ struct Application::Impl {
             if(!foregroundAvailable())return error(409,"busy");
             const auto kind=req.path=="/api/message"?std::string("user_message"):body.at("kind").get<std::string>();
             if(kind!="user_message"&&kind!="story_end"&&kind!="outer_event"&&kind!="task_complete")return error(400,"event_kind");
-            const auto bodyBeforeInput=kind=="user_message"&&!bodyBeforeTyping.empty()&&(inputActive||serviceNowMs()-bodyBeforeTypingAt<120000)?std::exchange(bodyBeforeTyping,Json::object()):bodyState();yieldBackground(serviceNowMs());cancelActivities("new_input");
+            const auto bodyBeforeInput=kind=="user_message"&&!bodyBeforeTyping.empty()&&(inputActive||serviceNowMs()-bodyBeforeTypingAt<120000)?std::exchange(bodyBeforeTyping,Json::object()):bodyState(false);yieldBackground(serviceNowMs());cancelActivities("new_input");
             ++pluginAttentionEpoch;nextPluginAttention=0;const auto eventId=id("evt");const auto slot=req.path=="/api/message"?"chat":"event";
             const auto previous=get("ha.state","current").value.value("lastUserInteractionMs",std::int64_t(0));const auto now=serviceNowMs();Json input={{"request_id",requestId},{"event_id",eventId},{"kind",kind},{"text",text},{"previous_interaction_ms",previous},{"elapsed_since_previous_ms",previous?std::max<std::int64_t>(0,now-previous):0},{"body_at_input",bodyBeforeInput}};
             Json attachments=Json::array();if(body.contains("attachments")){if(kind!="user_message"||!body["attachments"].is_array()||body["attachments"].size()>4)return error(400,"chat_attachments");for(const auto& item:body["attachments"]){if(!item.is_string()||!validRequestId(item.get<std::string>()))return error(400,"chat_attachments");auto media=get("ha.chat-media",item);if(!media.revision)return error(400,"chat_attachment_missing");auto metadata=media.value;metadata.erase("thumbnail");attachments.push_back(std::move(metadata));}}
@@ -1369,7 +1376,7 @@ void Application::tick() {
 }
 void Application::stop(){if(impl_&&impl_->worker&&impl_->initialized){impl_->stopBalance();impl_->stopActivities();impl_->reactionGenerator.stop();impl_->worker->stop(serviceNowMs());try{impl_->saveRuntime();}catch(...){}if(impl_->plugins)impl_->plugins->stop();if(impl_->desktop)impl_->desktop->stop();impl_->recorder.reset();impl_->initialized=false;} }
 bool Application::stopping()const{return impl_->stopped;}
-void Application::setInputActive(bool active){if(impl_->inputActive!=active){impl_->nextPluginAttention=0;if(active){impl_->bodyBeforeTyping=impl_->bodyState();impl_->bodyBeforeTypingAt=serviceNowMs();++impl_->pluginAttentionEpoch;}}impl_->inputActive=active;if(active){impl_->reactionGenerator.cancel();impl_->cancelActivities("input_active");}}
+void Application::setInputActive(bool active){if(impl_->inputActive!=active){impl_->nextPluginAttention=0;if(active){impl_->bodyBeforeTyping=impl_->bodyState(false);impl_->bodyBeforeTypingAt=serviceNowMs();++impl_->pluginAttentionEpoch;}}impl_->inputActive=active;if(active){impl_->reactionGenerator.cancel();impl_->cancelActivities("input_active");}}
 Json Application::takeDesktopRequests(){return std::exchange(impl_->desktopRequests,Json::array());}
 const Config& Application::config()const{return impl_->cfg;}
 }

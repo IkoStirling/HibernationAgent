@@ -81,6 +81,22 @@ try{
  Check ($after.id-eq$game.id-and$after.status-eq'left'-and$after.revision-eq$game.revision+1-and($after.rows|ConvertTo-Json -Compress)-eq$beforeRows) 'leaving preserves actual unsolved board rather than marking it won'
  $result=@((Api '/api/activities/status').recent|Where-Object kind -eq puzzle_leave)[0];$source=Api '/api/archive' @{id=$result.source_id}
  Check ($source.records[0].data.kind-eq'tool_observation'-and$source.records[0].data.result.applied-and!$source.records[0].data.result.completed) 'voluntary leave has an original actual-operation receipt while the puzzle remains unfinished'
+ $private=$wish.Clone();$private.id='private-purpose';$private.note='这是属于一个来源的私人打算'
+ $privateCommand=@{kind='wait';seconds=1;purpose='ACTIVITY_PRIVATE_PURPOSE';intention=@{id=$private.id;revision=1}}
+ $null=Message @((Calls @((Tool private self.notice $private))),(Calls @((Tool remember memory.remember @{kind='inference';text='活动目的权限的合成来源';source_ids=@('${event_id}')}))),(Calls @((Tool private-queue activity.enqueue @{commands=@($privateCommand)}))),(Silent))
+ Await {@((Api '/api/activities/status').recent|Where-Object {$_.intention.id-eq$private.id-and$_.status-eq'completed'}).Count-eq1} 'private-purpose action completes'
+ $memory=@((Api '/api/memories').memories|Where-Object text -eq '活动目的权限的合成来源')[0].id;Check ([bool]$memory) 'private activity has a real owner-controlled source'
+ $null=Message @((Calls @((Tool status activity.status @{}))),(Silent));$visible=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw
+ Check ($visible.Contains('ACTIVITY_PRIVATE_PURPOSE')-and!$visible.Contains('narrative_sources')) 'permitted purpose reaches the actor without granting its private provenance as tool authority'
+ $null=Api '/api/access' @{id=$memory;accessible=$false}
+ $trace=Message @((Calls @((Tool status activity.status @{}))),(Silent));$hidden=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw
+ Check (!$hidden.Contains('ACTIVITY_PRIVATE_PURPOSE')-and!$hidden.Contains('private-purpose')) 'restricted purpose and binding disappear from body, pre-input body, self and explicit model activity status'
+ $raw=@((Api '/api/activities/status').recent|Where-Object {$_.intention.id-eq$private.id})[0]
+ Check ($raw.purpose-eq'ACTIVITY_PRIVATE_PURPOSE'-and$raw.status-eq'completed'-and$raw.narrative_sources.Count-gt0) 'owner diagnostics preserve original purpose, lineage and actual completed result'
+ Check (($trace.body_at_input.activity_queue.recent|ConvertTo-Json -Depth 30).Contains('completed')) 'restricted narrative does not erase the physical activity history'
+ $null=Api '/api/access' @{id=$memory;accessible=$true}
+ $null=Message @((Calls @((Tool status activity.status @{}))),(Silent));$restored=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw
+ Check ($restored.Contains('ACTIVITY_PRIVATE_PURPOSE')) 'restored sources expose the same preserved purpose again without rewriting history'
  $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)) 'clean shutdown'
  Check (!([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)))).Contains('INTENTION_PRIVATE_MARKER')) 'intentions and attempts stay encrypted'
  @{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json)

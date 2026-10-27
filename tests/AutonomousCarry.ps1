@@ -16,7 +16,7 @@ function Auto($Enabled){$settings=(Api '/api/dashboard').settings|ConvertTo-Json
 function Note($Id){@{id=$Id;expected_revision=0;kind='intention';topic='未写完的小故事';note='AUTONOMOUS_PRIVATE_MARKER 想在下次有空时续上那个没画完的圆';stance='want';source_ids=@($script:workSource)}}
 function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int]$ReviewHttpStatus=200,$Close=$null){
  Auto $false;$before=(Api '/api/activities/status').personal_carry_feedback.generation;$calls=Requests;$reviews=Requests $true
- Plan @(@{version=1;commands=@(@{kind='wait';seconds=1});carry_forward=@($Note|Where-Object {$null-ne$_});close_threads=@($Close|Where-Object {$null-ne$_})}) $(if($During){1800}else{0})
+ Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='AUTONOMY_PRIVATE_PURPOSE'});carry_forward=@($Note|Where-Object {$null-ne$_});close_threads=@($Close|Where-Object {$null-ne$_})}) $(if($During){1800}else{0})
  if($Verdict-and!$ExpectedError){$ExpectedError='activity_review_rejected'}
  Plan @($(if($Verdict){$Verdict}else{$script:approval})) -Review -HttpStatus $ReviewHttpStatus;Auto $true
  Await {(Requests)-gt$calls} 'background request';$context=(Capture).messages[1].content|ConvertFrom-Json -Depth 65
@@ -49,6 +49,10 @@ try{
  $forged=Note forged;$forged.source_ids=@('activity-generation-invented');$bad=Batch $forged;Check (!$bad.feedback.results[0].ok-and$bad.feedback.results[0].error.code-eq'personal_source_not_available') 'a plan cannot serve as its own factual source'
  $hidden=Batch (Note hidden-after-start) {$null=Api '/api/access' @{id=$memory;accessible=$false}}
  Check (@($hidden.context.evidence|Where-Object id -eq $workSource).Count-eq1-and!$hidden.feedback.results[0].ok-and$hidden.feedback.results[0].error.code-eq'personal_source_not_available') 'source access is rechecked after the external actor and reviewer finish'
+ $privateView=Batch $null $null @{decision='deny';reason='other';guidance='不执行这批候选。'}
+ $viewText=$privateView.context|ConvertTo-Json -Depth 65
+ Check (!$viewText.Contains('AUTONOMY_PRIVATE_PURPOSE')-and!$viewText.Contains('AUTONOMOUS_PRIVATE_MARKER')-and($privateView.context.previous_carry_forward_results|ConvertTo-Json -Compress)-eq'{}') 'background body, recent activity and carry feedback do not restore restricted narrative through derived views'
+ Check (!$viewText.Contains('_narrative_sources')-and!$viewText.Contains('narrative_sources')) 'trusted provenance remains internal and is not advertised as new model evidence'
  $null=Api '/api/access' @{id=$memory;accessible=$true}
  $denied=Batch (Note reviewer-denied) $null @{decision='deny';reason='continuity';guidance='不保存这个候选。'}
  Check ($denied.error-eq'activity_review_rejected'-and$denied.feedback.generation-eq$hidden.feedback.generation) 'rejected background candidates never execute their private carry'
