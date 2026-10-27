@@ -21,6 +21,8 @@ struct ProposalContext {
     std::string nextStage;
     std::size_t minimumEvidence=2;
     std::map<std::string,Source> sources;
+    std::string skillId,skillDigest;
+    std::set<std::string> skillTools;
 };
 struct ValidatedOutput {bool ok=false;std::string code;Json value;};
 std::string outputSchema();
@@ -43,6 +45,8 @@ struct Config {
     std::shared_ptr<const ChannelPolicy> channel;
     std::filesystem::path dataRoot,characterRoot,uiRoot;
     std::filesystem::path configPath,projectRoot,pluginRoot,draftsRoot,materialsRoot;
+    std::filesystem::path skillsRoot;
+    Json skills={{"enabled",true},{"useBuiltins",true},{"grants",Json::array()}};
     Json computer={{"enabled",true},{"allowScreenCapture",false},{"readRoots",Json::array()}};
     Json plugins=Json::object(),remoteStorage={{"kind","none"},{"url",""},{"enabled",false}};
     Json frontend={{"startupAnimation",true},{"reducedMotion",false}};

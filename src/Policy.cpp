@@ -1,5 +1,6 @@
 #include <Hibernation/Application.h>
 #include <Hibernation/ContextControl.h>
+#include <Hibernation/SkillRegistry.h>
 #include <AYSerializer/JsonSchema.h>
 #include <algorithm>
 #include <cctype>
@@ -74,7 +75,7 @@ Config loadConfig(const std::filesystem::path& path) {
     const auto text=readFile(path,64*1024);
     if(!ayt::serializer::validateJsonDocument(text,"{}")) throw std::runtime_error("config_json");
     const auto j=Json::parse(text);
-    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","reflectOnActivities","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer","frontend","contextControl"};
+    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","reflectOnActivities","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer","frontend","contextControl","skills"};
     for(auto it=j.begin();it!=j.end();++it) if(!allowed.contains(it.key())) throw std::runtime_error("config_unknown_field");
     if(j.at("schemaVersion")!=1) throw std::runtime_error("config_version");
     Config c;c.contextControl=j.value("contextControl",Json::object());ContextControl::read(c.contextControl);c.frontend=j.value("frontend",c.frontend);if(!c.frontend.is_object())throw std::runtime_error("frontend_config");for(auto it=c.frontend.begin();it!=c.frontend.end();++it)if((it.key()!="startupAnimation"&&it.key()!="reducedMotion")||!it.value().is_boolean())throw std::runtime_error("frontend_config");const auto base=std::filesystem::absolute(path).parent_path();
@@ -89,6 +90,9 @@ Config loadConfig(const std::filesystem::path& path) {
     auto optionalPath=[&](const char* key,const std::filesystem::path& fallback){if(!j.contains(key)||j.at(key)=="")return fallback;auto p=std::filesystem::u8path(j.at(key).get<std::string>());return std::filesystem::absolute(p.is_absolute()?p:base/p).lexically_normal();};
     c.pluginRoot=optionalPath("pluginRoot",c.projectRoot/"out/build/plugins");c.draftsRoot=optionalPath("draftsRoot",c.dataRoot/"drafts");c.materialsRoot=optionalPath("materialsRoot",c.dataRoot/"materials");
     c.pluginRootExplicit=j.contains("pluginRoot")&&j.at("pluginRoot")!="";
+    c.skills=j.value("skills",c.skills);validateSkillSettings(c.skills);
+    const auto skillPath=std::filesystem::u8path(c.skills.value("root",std::string{}));
+    c.skillsRoot=skillPath.empty()?c.projectRoot/"skills":std::filesystem::absolute(skillPath.is_absolute()?skillPath:base/skillPath).lexically_normal();
     c.plugins=j.value("plugins",Json::object());if(!c.plugins.is_object()||c.plugins.size()>32||c.plugins.dump().size()>16384)throw std::runtime_error("plugin_settings");
     auto environmentName=[](const std::string& value){if(value.empty())return true;if(value.size()>128||(!std::isalpha(static_cast<unsigned char>(value[0]))&&value[0]!='_'))return false;for(unsigned char x:value)if(!std::isalnum(x)&&x!='_')return false;std::string upper=value;std::transform(upper.begin(),upper.end(),upper.begin(),[](unsigned char x){return static_cast<char>(std::toupper(x));});return !std::set<std::string>{"PATH","HOME","TEMP","TMP","USERPROFILE","SYSTEMROOT","COMSPEC","CODEX_HOME"}.contains(upper);};
     for(const auto& plugin:c.plugins){if(!plugin.is_object())throw std::runtime_error("plugin_settings");for(auto it=plugin.begin();it!=plugin.end();++it){auto name=it.key();std::transform(name.begin(),name.end(),name.begin(),[](unsigned char x){return static_cast<char>(std::tolower(x));});if(name=="apikey"||name=="api_key"||name=="password"||name=="authorization"||name=="accesstoken"||name=="secret")throw std::runtime_error("plaintext_plugin_secret");}if(!environmentName(plugin.value("credentialEnvironment",std::string{})))throw std::runtime_error("credential_environment");}

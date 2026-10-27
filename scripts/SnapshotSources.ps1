@@ -9,7 +9,7 @@ $sourceRoot=$ProjectRoot+[IO.Path]::DirectorySeparatorChar
 $extensions=@('.cpp','.h','.inc','.json','.md','.ps1','.py','.js','.mjs','.html','.css','.txt','.png','.svg','.cs','.cmake','.cmd')
 $bundledToolsRoot=[IO.Path]::GetFullPath((Join-Path $ProjectRoot tools/runtime))+[IO.Path]::DirectorySeparatorChar
 function Source-Files {
- $items=@(foreach($directory in @('src','include','plugins','ui','scripts','tools','tests','docs','character','cmake','design')){
+ $items=@(foreach($directory in @('src','include','plugins','ui','scripts','tools','tests','docs','character','cmake','design','skills')){
   Get-ChildItem -LiteralPath (Join-Path $ProjectRoot $directory) -File -Recurse|
    Where-Object {
     $bundled=$_.FullName.StartsWith($bundledToolsRoot,[StringComparison]::OrdinalIgnoreCase)
@@ -48,7 +48,7 @@ $metadata=@{
  version=1;completed=$true;created_utc=[DateTime]::UtcNow.ToString('O');source_files=$fingerprints.Count
  application_head=$appHead;engine_head=$engineHead;engine_worktree_dirty=(@(& git -C $engineRoot status --porcelain).Count-gt0);shared_worktree=$true
  attribution='A local source snapshot including concurrent application changes; not an isolated commit or a distribution package.'
- included_roots=@('src','include','plugins','ui','scripts','tools','tests','docs','character','cmake','design','engine-version.json','Start.cmd','Stop.cmd','config/example.json')
+ included_roots=@('src','include','plugins','ui','scripts','tools','tests','docs','character','cmake','design','skills','engine-version.json','Start.cmd','Stop.cmd','config/example.json')
  excluded_roots=@('config/local.json','config/ai-stage.pending.json','data','out','artifacts','.git','runtime')
  engine_dependencies='Pinned portable Git/7-Zip and licenses from tools/runtime are included. Engine source and installed engine dependencies are not bundled; use the recorded revision and matching local dependencies.'
 }

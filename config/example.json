@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "skills": {"enabled": true, "useBuiltins": true, "root": "", "grants": []},
   "frontend": {
     "startupAnimation": true,
     "reducedMotion": false

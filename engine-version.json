@@ -27,7 +27,7 @@
   },
   "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "3F3F7ECF49AEAC56FFD3FAC4BD07045D1E4BA053E86D1268C4508B353D357079",
+  "validatedExecutableSha256": "679860701BC5EC9BB3F663B3BD9D1F7C58D6F183F87E294802C359027B7D05B4",
   "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
   "applicationVersion": "0.7.0"
 }
