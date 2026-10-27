@@ -32,7 +32,7 @@ struct NativeToolBridge {
     }
     static nlohmann::json finalSilenceParameters(){return {{"type","object"},{"properties",{{"carry_forward",personalCarrySchema()}}},{"additionalProperties",false}};}
     static std::vector<ayt::inference::ToolDefinition> finalDefinitions(){
-        return {{"ha_turn_reply","提交本轮最终对白。text只含角色对用户说的话，正常校验和审核后才显示；不要与操作提案放在同一批。",nativeArgumentSchema(finalReplyParameters()).dump(),false},
+        return {{"ha_turn_reply","提交本轮最终对白。text直接写对对方说的台词，普通交谈不加舞台旁白或整段扮演引号；明确请求故事或剧本时按所需文体。校验和审核后才显示，不与操作提案同批。",nativeArgumentSchema(finalReplyParameters()).dump(),false},
                 {"ha_turn_silence","选择本轮不发言；不代表发生了任何动作。可选carry_forward仅留下一点有来源的持续关注，不是对外发言。",nativeArgumentSchema(finalSilenceParameters()).dump(),false}};
     }
     std::vector<ayt::inference::ToolDefinition> definitions;
