@@ -24,6 +24,7 @@ try{
  $cfg.dataRoot=Join-Path $root data;$cfg.characterRoot=Join-Path $ProjectRoot character;$cfg.uiRoot=Join-Path $ProjectRoot ui;$cfg.pluginRoot=Join-Path $BuildRoot plugins;$cfg.frontend.startupAnimation=$false
  $cfg.plugins=@{widget=@{enabled=$true;skin='asterlan';animationMode='sequence';size=168;autonomousMode=$true;autonomyIdleSeconds=600;autonomyRefillSeconds=600;roam=$false;respectSystemMotion=$false;showBubble=$false;reactionCacheEnabled=$false}}
  $cfg.plugins.atelier=@{enabled=$true;maximumPieces=12}
+ $cfg.plugins.pocket=@{enabled=$true;scrambleSteps=3;maximumMoves=24}
  $cfg.profiles=@($cfg.profiles[0],@{id='actor';label='Intent fixture';enabled=$true;protocol='chat-completions';origin=$fixture;model='fixture-model';supportsJsonObject=$true})
  $cfg.review=@{enabled=$false};$cfg.solitudeIntervalMs=604800000;$cfg.idleBeforeSolitudeMs=86400000;$cfg.maxStartsPerHour=1000
  $configPath=Join-Path $root config.json;$ready=Join-Path $root ready.json;$cfg|ConvertTo-Json -Depth 60|Set-Content -LiteralPath $configPath -Encoding utf8
@@ -62,6 +63,9 @@ try{
  Check ($thread.status-eq'active'-and$thread.attempts[0].result_sources.Count-eq1) 'real creation receipt is linked without automatically closing its intention'
  $finish=@{id=$writer.id;expected_revision=1;outcome='completed';note='那一点变化已经实际留在草稿里了';source_ids=@($thread.attempts[0].result_sources[0].id)}
  $trace=Message @((Calls @((Tool finish self.close $finish))),(Silent));Check ($trace.tool_results[0].ok) 'character may resolve a matching creative intention using its actual original tool receipt'
+ $trace=Message @((Calls @((Tool puzzle pocket.start @{}))),(Silent));$puzzleSource=$trace.tool_results[0].source_id
+ $archived=Api '/api/archive' @{id=$puzzleSource};Check ($archived.records[0].data.kind-eq'tool_observation'-and$archived.records[0].data.result.applied-and!$archived.records[0].data.result.completed) 'starting an unfinished game is an actual operation rather than a pending proposal'
+ $trace=Message @((Calls @((Tool remember memory.remember @{kind='outer';text='我已经开始了一局，还没有解开。';source_ids=@($puzzleSource)}))),(Silent));Check ($trace.tool_results[0].ok) 'actual unfinished play can be remembered without falsely claiming the puzzle was solved'
  $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)) 'clean shutdown'
  Check (!([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)))).Contains('INTENTION_PRIVATE_MARKER')) 'intentions and attempts stay encrypted'
  @{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json)

@@ -271,7 +271,7 @@ TEST_CASE(personal_preferences_require_new_evidence_and_change_continuously){
     const auto repeated=personal::notice(first,proposal,refs,1000);CHECK(repeated==first);
     auto later=personal::projected(first,31000);CHECK(later.at("leaning").get<double>()>0&&later.at("leaning").get<double>()<=.0151);
     auto other=refs;other[0]["id"]="two";auto contrary=proposal;contrary["stance"]="avoid";contrary["note"]="这次那道折痕让我不太舒服";
-    auto changed=personal::notice(later,contrary,other,31000);CHECK(changed.at("leaning")==later.at("leaning"));CHECK(changed.at("target_leaning").get<double>()<0);
+    auto changed=personal::notice(later,contrary,other,31000);CHECK(changed.at("leaning")==later.at("leaning"));CHECK(std::abs(changed.at("target_leaning").get<double>())<.00001);CHECK(changed.at("basis").at("mixed").get<bool>());
     auto next=personal::projected(changed,32000);CHECK(std::abs(next.at("leaning").get<double>()-changed.at("leaning").get<double>())<=.000501);
     auto reordered=Json::array({refs[0],other[0]});auto reversed=Json::array({other[0],refs[0]});CHECK(personal::sameEvidence(reordered,reversed));
     auto many=first;for(int i=0;i<15;++i){auto newRefs=refs;newRefs[0]["id"]="later-"+std::to_string(i);many=personal::notice(many,proposal,newRefs,1000);}
@@ -715,6 +715,14 @@ TEST_CASE(activity_can_reference_an_existing_intention_without_promoting_an_outc
     const auto optional=bridge.candidate({{"call","ha_activity_DOT_enqueue",R"({"commands":[{"kind":"wait","seconds":1,"purpose":null,"intention":null}]})"}},1);CHECK(optional.ok);CHECK(!optional.value.at("calls")[0].at("args").at("commands")[0].contains("intention"));
     CHECK(!bridge.candidate({{"call","ha_activity_DOT_enqueue",R"({"commands":[{"kind":"wait","seconds":null}]})"}},1).ok);
     CHECK(!bridge.candidate({{"call","ha_activity_DOT_enqueue",R"({"commands":[{"kind":"wait","seconds":1,"unknown":null}]})"}},1).ok);
+}
+TEST_CASE(puzzle_progress_is_an_actual_step_even_when_the_larger_game_is_unfinished){
+    const Json progress={{"applied",true},{"completed",false},{"game",{{"id","one"},{"revision",2},{"status","active"},{"moves",1},{"lit_count",6}}}};
+    CHECK(toolObservationKind("pocket.press",progress)=="tool_observation");CHECK(toolObservationKind("activity.enqueue",progress)=="tool_intent");
+    CHECK(toolObservationKind("habitat.act",Json{{"accepted",true},{"completed",false}})=="tool_intent");
+    const auto view=compactObservation(Json{{"kind","tool_observation"},{"tool","pocket.press"},{"result",progress}},false);CHECK(view.at("result").at("applied").get<bool>());CHECK(view.at("result").at("game").at("lit_count")==6);CHECK(view.at("result").at("completed")==false);
+    Json record={{"kind","tool_observation"},{"tool","pocket.press"},{"result",progress}};CHECK(activityConsiderationKey(record).empty());record["result"]["game"]["status"]="won";CHECK(!activityConsiderationKey(record).empty());
+    record={{"kind","tool_observation"},{"tool","habitat.create"},{"result",{{"object",{{"id","seed-1"},{"creator","model"}}}}}};CHECK(!activityConsiderationKey(record).empty());record["result"]["object"]["creator"]="environment";CHECK(activityConsiderationKey(record).empty());
 }
 TEST_CASE(scheduled_visual_evidence_preserves_sources_without_becoming_base64_text){
     const Json image={{"mime_type","image/jpeg"},{"base64",std::string(30000,'A')}};

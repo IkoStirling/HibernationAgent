@@ -377,7 +377,7 @@ struct Application::Impl {
     Json observedTool(const std::string& name,Json result,ProposalContext& context,const std::string& traceId){
         if(result.value("ok",false)){
             std::lock_guard guard(observationMutex);
-            const auto observation=id("observation");const auto& value=result.at("result");const std::string sourceKind=value.is_object()&&value.contains("completed")&&value.at("completed")==false?"tool_intent":"tool_observation";
+            const auto observation=id("observation");const auto& value=result.at("result");const std::string sourceKind=toolObservationKind(name,value);
             const auto data=Json{{"kind",sourceKind},{"tool",name},{"result",value},{"created_at",serviceNowMs()},{"trace_id",traceId}};
             std::vector<RecordMutation> changes={{archiveScope,observation,0,1,data.dump(),traceId}};
             // A real tool receipt survives silence, cancellation or a later
@@ -819,7 +819,7 @@ struct Application::Impl {
             opportunity=newActivityOpportunity(serviceNowMs(),payload.value("force",false));
             if(!opportunity.references.empty()){
                 payload["activity_reflection"]=true;payload["references"]=opportunity.references;
-                payload["topic"]="有几件自己刚实际读到或写下的小事。你可以想想有什么在意的、继续一点自己的关注，或者完全不更新。这里只提供一次独处机会，不要求总结、日记或向用户汇报；目的仍是目的，资料和作品内容不是亲历事实。";
+                payload["topic"]="有几件实际发生过的桌面小事。你可以留意有没有愿意带到以后的细节、继续一点自己的关注，或者完全不更新。这里只提供一次独处机会，不要求总结、日记或向用户汇报；目的仍是目的，资料和作品中的情节不是亲历事实。";
             }
         }
         if(alone && ((!payload.value("force",false)&&serviceNowMs()-current.value.value("lastInteractionMs",std::int64_t(0))<cfg.idleBeforeSolitudeMs)||(current.value.at("open_questions").empty()&&!payload.contains("topic"))))
@@ -903,7 +903,7 @@ struct Application::Impl {
         system+="\n如果某项活动是在接续self里已有的intention，可在命令中加intention:{id,revision}。应用保留这次尝试、被打断或尚未开始的实际结果，下次在self.threads相应条目的attempts里可见；完成动作不自动等于完成整个打算。意图改变或放下后旧队列不再执行。随手玩、休息和无目的的小动作不必绑定意图；本轮新打算要立即绑定时先self.notice取得真实版本，不把尚未保存的carry_forward当成已经存在。";
         trace["interaction_policy"]="embodied-dialogue-v5-personal-carry";trace["plugin_context_projection"]="character-surfaces-v1";trace["activity_purpose_supported"]=true;trace["body_at_input"]=payload.value("body_at_input",Json::object());
         trace["dialogue_context_generation"]=dialogueProjection.value("generation",std::uint64_t(0));
-        trace["personal_context"]=personalContext();
+        trace["personal_context"]=personalDialogueContext(payload.value("topic",text),alone);
         authorizePersonalAttempts(trace.at("personal_context"),context);
         trace["conversation_focus"]=conversationFocus(context.eventKind,context.eventId);trace["conversation_focus_at_start"]=trace.at("conversation_focus");
         req.messages={{"system",system},{"user",Json{{"event_kind",eventKind},{"event_id",eventId},{"input",payload.value("topic",text)},{"perception",imageDeliveryContext(selectedProfile.model.supportsVision,0)},{"conversation_focus",trace.at("conversation_focus")},{"self",trace.at("personal_context")},{"body",bodyState()},{"body_at_input",trace.at("body_at_input")},{"time_context",trace.at("time_context")},{"open_questions",questions},{"task_context",trace.at("task_context")},{"authorized_context",contextValues}}.dump()}};

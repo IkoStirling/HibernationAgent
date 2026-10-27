@@ -58,6 +58,22 @@ try{
  Check ($r[0].result.threads.Count-eq1-and$r[0].result.threads[0].status-eq'completed'-and$r[0].result.threads[0].resolution-eq'已经完成') 'closed intentions can be found with their resolution without becoming active'
  $r=Message @((Calls @((Tool search self.observe @{query='折痕';limit=1;status='all'}))),(Reply));Check ($r[0].result.threads.Count-eq1-and$r[0].result.threads[0].id-eq'paper-star') 'personal search uses actual disposition content and respects its bounded limit'
  $r=Message @((Calls @((Tool no_match self.observe @{query='UNRELATED_NO_MATCH_MARKER'}))),(Reply));Check ($r[0].result.matching_count-eq0-and$r[0].result.threads.Count-eq0) 'unrelated personal search does not invent a memory'
+ $repeat=$like.Clone();$known=@()
+ for($i=0;$i-lt3;$i++){
+  $repeat.expected_revision=2+$i;$r=Message @((Calls @((Tool conversation self.notice $repeat))),(Reply))
+  $capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 65;$known+=($capture.messages[1].content|ConvertFrom-Json).event_id
+ }
+ Check ($r[0].result.thread.basis.independent_experiences-eq1-and$r[0].result.thread.familiarity-eq'tentative') 'several remarks in one encounter remain one tentative experience'
+ $repeat.expected_revision=5;$repeat.source_ids=@($known[1],$known[2]);$r=Message @((Calls @((Tool recombine self.notice $repeat))),(Reply));Check ($r[0].result.deduplicated-and$r[0].result.revision-eq5) 'combining already known sources cannot reinforce a preference again'
+ $repeat.note='THREAD_PRIVATE_MARKER 重新看同一道折痕，觉得它也有点突兀';$repeat.stance='avoid'
+ $r=Message @((Calls @((Tool rethink self.notice $repeat))),(Reply));Check ($r[0].result.revision-eq6-and$r[0].result.thread.basis.independent_experiences-eq1-and$r[0].result.thread.recent_changes[-1].stance-eq'avoid') 'same evidence can be reinterpreted without manufacturing another experience'
+ $r=Message @((Calls @((Tool source_memory memory.remember @{kind='inference';text='用于检查个人关注的来源可见性';source_ids=@($known[2])}))),(Reply));$hiddenMemory=$r[0].result.id;Check ([bool]$hiddenMemory) 'real encounter can produce an owner-controlled visibility source'
+ $null=Api '/api/access' @{id=$hiddenMemory;accessible=$false}
+ $r=Message @((Calls @((Tool private self.observe @{query='折痕';status='all'}))),(Reply));Check ($r[0].result.threads.Count-eq0-and!(($r[0].result|ConvertTo-Json -Depth 30).Contains('THREAD_PRIVATE_MARKER'))) 'hidden origin cannot leak through basis or earlier changes'
+ $null=Api '/api/access' @{id=$hiddenMemory;accessible=$true}
+ $r=Message @((Calls @((Tool restored_again self.observe @{query='折痕'}))),(Reply));Check ($r[0].result.threads[0].revision-eq6-and$r[0].result.threads[0].basis.independent_experiences-eq1) 'restoring visibility restores the same preference history without rewriting it'
+ $job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$info=$job.result|ConvertFrom-Json;$trace=Api '/api/trace' @{id=$info.trace_id};$background=@($trace.personal_context.threads|Where-Object id -eq 'paper-star')[0]
+ Check ($background.context_detail-eq'background_index'-and!$background.note-and$r[0].result.threads[0].note.Contains('THREAD_PRIVATE_MARKER')) 'unrelated dialogue receives a small disposition index while deliberate self recall retains its full meaning'
  Check (!((Api '/api/chat').messages|ConvertTo-Json -Depth 10).Contains('THREAD_PRIVATE_MARKER')) 'internal concern is absent from visible dialogue'
  Stop-Backend
  Check (!([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite))).Contains('THREAD_PRIVATE_MARKER'))) 'personal concern remains encrypted at rest'

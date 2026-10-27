@@ -3,6 +3,13 @@
 #include <string>
 #include <set>
 namespace hibernation {
+inline std::string toolObservationKind(const std::string& tool,const nlohmann::json& result){
+    const bool appliedPuzzle=(tool=="pocket.start"||tool=="pocket.press"||tool=="pocket.leave")&&result.is_object()&&result.value("applied",false);
+    // For this contract completed means the whole puzzle was solved, while
+    // applied confirms the individual operation really changed the board.
+    const bool pending=result.is_object()&&result.contains("completed")&&result.at("completed")==false&&!appliedPuzzle;
+    return pending?"tool_intent":"tool_observation";
+}
 inline bool revisitableObservationTool(const std::string& tool){
     static const std::set<std::string> concrete={"workspace.list","workspace.read","workspace.view_image","computer.screenshot","computer.list_directory","television.observe","television.observe_sequence","television.search","reading.search","reading.open","atelier.read","napcat.view_image"};return concrete.contains(tool);
 }
@@ -45,6 +52,8 @@ inline nlohmann::json compactObservation(const nlohmann::json& record,bool image
         const auto& value=data.at(field);if(value.is_string()&&value.get_ref<const std::string&>().size()>512)continue;summary[field]=value;
     }
     if(data.contains("piece")&&data.at("piece").is_object()){summary["piece"]=Json::object();for(const auto* field:{"id","title","revision","kind","stage"})if(data.at("piece").contains(field))summary["piece"][field]=data.at("piece").at(field);}
+    if(data.contains("game")&&data.at("game").is_object()){summary["game"]=Json::object();for(const auto* field:{"id","revision","status","lit_count","moves","moves_remaining"})if(data.at("game").contains(field))summary["game"][field]=data.at("game").at(field);}
+    if(data.contains("applied")&&data.at("applied").is_boolean())summary["applied"]=data.at("applied");
     for(const auto* field:{"sampled_frames","span_seconds","stop_reason","full_video_watched","audio_delivered"})if(data.contains(field)&&data.at(field).is_primitive())summary[field]=data.at(field);
     if(data.contains("frames")&&data.at("frames").is_array()){
         summary["frames"]=Json::array();for(const auto& frame:data.at("frames")){if(summary.at("frames").size()>=3)break;Json meta=Json::object();for(const auto* field:{"index","frame_time_seconds","observed_at_ms"})if(frame.contains(field)&&frame.at(field).is_number())meta[field]=frame.at(field);summary["frames"].push_back(std::move(meta));}

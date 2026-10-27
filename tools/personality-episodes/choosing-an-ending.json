@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "重新考虑要不要收尾",
+  "autonomy": true,
+  "opportunitySeconds": 35,
+  "considerOwnWork": true,
+  "turns": [
+    {"text": "我刚才那句“做完就没事了”说得太满了。把一件小事收好，其实也挺舒服。"},
+    {"text": "不过你不用跟着我改主意。现在你自己想做哪件事？也可以什么都不干。", "settleSeconds": 15},
+    {"text": "嗯，按你的意思来。我先不指挥了。"}
+  ]
+}

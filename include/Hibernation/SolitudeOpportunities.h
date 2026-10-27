@@ -14,6 +14,16 @@ inline std::string activityConsiderationKey(const SolitudeJson& record){
     try{
     if(!record.is_object()||record.value("kind",std::string{})!="tool_observation"||!record.contains("result")||!record.at("result").is_object())return {};
     const auto& result=record.at("result");const auto tool=record.value("tool",std::string{});
+    if(tool=="habitat.create"){
+        const auto object=result.value("object",SolitudeJson::object());
+        if(object.is_object()&&object.value("creator",std::string{})=="model"&&object.contains("id")){const auto key=SolitudeJson::array({"created_desk_object",object.at("id")}).dump();return key.size()<=800?key:std::string{};}
+    }
+    if(tool=="pocket.press"||tool=="pocket.leave"){
+        const auto game=result.value("game",SolitudeJson::object());
+        if(result.value("applied",false)&&game.is_object()&&game.contains("id")){
+            const auto status=game.value("status",std::string{});if(status=="won"||status=="left"||status=="exhausted"){const auto key=SolitudeJson::array({"puzzle_outcome",game.at("id"),status}).dump();return key.size()<=800?key:std::string{};}
+        }
+    }
     if(tool=="atelier.write"||tool=="atelier.append"){
         const auto piece=result.value("piece",SolitudeJson::object());if(!result.value("written",false)||!result.value("completed",false)||!piece.contains("id")||!piece.contains("revision"))return {};
         const auto key=SolitudeJson::array({"authored_piece",piece.at("id"),piece.at("revision")}).dump();return key.size()<=800?key:std::string{};

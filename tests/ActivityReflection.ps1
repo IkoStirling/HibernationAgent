@@ -58,6 +58,13 @@ try{
  $result=Alone @((Silent));$context=(Capture).messages[1].content|ConvertFrom-Json -Depth 55
  Check ($result.status-eq'completed'-and$context.task_context.activity_reflection-and@($context.authorized_context|Where-Object id -eq $directSource).Count-eq1) 'direct silent character work becomes a sourced private consideration opportunity'
  $before=Requests;$result=Alone @((Silent));Check ($result.status-eq'no_update'-and(Requests)-eq$before) 'direct creation is considered once rather than replayed on every quiet period'
+ $settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 60|ConvertFrom-Json -AsHashtable;$settings.plugins.habitat=@{enabled=$true;autoSpawn=$false;autoInteract=$false;maxObjects=4};$null=Api '/api/settings' @{settings=$settings}
+ $null=Api '/api/plugin/test' @{tool='habitat.create';args=@{kind='seed'}};Await {(Api '/api/plugin/result').state-in@('succeeded','failed')} 'operator object fixture'
+ $before=Requests;$result=Alone @((Silent));Check ($result.status-eq'no_update'-and(Requests)-eq$before) 'an operator-created object does not impersonate the character own experience opportunity'
+ Message @((Call 'own-object' 'habitat.create' @{kind='seed'}),(Silent));$source=((Capture).messages[-1].content|ConvertFrom-Json -Depth 60).tool_results[0].source_id
+ $result=Alone @((Silent));$context=(Capture).messages[1].content|ConvertFrom-Json -Depth 60
+ Check ($result.status-eq'completed'-and@($context.task_context.references|Where-Object id -eq $source).Count-eq1) 'a genuinely character-created desk object can be privately reconsidered'
+ $before=Requests;$result=Alone @((Silent));Check ($result.status-eq'no_update'-and(Requests)-eq$before) 'a small object does not force repeated private summaries'
  $state=Api '/api/state';Check ($state.persona_version-eq$original.persona_version-and$state.stage.id-eq$original.stage.id) 'private consideration does not overwrite persona or stage'
  Stop-Backend;$raw=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)));Check (!$raw.Contains('REFLECTION_PRIVATE_MARKER')) 'private interest and consideration history remain encrypted'
  @{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json);Write-Output "Activity reflection passed: $checks checks. Evidence: $root"
