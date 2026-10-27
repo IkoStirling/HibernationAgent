@@ -8,6 +8,7 @@ std::string activitySchema(){
     Json variants=Json::array();for(const auto* kind:{"move_to","pose","eat_nearest","look_nearest","rest","wait","interact","arrange","create_drop","creative_note","creative_continue","reference_search","reference_read","puzzle_start","puzzle_press"}){
         Json properties={{"kind",{{"type","string"},{"enum",Json::array({kind})}}},{"seconds",{{"type","number"},{"minimum",0},{"maximum",600}}},{"purpose",{{"type","string"},{"minLength",1},{"maxLength",160},{"description","可选的一句活动目的，是打算而非已完成经历，不填思维过程；没有特别目的可以省略。"}}}};Json required=Json::array({"kind","seconds"});
         const std::string_view action=kind;
+        properties["intention"]={{"type","object"},{"additionalProperties",false},{"required",Json::array({"id","revision"})},{"description","可选，接续self中一个仍活跃的intention；绑定当时的语义版本。动作结果不会自动完成这个更大的打算。"},{"properties",{{"id",{{"type","string"},{"minLength",1},{"maxLength",96}}},{"revision",{{"type","integer"},{"minimum",1}}}}}};
         if(action=="rest")properties["seconds"]={{"type","number"},{"minimum",15},{"maximum",600}};
         else if(action=="pose"||action=="wait")properties["seconds"]={{"type","number"},{"minimum",1},{"maximum",120}};
         else properties["seconds"]={{"type","number"},{"enum",Json::array({0})},{"description","此动作由真实抵达/完成回执决定何时结束，固定填0，不用填写预估耗时或物件寿命。"}};

@@ -13,6 +13,7 @@
 #include <Hibernation/MemoryContext.h>
 #include <Hibernation/MemoryLibrary.h>
 #include <Hibernation/ActivityPlan.h>
+#include <Hibernation/ActivityReuse.h>
 #include <Hibernation/DialoguePreparation.h>
 #include <Hibernation/CharacterAnimation.h>
 #include <Hibernation/ReactionCache.h>
@@ -701,6 +702,19 @@ TEST_CASE(activity_purpose_is_optional_bounded_and_never_becomes_its_outcome){
     const auto view=activityBodyContext(Json{{"recent",Json::array({command})}});CHECK(view.at("recent")[0].at("purpose")==command.at("purpose"));CHECK(!view.at("recent")[0].contains("completed"));CHECK(view.contains("purpose_meaning"));
     plan["commands"][0]["purpose"]=std::string(161,'a');CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["purpose"]=" \t\n";CHECK(validateActivities(plan.dump()).code=="activity_empty_purpose");plan["commands"][0]["purpose"]=8;CHECK(!validateActivities(plan.dump()).ok);
     plan["commands"][0].erase("purpose");CHECK(validateActivities(plan.dump()).ok);plan["commands"][0]["grant_permission"]=true;CHECK(!validateActivities(plan.dump()).ok);
+}
+TEST_CASE(activity_can_reference_an_existing_intention_without_promoting_an_outcome){
+    Json command={{"kind","wait"},{"seconds",1},{"intention",{{"id","look-later"},{"revision",1}}}};
+    CHECK(validateActivities(Json{{"version",1},{"commands",Json::array({command})}}.dump()).ok);
+    const auto view=activityBodyContext(Json{{"entries",Json::array({command})}});CHECK(view.at("next")[0].at("intention")==command.at("intention"));
+    auto altered=command;altered["intention"]["revision"]=0;CHECK(!validateActivities(Json{{"version",1},{"commands",Json::array({altered})}}.dump()).ok);
+    altered=command;altered["intention"]["completed"]=true;CHECK(!validateActivities(Json{{"version",1},{"commands",Json::array({altered})}}.dump()).ok);
+    command["status"]="completed";const auto reusable=reusableActivity(command);CHECK(reusable);CHECK(!reusable->contains("intention"));
+    const auto activity=Json::parse(activitySchema());const Json parameters={{"type","object"},{"additionalProperties",false},{"properties",{{"commands",activity.at("properties").at("commands")}}},{"required",Json::array({"commands"})}};
+    const NativeToolBridge bridge(Json::array({{{"name","activity.enqueue"},{"parameters",parameters}}}));
+    const auto optional=bridge.candidate({{"call","ha_activity_DOT_enqueue",R"({"commands":[{"kind":"wait","seconds":1,"purpose":null,"intention":null}]})"}},1);CHECK(optional.ok);CHECK(!optional.value.at("calls")[0].at("args").at("commands")[0].contains("intention"));
+    CHECK(!bridge.candidate({{"call","ha_activity_DOT_enqueue",R"({"commands":[{"kind":"wait","seconds":null}]})"}},1).ok);
+    CHECK(!bridge.candidate({{"call","ha_activity_DOT_enqueue",R"({"commands":[{"kind":"wait","seconds":1,"unknown":null}]})"}},1).ok);
 }
 TEST_CASE(scheduled_visual_evidence_preserves_sources_without_becoming_base64_text){
     const Json image={{"mime_type","image/jpeg"},{"base64",std::string(30000,'A')}};

@@ -3,6 +3,7 @@
 #include <AYSerializer/JsonSchema.h>
 namespace hibernation {
 std::string toolFailureGuidance(std::string_view tool,std::string_view code){
+    if(code=="activity_intention_changed_or_unavailable")return "这个打算已改变、放下或当前不可访问，旧版本不能再排队。可以先self.observe核对自己的实际意图，按当前意思重新选择，也可以不继续，不重复提交同一旧队列。";
     const std::string base="本次操作未成功。同一轮不重复相同参数；依据真实回执选择有依据的下一步，只补充新的变化，不反复宣讲限制，不把失败写成完成经历。";
     if(code=="workspace_not_text")return "文本工具只处理无NUL的UTF-8内容，不将二进制文件或其他编码的字节当成正文。图片可用workspace.view_image，视频用小电视；文本应提供UTF-8版本，不重复把相同内容当文本读取。";
     if(tool.starts_with("television.")&&(code.find("source")!=std::string_view::npos||code.find("path")!=std::string_view::npos))return base+" 可用 television.sources 核对素材与草稿中的实际视频，网页使用已配置的平台入口；不猜测未支持的播放协议。";

@@ -77,7 +77,7 @@ try{
   pocket=@{enabled=$true;scrambleSteps=3;maximumMoves=24}
   reading=@{enabled=$false;language='zh';maxRequestsPerHour=12;useSystemProxy=$true}
  }
- $cfg.maxStartsPerHour=600;$cfg.solitudeIntervalMs=604800000;$cfg.idleBeforeSolitudeMs=86400000;$cfg.reflectOnActivities=$false
+ $cfg.maxStartsPerHour=600;$cfg.solitudeIntervalMs=604800000;$cfg.idleBeforeSolitudeMs=86400000;$cfg.reflectOnActivities=[bool]$steps.considerOwnWork
  if($steps.autonomy){$cfg.plugins.widget.autonomousMode=$true;$cfg.plugins.widget.roam=$true;$cfg.plugins.widget.autonomyIdleSeconds=600;$cfg.plugins.widget.autonomyRefillSeconds=600}
  if($steps.opportunitySeconds){$cfg.plugins.widget.autonomyIdleSeconds=15;$cfg.plugins.widget.autonomyRefillSeconds=60}
  $cfg.maxToolRounds=8;$cfg.skills=@{enabled=$true;useBuiltins=$true;root='';grants=@()}
@@ -140,6 +140,15 @@ try{
   $report.independent_activity=@{bounded_seconds=$steps.opportunitySeconds;choice_observed=$choice;status=$activity;actual_new_outcomes=$new;surfaces=(Api '/api/capabilities').plugins}
   $report|ConvertTo-Json -Depth 85|Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM
   Write-Output ('Independent activity: choice='+$choice+', outcomes='+$new.Count+', error='+$activity.last_error)
+ }
+ if($steps.considerOwnWork){
+  # The application selects unconsidered, genuinely authored/read material.
+  # No episode text is supplied as an invented experience or required insight.
+  $null=Api '/api/solitude' @{};AwaitIdle;$state=Api '/api/state';$job=@($state.jobs|Where-Object id -eq solitude.once)[0]
+  $outcome=if($job.result){$job.result|ConvertFrom-Json}else{$null};$trace=if($outcome.trace_id){Api '/api/trace' @{id=$outcome.trace_id}}else{$null}
+  $report.private_consideration=@{status=$outcome.status;job_state=$job.state;trace=$trace}
+  $report|ConvertTo-Json -Depth 85|Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM
+  Write-Output ('Own-work consideration: '+$outcome.status)
  }
 }finally{
  if($service){$service.Refresh();if(!$service.HasExited){try{$null=Api '/api/shutdown' @{};$null=$service.WaitForExit(12000)}catch{};$service.Refresh();if(!$service.HasExited){Stop-Process -Id $service.Id}}}

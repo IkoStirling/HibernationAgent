@@ -44,7 +44,9 @@ try{
  $close=@{id='little-story';expected_revision=1;outcome='completed';note='已经完成';source_ids=@('${event_id}')}
  $r=Message @((Calls @((Tool premature self.close $close))),(Reply));Check ($r[0].error.code-eq'personal_completion_requires_result') 'intent cannot become completed from a user request alone'
  $close.source_ids=@('${last_source_id}')
+ $close.source_ids=@('${event_id}')
  $r=Message @((Calls @((Tool merely_observe self.observe @{}))),(Calls @((Tool premature self.close $close))),(Reply));Check ($r[0].error.code-eq'personal_completion_requires_result') 'observing the intention is not evidence that it was completed'
+ $close.source_ids=@('${last_source_id}')
  $r=Message @((Calls @((Tool draft workspace.write @{path='little-story.md';content='月亮慢了半拍。'}))),(Calls @((Tool finish self.close $close))),(Reply))
  Check ($r[0].ok-and$r[0].result.thread.status-eq'completed') 'real written draft can resolve a creative intention'
  $avoid=$again.Clone();$avoid.stance='avoid';$avoid.note='这次反而觉得那道折痕有点扎眼'

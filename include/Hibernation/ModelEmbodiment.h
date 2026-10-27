@@ -15,8 +15,9 @@ inline nlohmann::json widgetBodyContext(const nlohmann::json& value){
 }
 inline nlohmann::json activityBodyContext(const nlohmann::json& plan){
     using Json=nlohmann::json;auto command=[](const Json& value){if(!value.is_object())return Json(nullptr);Json result=Json::object();for(const auto* key:{"kind","seconds","purpose","x","y","state","status","template","name","title","piece_kind","piece_id","stage","query","key","language","object_id","action","game_id","expected_revision","cell","effect_outcome"})if(value.contains(key))result[key]=value.at(key);return result;};
-    Json next=Json::array();for(const auto& item:plan.value("entries",Json::array()))next.push_back(command(item));
-    Json recent=Json::array();const auto history=plan.value("recent",Json::array());const auto begin=history.size()>3?history.size()-3:0;for(std::size_t i=begin;i<history.size();++i)recent.push_back(command(history[i]));
-    return {{"active",command(plan.value("active",Json(nullptr)))},{"next",next},{"recent",recent},{"purpose_meaning","purpose只是当时想做这件事的目的；status和effect_outcome才说明实际发生什么。动作完成不等于其文字目的已达成。"}};
+    const auto linked=[&](const Json& item){auto value=command(item);if(value.is_object())for(const auto* key:{"intention","attempt_source_id"})if(item.contains(key))value[key]=item.at(key);return value;};
+    Json next=Json::array();for(const auto& item:plan.value("entries",Json::array()))next.push_back(linked(item));
+    Json recent=Json::array();const auto history=plan.value("recent",Json::array());const auto begin=history.size()>3?history.size()-3:0;for(std::size_t i=begin;i<history.size();++i)recent.push_back(linked(history[i]));
+    return {{"active",linked(plan.value("active",Json(nullptr)))},{"next",next},{"recent",recent},{"purpose_meaning","purpose只是当时想做这件事的目的；status和effect_outcome才说明实际发生什么。intention可连接self里的未完打算；一次动作完成不等于更大的打算已达成，not_started表示还没开始就取消了。"}};
 }
 }

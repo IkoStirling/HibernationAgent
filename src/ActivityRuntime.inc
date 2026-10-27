@@ -19,9 +19,14 @@
     void stopActivities(){std::lock_guard lock(activityMutex);activityGenerator.stop();if(activityEffectCancelled)activityEffectCancelled->store(true);if(activityEffect.valid())activityEffect.wait();collectActivityEffect(serviceNowMs());}
     void saveActivities(const Json& value){auto before=get("ha.autonomy","queue");commit({mutation("ha.autonomy","queue",before,value,"autonomy")},"autonomy");}
     Json activityStatus()const{std::lock_guard lock(activityMutex);const auto value=activityQueue();return {{"enabled",autonomousMode()},{"queued",value.at("entries").size()},{"active",value.at("active")},{"generating",activityGenerator.running()},{"last_error",activityError},{"recent",value.at("recent")},{"planning_cadence",get("ha.autonomy","cadence",emptyPlanningCadence()).value},{"next_planning_ms",nextActivityFill},{"reusable_count",activityLibrary().value("items",Json::array()).size()},{"economy_local_fallback",activityEconomyFallback}};}
-    void finishActivity(Json& plan,const std::string& status){if(plan.at("active").is_null())return;auto result=plan.at("active");result["status"]=status;result["ended_ms"]=serviceNowMs();if(status=="completed")rememberActivity(result);plan["recent"].push_back(result);while(plan["recent"].size()>8)plan["recent"].erase(0);plan["active"]=nullptr;}
+    void finishActivity(Json& plan,const std::string& status){if(plan.at("active").is_null())return;auto result=plan.at("active");result["status"]=status;result["ended_ms"]=serviceNowMs();if(result.contains("intention"))result["attempt_source_id"]=recordIntentionAttempt(result);if(status=="completed")rememberActivity(result);plan["recent"].push_back(result);while(plan["recent"].size()>8)plan["recent"].erase(0);plan["active"]=nullptr;}
     void cancelActivities(const std::string& reason){
-        std::lock_guard lock(activityMutex);activityGenerator.cancel();if(activityEffectCancelled)activityEffectCancelled->store(true);nextActivityFill=(reason=="character_hidden"||reason=="paused"||reason=="mode_disabled")?std::max(nextActivityFill,serviceNowMs()+30000):serviceNowMs()+30000;if(reason=="new_input"||reason=="input_active"||reason=="pointer_interaction"||reason=="configuration_changed")planningStimulus(serviceNowMs(),true);auto plan=activityQueue();if(plan.at("active").is_null()&&plan.at("entries").empty())return;finishActivity(plan,reason);plan["entries"]=Json::array();saveActivities(plan);if(plugins)plugins->event({{"kind","runtime.activity_cancel"},{"reason",reason}});
+        std::lock_guard lock(activityMutex);activityGenerator.cancel();if(activityEffectCancelled)activityEffectCancelled->store(true);
+        nextActivityFill=(reason=="character_hidden"||reason=="paused"||reason=="mode_disabled")?std::max(nextActivityFill,serviceNowMs()+30000):serviceNowMs()+30000;
+        if(reason=="new_input"||reason=="input_active"||reason=="pointer_interaction"||reason=="configuration_changed")planningStimulus(serviceNowMs(),true);
+        auto plan=activityQueue();if(plan.at("active").is_null()&&plan.at("entries").empty())return;finishActivity(plan,reason);
+        for(auto pending:plan.at("entries"))if(pending.contains("intention")){pending["status"]="not_started_"+reason;pending["ended_ms"]=serviceNowMs();recordIntentionAttempt(pending);}
+        plan["entries"]=Json::array();saveActivities(plan);if(plugins)plugins->event({{"kind","runtime.activity_cancel"},{"reason",reason}});
     }
     Json activityCommands(const Json& snapshots,bool background=false)const{
         std::set<std::string> tools;for(const auto& item:plugins->catalog())tools.insert(item.at("name").get<std::string>());
@@ -48,6 +53,7 @@
         auto plan=activityQueue();if(plan.at("entries").size()+commands.size()+(plan.at("active").is_null()?0:1)>6)return toolFailure("activity_queue_full");
         const auto snapshots=plugins->liveSnapshots();const auto available=activityCommands(snapshots,source.starts_with("activity-generation")||source.starts_with("peak-reuse:"));const auto widget=snapshots.value("widget",Json::object());
         for(const auto& command:commands){const auto kind=command.at("kind").get<std::string>();if(std::find(available.begin(),available.end(),kind)==available.end())return toolFailure("activity_dependency_missing");
+            if(command.contains("intention")&&!currentIntention(command.at("intention")))return toolFailure("activity_intention_changed_or_unavailable");
             if(kind=="reference_read"){
                 const auto search=snapshots.value("reading",Json::object()).value("last_search",Json::object());const auto pages=search.value("pages",Json::array());
                 if(search.value("language",std::string{})!=command.at("language").get<std::string>()||std::none_of(pages.begin(),pages.end(),[&](const auto& page){return page.at("key")==command.at("key");}))return toolFailure("activity_reference_not_observed");
@@ -105,7 +111,7 @@
             ProposalContext evidence;evidence.eventKind="solitude";receipt=observedTool(activityEffectTool,std::move(receipt),evidence,activityEffectId);
             auto plan=activityQueue();const auto status=receipt.value("ok",false)?std::string("completed"):receipt.value("error",Json::object()).value("code",std::string("failed"));
             if(plan.at("active").is_object()&&plan.at("active").value("id",std::string{})==activityEffectId){plan["active"]["source_id"]=receipt.value("source_id",std::string{});finishActivity(plan,status);}
-            else for(auto& recent:plan["recent"])if(recent.value("id",std::string{})==activityEffectId){recent["effect_outcome"]=status;recent["source_id"]=receipt.value("source_id",std::string{});}
+            else for(auto& recent:plan["recent"])if(recent.value("id",std::string{})==activityEffectId){recent["effect_outcome"]=status;recent["effect_ended_ms"]=now;recent["source_id"]=receipt.value("source_id",std::string{});if(recent.contains("intention"))recent["attempt_source_id"]=recordIntentionAttempt(recent);}
             saveActivities(plan);activityEffectId.clear();activityEffectTool.clear();activityEffectCancelled.reset();nextActivityTick=now+500;
         }
     }
@@ -134,6 +140,7 @@
         notifyEconomyFallback(economy&&plan.at("active").is_null()&&plan.at("entries").empty());
         if(!plan.at("active").is_null()){
             const auto active=plan.at("active");const auto kind=active.at("kind").get<std::string>();
+            if(active.contains("intention")&&!currentIntention(active.at("intention"))){cancelActivities("intention_changed");return;}
             if(kind=="pose"){
                 const auto expected=active.at("state").get<std::string>();auto resolved=expected;for(const auto& pose:widget.value("animation_catalog",Json::array()))if(pose.at("state")==expected)resolved=pose.value("resolved",expected);
                 const auto animation=widget.value("animation",Json::object());const bool shown=widget.value("state",std::string{})==expected&&(animation.value("backend",std::string{})=="procedural"||(animation.value("resolved",std::string{})==resolved&&animation.value("phase",std::string{})=="loop"));
@@ -146,7 +153,9 @@
         }
         bool expired=false;for(auto it=plan["entries"].begin();it!=plan["entries"].end();)if(it->at("expires_ms").get<std::int64_t>()<=now){it=plan["entries"].erase(it);expired=true;}else ++it;if(expired)saveActivities(plan);
         if(plan.at("entries").empty())return;
-        auto command=plan["entries"].front();plan["entries"].erase(0);command["from_state"]=widget.value("state",std::string("idle"));command["started_ms"]=now;command["deadline_ms"]=now+static_cast<std::int64_t>(command.at("seconds").get<double>()*1000)+125000;plan["active"]=command;saveActivities(plan);
+        auto command=plan["entries"].front();plan["entries"].erase(0);
+        if(command.contains("intention")&&!currentIntention(command.at("intention"))){plan["active"]=command;finishActivity(plan,"not_started_intention_changed");saveActivities(plan);return;}
+        command["from_state"]=widget.value("state",std::string("idle"));command["started_ms"]=now;command["deadline_ms"]=now+static_cast<std::int64_t>(command.at("seconds").get<double>()*1000)+125000;plan["active"]=command;saveActivities(plan);
         const auto kind=command.at("kind").get<std::string>();Json receipt;
         if(kind=="create_drop"||kind=="creative_note"||kind=="creative_continue"||kind=="reference_search"||kind=="reference_read"||kind=="puzzle_start"||kind=="puzzle_press"){
             activityEffectId=command.at("id");activityEffectCancelled=std::make_shared<std::atomic<bool>>(false);const auto cancel=activityEffectCancelled;

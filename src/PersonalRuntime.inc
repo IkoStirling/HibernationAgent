@@ -1,6 +1,38 @@
     mutable std::recursive_mutex personalMutex;
     std::int64_t nextPersonalTick=0;
     bool personalInitialized=false,personalWasPaused=false;
+    bool currentIntention(const Json& link)const{
+        std::lock_guard lock(personalMutex);const auto row=get("ha.personal",link.at("id"));
+        if(!row.revision||row.value.value("kind",std::string{})!="intention"||row.value.value("status",std::string{})!="active"||row.value.value("edit_revision",row.revision)!=link.at("revision"))return false;
+        const auto policy=visibility();for(const auto& ref:row.value.value("evidence_sources",row.value.value("sources",Json::array())))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")}))return false;
+        return true;
+    }
+    std::string recordIntentionAttempt(const Json& result){
+        if(!result.contains("intention"))return {};
+        std::lock_guard lock(personalMutex);const auto key="intent-attempt-"+result.at("id").get<std::string>()+(result.contains("effect_outcome")?"-effect":"");if(get(archiveScope,key).revision)return key;
+        Json sources=Json::array();const auto effectId=result.value("source_id",std::string{});if(!effectId.empty()){const auto effect=get(archiveScope,effectId);if(effect.revision)sources.push_back({{"id",effectId},{"revision",effect.revision},{"kind",effect.value.at("kind")},{"scope",archiveScope}});}
+        Json attempt={{"intention",result.at("intention")},{"activity_id",result.at("id")},{"action",result.at("kind")},{"status",result.at("status")},{"started",result.contains("started_ms")},{"ended_ms",result.at("ended_ms")},{"result_sources",sources}};
+        for(const auto* field:{"purpose","started_ms","effect_outcome","effect_ended_ms"})if(result.contains(field))attempt[field]=result.at(field);
+        auto index=get("ha.personal-attempts",result.at("intention").at("id"),Json::array());index.value.push_back(key);while(index.value.size()>6)index.value.erase(0);
+        // Private derived working history, not an independently experienced
+        // world event and not searchable through the raw dialogue library.
+        const Json archived={{"kind","personal_attempt"},{"observation",{{"kind","intention.activity"},{"attempt",attempt}}},{"text","一次与自己打算有关的动作记录；只确认该动作的实际进度，不宣告整个打算完成。"},{"sources",sources},{"created_at",result.at("ended_ms")}};
+        commit({{archiveScope,key,0,1,archived.dump(),result.at("id")},mutation("ha.personal-attempts",result.at("intention").at("id"),index,index.value,result.at("id"))},result.at("id"));return key;
+    }
+    void authorizePersonalAttempts(const Json& view,ProposalContext& context)const{
+        const auto policy=visibility();for(const auto& thread:view.value("threads",Json::array()))for(const auto& attempt:thread.value("attempts",Json::array())){
+            const auto key=attempt.at("source_id").get<std::string>();const auto row=get(archiveScope,key);const Source source{key,attempt.at("source_revision"),"personal_attempt",archiveScope};
+            if(row.revision==source.revision&&policy.source(source)&&policy.allows(row.value)){
+                // A private progress view is not a new experience. Authorize
+                // only actual original tool results, never the derived view as
+                // standalone proof for a new memory or developmental stage.
+                for(const auto& ref:row.value.at("sources")){
+                    const Source actual{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")};const auto evidence=get(actual.scope,actual.id);
+                    if(evidence.revision==actual.revision&&policy.source(actual)&&(!evidence.value.contains("sources")||policy.allows(evidence.value)))context.sources[actual.id]=actual;
+                }
+            }
+        }
+    }
     Json personalContext(const std::string& query="",std::size_t limit=8,const std::string& status="active")const{
         std::lock_guard lock(personalMutex);if(cfg.channel)return {{"threads",Json::array()}};
         Json values=Json::array();const auto policy=visibility();std::vector<std::pair<int,Json>> matches;
@@ -23,6 +55,12 @@
             if(episodes.size()!=row.value.at("episodes").size()){visible["leaning"]=0;visible["familiarity"]="tentative";}
             auto value=personal::context(visible,row.value.value("edit_revision",row.revision));value["id"]=*it;value["source_ids"]=Json::array();for(const auto& ref:latest.at("sources"))value["source_ids"].push_back(ref.at("id"));
             if(!active){value["resolution"]=visible.value("resolution",std::string{});value["resolved_ms"]=visible.value("resolved_ms",std::int64_t(0));}
+            if(visible.value("kind",std::string{})=="intention"){
+                value["attempts"]=Json::array();for(const auto& key:get("ha.personal-attempts",it->get<std::string>(),Json::array()).value){
+                    const auto attempt=get(archiveScope,key);if(!attempt.revision||!policy.source(Source{key,attempt.revision,"personal_attempt",archiveScope})||!policy.allows(attempt.value))continue;
+                    auto fact=attempt.value.at("observation").at("attempt");fact["source_id"]=key;fact["source_revision"]=attempt.revision;value["attempts"].push_back(std::move(fact));
+                }
+            }
             const auto search=value.value("topic",std::string{})+" "+value.value("note",std::string{})+" "+value.value("resolution",std::string{});
             const auto score=query.empty()?1:memoryRelevance(query,search)+(search.find(query)!=std::string::npos?50:0);
             if(score>0)matches.emplace_back(score,std::move(value));
@@ -33,7 +71,7 @@
     }
     Json personalTool(const std::string& name,const Json& args,ProposalContext& context,const std::string& traceId){
         std::lock_guard lock(personalMutex);
-        if(name=="self.observe")return observedTool(name,toolSuccess(personalContext(args.value("query",std::string{}),args.value("limit",std::size_t(24)),args.value("status",std::string("active")))),context,traceId);
+        if(name=="self.observe"){auto view=personalContext(args.value("query",std::string{}),args.value("limit",std::size_t(24)),args.value("status",std::string("active")));authorizePersonalAttempts(view,context);return toolSuccess(view);}
         const auto key=args.at("id").get<std::string>();if(!validRequestId(key))return toolFailure("personal_identity");
         auto before=get("ha.personal",key);const auto revision=before.value.value("edit_revision",before.revision);const auto expected=args.value("expected_revision",std::int64_t(0));if(expected!=revision)return toolFailure("personal_revision_conflict");
         const auto refs=checkedSources(args.at("source_ids"),context);if(refs.is_null()||refs.empty())return toolFailure("personal_source_not_available");

@@ -29,6 +29,10 @@ std::string turnProviderSchema(const nlohmann::json& catalog){
     schema["properties"]["calls"]["items"]={{"anyOf",variants}};return strictSchema(std::move(schema)).dump();
 }
 nlohmann::json normalizeToolArguments(nlohmann::json args,const nlohmann::json& schema){
+    if(schema.contains("anyOf")){
+        for(const auto& branch:schema.at("anyOf")){auto candidate=normalizeToolArguments(args,branch);if(ayt::serializer::validateJsonDocument(candidate.dump(),branch.dump()))return candidate;}
+        return args; // Unknown/required fields remain intact and fail validation.
+    }
     if(args.is_object()&&schema.contains("properties")){const auto required=schema.value("required",Json::array());for(auto it=args.begin();it!=args.end();){if(schema.at("properties").contains(it.key())){const auto& child=schema.at("properties").at(it.key());if(it.value().is_null()&&std::find(required.begin(),required.end(),it.key())==required.end()&&!ayt::serializer::validateJsonDocument("null",child.dump())){it=args.erase(it);continue;}it.value()=normalizeToolArguments(it.value(),child);}++it;}}
     else if(args.is_array()&&schema.contains("items"))for(auto& child:args)child=normalizeToolArguments(std::move(child),schema.at("items"));return args;
 }
