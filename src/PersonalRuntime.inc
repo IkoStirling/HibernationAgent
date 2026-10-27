@@ -106,7 +106,7 @@
             // The latest unavailable episode must not leak through the current
             // narrative or through a derived preference score.
             const auto& latest=episodes.back();visible["note"]=latest.at("note");visible["stance"]=latest.at("stance");
-            if(episodes.size()!=row.value.at("episodes").size()){visible["leaning"]=0;visible["familiarity"]="tentative";visible.erase("basis");}
+            if(episodes.size()!=row.value.at("episodes").size()){visible["leaning"]=0;visible["familiarity"]="tentative";visible.erase("basis");visible.erase("experience_evidence");}
             visible["episodes"]=episodes;
             auto value=personal::context(visible,row.value.value("edit_revision",row.revision));value["id"]=*it;value["source_ids"]=Json::array();for(const auto& ref:latest.at("sources"))value["source_ids"].push_back(ref.at("id"));
             if(!active){value["resolution"]=visible.value("resolution",std::string{});value["resolved_ms"]=visible.value("resolved_ms",std::int64_t(0));}
@@ -117,13 +117,13 @@
                     fact=activityForModel(Json{{"active",fact}},&policy).at("active");fact["source_id"]=key;fact["source_revision"]=attempt.revision;value["attempts"].push_back(std::move(fact));
                 }
             }
-            const auto search=value.value("topic",std::string{})+" "+value.value("note",std::string{})+" "+value.value("resolution",std::string{});
+            const auto search=value.value("topic",std::string{})+" "+value.value("note",std::string{})+" "+value.value("resolution",std::string{})+" "+value.at("experience_contexts").dump();
             const auto score=query.empty()?1:memoryRelevance(query,search)+(search.find(query)!=std::string::npos?50:0);
             if(score>0)matches.emplace_back(score,std::move(value));
         }
         std::stable_sort(matches.begin(),matches.end(),[](const auto& a,const auto& b){return a.first>b.first;});
         for(auto& match:matches){if(values.size()>=limit)break;values.push_back(std::move(match.second));}
-        return {{"threads",values},{"matching_count",matches.size()},{"omitted_count",matches.size()-values.size()},{"guide","这里是有来源的兴趣、偏好和未完打算，不是待完成的作业。stance/note是最近感受，leaning/basis是缓慢积累的倾向；recent_changes保留不同看法。本次喜欢可以自然表达，也可以有新判断，相关时再接续。self.observe可按query找旧关注，status=closed能找做完或放下的缘由，查询不会恢复旧任务。"}};
+        return {{"threads",values},{"matching_count",matches.size()},{"omitted_count",matches.size()-values.size()},{"guide","这里是有来源的兴趣、偏好和未完打算，不是待完成的作业。stance/note是最近感受，leaning/basis是缓慢积累的倾向；recent_changes保留不同看法。experience_contexts是这些看法曾基于的实际游戏、作品或材料，不表示它们仍在当前场景，也不把它们硬定为下一步目标；旧局的步数不能套到新局。需要过去实际结果时可用memory.archive_search按对象id查阅，只在相关时再接续。self.observe可按query找旧关注，status=closed能找做完或放下的缘由，查询不会恢复旧任务。"}};
     }
     Json personalDialogueContext(const std::string& input,bool privateTime)const{
         auto view=personalContext();if(privateTime)return view;

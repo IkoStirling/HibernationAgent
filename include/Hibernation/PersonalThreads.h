@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <set>
 #include <Hibernation/PersonalEvidence.h>
 
 namespace hibernation::personal {
@@ -64,6 +65,15 @@ inline Json notice(Json before,const Json& proposal,const Json& sources,std::int
 }
 inline Json context(const Json& record,std::int64_t revision){
     Json result;for(const auto* field:{"kind","topic","note","stance","status","leaning","familiarity","created_ms","last_noticed_ms","basis"})if(record.contains(field))result[field]=record.at(field);
+    // Program-resolved provenance identities, never inferred from model prose.
+    result["experience_contexts"]=Json::array();std::set<std::string> seen;
+    const auto ledger=record.value("experience_evidence",Json::array());
+    for(auto it=ledger.rbegin();it!=ledger.rend()&&result["experience_contexts"].size()<6;++it){
+        const auto type=it->value("type",std::string{}),key=it->value("key",std::string{}),prefix=type+":";
+        if(type!="puzzle"&&type!="authored_piece"&&type!="desk_object"&&type!="reading"&&type!="draft")continue;
+        if(!key.starts_with(prefix)||key.size()<=prefix.size()||key.size()>2048||!seen.insert(key).second)continue;
+        result["experience_contexts"].push_back({{"kind",type},{"id",key.substr(prefix.size())}});
+    }
     result["recent_changes"]=Json::array();const auto episodes=record.value("episodes",Json::array());const auto begin=episodes.size()>3?episodes.size()-3:0;
     for(std::size_t i=begin;i<episodes.size();++i)result["recent_changes"].push_back({{"note",episodes[i].at("note")},{"stance",episodes[i].at("stance")},{"at_ms",episodes[i].at("at_ms")}});
     result["revision"]=revision;return result;

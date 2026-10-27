@@ -1,9 +1,11 @@
 #pragma once
 #include <Hibernation/MemoryContext.h>
 #include <Hibernation/Review.h>
+#include <Hibernation/ArchiveExperience.h>
 #include <AYSerializer/JsonSchema.h>
 namespace hibernation {
 inline bool libraryArchiveKind(std::string_view kind){return kind=="user_message"||kind=="assistant_message"||kind=="story_end"||kind=="outer_event"||kind=="task_complete"||kind=="tool_attempt";}
+inline Json libraryArchiveView(const Json& record){return libraryArchiveKind(record.value("kind",std::string{}))?record:archiveWorldExperience(record);}
 inline std::string digestSchema(){return R"({"type":"object","additionalProperties":false,"required":["summary","keywords","uncertainties"],"properties":{"summary":{"type":"string","minLength":1,"maxLength":900},"keywords":{"type":"array","minItems":1,"maxItems":12,"items":{"type":"string","minLength":1,"maxLength":32}},"uncertainties":{"type":"array","maxItems":4,"items":{"type":"string","minLength":1,"maxLength":160}}}})";}
 inline ValidatedOutput validateDigest(std::string_view text){if(!ayt::serializer::validateJsonDocument(text,digestSchema()))return {false,"memory_compaction_invalid",{}};auto value=Json::parse(text);if(value.dump().size()>6000||value.dump().find("\\u0000")!=std::string::npos)return {false,"memory_compaction_invalid",{}};std::set<std::string> seen;for(const auto& word:value.at("keywords"))if(!seen.insert(word.get<std::string>()).second)return {false,"memory_compaction_duplicate_keyword",{}};return {true,"ok",std::move(value)};}
 // Byte offsets are explicit and always advance on UTF-8 boundaries.

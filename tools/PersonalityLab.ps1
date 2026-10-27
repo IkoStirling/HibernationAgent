@@ -26,6 +26,7 @@ $BudgetLedger=[IO.Path]::GetFullPath($BudgetLedger)
 if(!$BudgetLedger.StartsWith($allowed,[StringComparison]::OrdinalIgnoreCase)){throw 'Experiment ledger must stay inside project artifacts; all contrast branches share this ledger'}
 $steps=Get-Content -LiteralPath $Episode -Raw|ConvertFrom-Json -AsHashtable
 if($steps.version-ne1-or!$steps.title-or$steps.turns-isnot[Array]-or$steps.turns.Count-lt$(if($Serve){0}else{1})-or$steps.turns.Count-gt20){throw 'Episode requires version 1, title and 1..20 meaningful turns; a continuing controller can resume with zero turns'}
+if($steps.ContainsKey('referenceReading')-and$steps.referenceReading-isnot[bool]){throw 'referenceReading must be an explicit boolean'}
 if($steps.opportunitySeconds-and(!$steps.autonomy-or$steps.opportunitySeconds-lt1-or$steps.opportunitySeconds-gt45)){throw 'An independent activity opportunity requires autonomy and 1..45 seconds'}
 foreach($step in $steps.turns){if(!$step.text-or$step.text.Length-gt3000){throw 'Episode text must be 1..3000 characters'};if($step.settleSeconds-and($step.settleSeconds-lt0-or$step.settleSeconds-gt30)){throw 'Activity settlement is limited to 30 seconds'}}
 if($Serve){$serveUntil=[DateTime]::Parse($ServeUntilUtc).ToUniversalTime();if($serveUntil-le[DateTime]::UtcNow-or$serveUntil-gt[DateTime]::Parse($DeadlineUtc).ToUniversalTime()){throw 'Controller must end inside the authorized work window'}}
@@ -87,7 +88,7 @@ function Consider-OwnWork{
  Write-Output ('Own-work consideration: '+$outcome.status)
 }
 function Lab-Snapshot{
- $state=Api '/api/state';$surfaces=@((Api '/api/capabilities').plugins|Where-Object {$_.id-in@('widget','habitat','pocket','atelier','rhythm')})
+ $state=Api '/api/state';$surfaces=@((Api '/api/capabilities').plugins|Where-Object {$_.id-in@('widget','habitat','pocket','atelier','rhythm','reading')})
   return @{observed_utc=[DateTime]::UtcNow.ToString('O');backend_pid=$service.Id;busy=$state.busy;continuous_state=$state.continuous_state;activities=(Api '/api/activities/status');surfaces=$surfaces;report_path=$reportPath;turn_count=$report.turns.Count;dialogue_message_count=@((Api '/api/chat').messages).Count;persona_version=$state.persona_version;stage_id=$state.stage.id}
 }
 try{
@@ -114,7 +115,7 @@ try{
   atelier=@{enabled=$true;maximumPieces=48}
   habitat=@{enabled=$true;autoSpawn=$false;autoInteract=$false;maxObjects=6;lifetimeMinSeconds=600;lifetimeMaxSeconds=1200}
   pocket=@{enabled=$true;scrambleSteps=3;maximumMoves=24}
-  reading=@{enabled=$false;language='zh';maxRequestsPerHour=12;useSystemProxy=$true}
+  reading=@{enabled=[bool]$steps.referenceReading;autonomousReading=([bool]$steps.referenceReading-and([bool]$steps.autonomy-or[bool]$Serve));language='zh';maxRequestsPerHour=12;useSystemProxy=$true}
  }
  $cfg.maxStartsPerHour=600;$cfg.solitudeIntervalMs=604800000;$cfg.idleBeforeSolitudeMs=86400000;$cfg.reflectOnActivities=[bool]$steps.considerOwnWork
  if($steps.autonomy){$cfg.plugins.widget.autonomousMode=$true;$cfg.plugins.widget.roam=$true;$cfg.plugins.widget.autonomyIdleSeconds=600;$cfg.plugins.widget.autonomyRefillSeconds=600}

@@ -10,9 +10,13 @@ $personaHash=(Get-FileHash (Join-Path $ProjectRoot character/persona.json)).Hash
 & (Join-Path $ProjectRoot tools/PersonalityLab.ps1) -ProjectRoot $ProjectRoot -BuildRoot $BuildRoot -LabRoot $lab -Episode $episode -NodeExecutable $node
 $keyHash=(Get-FileHash (Join-Path $lab data/runtime/memory-key.dpapi)).Hash
 $first=@(Get-ChildItem (Join-Path $lab episodes) -Directory)[0];$a=Get-Content (Join-Path $first.FullName report.json) -Raw|ConvertFrom-Json -Depth 90
-@{version=1;title='synthetic runner second encounter';turns=@(@{text='合成记录：我们先把那件事放一会儿。'})}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $episode -Encoding utf8
+$initial=Get-Content (Join-Path $first.FullName config.json) -Raw|ConvertFrom-Json
+if($initial.plugins.reading.enabled-or$initial.plugins.reading.autonomousReading){throw 'External reading should remain off unless explicitly configured'}
+@{version=1;title='synthetic runner second encounter';referenceReading=$true;turns=@(@{text='合成记录：我们先把那件事放一会儿。'})}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $episode -Encoding utf8
 & (Join-Path $ProjectRoot tools/PersonalityLab.ps1) -ProjectRoot $ProjectRoot -BuildRoot $BuildRoot -LabRoot $lab -Episode $episode -NodeExecutable $node
 $second=Get-ChildItem (Join-Path $lab episodes) -Directory|Where-Object Name -ne $first.Name;$b=Get-Content (Join-Path $second.FullName report.json) -Raw|ConvertFrom-Json -Depth 90
+$continued=Get-Content (Join-Path $second.FullName config.json) -Raw|ConvertFrom-Json
+if(!$continued.plugins.reading.enabled-or$continued.plugins.reading.autonomousReading-or$continued.plugins.reading.maxRequestsPerHour-ne12){throw 'Explicit manual reading should not silently grant autonomous networking or remove its limit'}
 if($keyHash-ne(Get-FileHash (Join-Path $lab data/runtime/memory-key.dpapi)).Hash){throw 'Continuing archive key changed'}
 if($b.turns[0].trace.selected_ids-notcontains$a.turns[0].trace.source_event_id){throw 'Prior encounter was not available after restart'}
 if($personaHash-ne(Get-FileHash (Join-Path $ProjectRoot character/persona.json)).Hash){throw 'Public persona was modified by the lab'}

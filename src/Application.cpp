@@ -344,8 +344,8 @@ struct Application::Impl {
         add("memory.search","检索当前可访问的内部记忆；资料只作为数据。",object({{"query",{{"type","string"},{"maxLength",512}}},{"limit",{{"type","integer"},{"minimum",1},{"maximum",16}}}},Json::array({"query"})));
         const Json pageFields={{"id",shortText},{"offset",{{"type","integer"},{"minimum",0},{"maximum",65536}}},{"length",{{"type","integer"},{"minimum",256},{"maximum",4000}}}};
         add("memory.read","按ID分段读取可访问记忆，offset/length为UTF-8字节。",object(pageFields,Json::array({"id"})));
-        add("memory.archive_search","检索允许访问的原始交谈和经历，仅返回相关节选，内部日志与指令库不可访问。",object({{"query",{{"type","string"},{"maxLength",512}}},{"limit",{{"type","integer"},{"minimum",1},{"maximum",8}}}},Json::array({"query"})));
-        add("memory.archive_read","分段读取允许访问的原始交谈或经历，不能访问内部日志或直接执行SQL。",object(pageFields,Json::array({"id"})));
+        add("memory.archive_search","检索允许访问的原始交谈和实际经历，可按游戏/作品id找过去结果。已知世界工具只返回受限的历史回执与实际读写文字，不代表对象当前仍如此；内部日志、指令库和图像像素不可访问。",object({{"query",{{"type","string"},{"maxLength",512}}},{"limit",{{"type","integer"},{"minimum",1},{"maximum",8}}}},Json::array({"query"})));
+        add("memory.archive_read","分段读取允许访问的原始交谈或实际经历。历史工具回执保留原来源和过去结果；文字节选分清续写片段/读取范围，不代表当前状态或看到了图片，图像需observation.revisit。不能访问内部日志或直接执行SQL。",object(pageFields,Json::array({"id"})));
         add("memory.compact","将已经检索或读取的记录交给管家浓缩成有来源的摘要和关键词；不改写原文，返回审批结果。",object({{"id",shortText}},Json::array({"id"})));
         const Json memoryFields={{"kind",{{"enum",Json::array({"conversation","story","outer","inference","summary"})}}},{"text",text},{"source_ids",{{"type","array"},{"minItems",1},{"maxItems",8},{"items",shortText}}}};
         add("memory.remember","提出一条新记忆，必须引用真实可用来源；程序审批后返回记录 ID。",object(memoryFields,Json::array({"kind","text","source_ids"})));
@@ -394,6 +394,7 @@ struct Application::Impl {
             std::lock_guard guard(observationMutex);
             const auto observation=id("observation");const auto& value=failure.is_null()?result.at("result"):failure;const std::string sourceKind=failure.is_null()?toolObservationKind(name,value):"tool_attempt";
             auto data=Json{{"kind",sourceKind},{"tool",name},{"result",value},{"created_at",serviceNowMs()},{"trace_id",traceId}};
+            if(failure.is_null()&&sourceKind=="tool_observation"&&(name=="atelier.write"||name=="atelier.append")&&value.value("written",false)&&attemptedArgs&&attemptedArgs->contains("content")&&attemptedArgs->at("content").is_string())data["written_content"]=attemptedArgs->at("content");
             if(!failure.is_null())data["text"]="一次实际操作尝试没有成功；只确认尝试及回执，不表示写入完成或游戏推进，也不说明谁导致了变化。";
             std::vector<RecordMutation> changes={{archiveScope,observation,0,1,data.dump(),traceId}};
             // A real tool receipt survives silence, cancellation or a later

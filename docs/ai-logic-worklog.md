@@ -566,3 +566,12 @@
 - 重试会重读self/state/body/activity等低成本动态视图；已执行的状态动作复用时再投影私有文字，不重新执行副作用。state.appraise加入既有操作复用保护。Appraisals扩展检查了focus起源与后来物理evidence分离、限制后角色/审核/查询/无关感受回执不见文字、管理原文保留、恢复和加密；另验证真实503重试后新回执会刷新旧缓存。
 - 初轮Unit/ContextControl/PersonalCarry/Appraisals/AutonomousCarry/ProcessIntegration 6/6通过101.57秒（personality-state-projection-tests.log）。增加重试检查的4项中3通过，新增脚本误要求同一轮中此前已合法发送的整个旧消息串也立即消失；检查实际新回执已正确隐藏，旧消息属于限制前已发内容。将断言限定为新回执，并保留下一次完整请求/审核均无私有文字的独立断言；不声称能撤回已经发送给模型的数据，也没有放松源码权限。NativeTools在该轮通过28.85秒。最后Unit（含旧存档保留/未知来源和共享通道投影）、Appraisals、ProcessIntegration 3/3通过27.09秒（personality-state-projection-final-tests.log）。
 - 本阶段仍是基础连续性修复，接下来补与真实经历对象的关联和历史安全回执检索，避免旧局的计数一直挂在新生活上。不自动关闭角色意图，不通过删除原档案制造遗忘；正式包仍未部署，总结束08:37:47不变。
+
+### 04:56 阶段：关注的对象背景与过去实际结果
+
+- self的experience_contexts从程序已解析的经历账本生成，最多六个对象身份。旧lights-1打算可以与当前lights-2区分，但不替角色判定打算是否完成、不把依据对象硬定为下一步目标。按对象id也可找到相关旧关注；纯对话id/权重不展示。访问限制或部分来源不可用时不泄露旧对象背景，固定人设v4/initial阶段不变。
+- 原始库增加已知世界工具的有界历史投影，保留原id/版本/时间、已实施与完成的区别。过去棋盘、实际作品文字、阅读导言和文件读取范围可找回；内部状态、管家、未知诊断及图像像素不开放。图像回执不冒充再次送图，仍需revisit。文字上限60000字节，UTF-8分页与截断标记明确；沿用既有查询预算，不做全库架构改造，共享通道未扩大。
+- 新的成功atelier.write/append回执记录当时真正实施的文字，区分整件与新增片段。老回执没文字就保持没文字，不读现在的文件补造过去；失败文字仍不归档为已写入事实。显式memory.compact可以浓缩同一安全投影，仍只引用原经历，不新增独立依据。
+- WorldHistory独立进程覆盖真正写作/续写/重写、旧棋盘放下后另开新局、离开近期上下文后查询、可据真实旧结果结束相符小意图、浓缩来源、撤回/恢复访问、管理原文、真重启与磁盘加密，最终53项检查通过（含每轮完成检查）。首轮5项检查中4通过，新脚本Check函数输出混入返回值导致第一项断言误读；改为Write-Host后继续，第二次误在无widget配置下调用body.observe而拿不到来源。改为实际多次读作品推动近期上下文，并独立核对state.observe不产生经历，两项均是脚本问题，未放松产品校验。
+- 初轮Unit/PersonalThreads/FailedAttempts/ProcessIntegration通过；WorldHistory修正后9.96秒通过。最终ContextControl/PersonalCarry/WorldHistory/Appraisals/AutonomousCarry 5/5通过93.60秒（personality-world-history-final-tests.log）。自主检查约一分钟验证真实串行动作、版本/中断与私有更新，不用长稳测试填时间。
+- 培养工具新增明确的referenceReading布尔项，默认关闭；开启后只提供现有受限百科阅读，最多12次网络请求/小时，自主模式还须同时开启自主生活。用无新增交谈的resume-reading-life继续同一档案，不要求它一定阅读。Mock进程检查默认关闭、显式手动开启不暗授自主联网，以及既有连续性/密钥清理，7.31秒通过（personality-reading-life-runner-tests.log）。接下来更新隔离包继续自然相处，观察它是否把旧关注与新经历分开；尚未将这些代码部署到正式包，也不把程序检查视作人格质量结论。
