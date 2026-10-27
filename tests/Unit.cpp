@@ -44,6 +44,7 @@
 #include <Hibernation/ReadingPages.h>
 #include <Hibernation/TimeContext.h>
 #include <Hibernation/ConversationFocus.h>
+#include <Hibernation/ConversationOpportunities.h>
 #include <AYTestFixtures.h>
 #include <fstream>
 #include <thread>
@@ -617,6 +618,15 @@ TEST_CASE(ordinary_intentions_have_indexes_unless_related_or_currently_pursued){
     const Json command={{"kind","wait"},{"intention",{{"id","old-board"},{"revision",2}}}};
     CHECK(personal::pursuedBy(thread,Json{{"active",command}}));CHECK(personal::pursuedBy(thread,Json{{"next",Json::array({command})}}));CHECK(!personal::pursuedBy(thread,Json{{"recent",Json::array({command})}}));auto stale=command;stale["intention"]["revision"]=1;CHECK(!personal::pursuedBy(thread,Json{{"entries",Json::array({stale})}}));
     personal::backgroundIndex(thread);CHECK(thread.at("id")=="old-board"&&thread.at("status")=="active"&&thread.at("revision")==2);CHECK(thread.at("experience_contexts")[0].at("id")=="lights-1");CHECK(thread.at("details_tool")=="self.observe"&&thread.dump().find("PRIVATE_")==std::string::npos);CHECK(!thread.contains("basis"));
+}
+TEST_CASE(earlier_encounters_get_one_bounded_opportunity_without_becoming_new_tasks_or_memories){
+    Json rows=Json::array();for(int i=1;i<=3;++i){rows.push_back({{"id","user-"+std::to_string(i)},{"revision",1},{"kind","user_message"},{"request_id","request-"+std::to_string(i)},{"created_at",i*100}});rows.push_back({{"id","reply-"+std::to_string(i)},{"revision",1},{"kind","assistant_message"},{"request_id","request-"+std::to_string(i)},{"created_at",i*100+1}});}
+    auto offered=Json::array();auto picks=conversationOpportunities(rows,offered);CHECK(picks.size()==4&&picks[2].at("id")=="user-3"&&picks[3].at("id")=="reply-3");CHECK(picks[0].at("id")=="user-2"&&picks[1].at("id")=="reply-2");CHECK(picks[0].at("context_role")=="earlier_encounter"&&picks[0].at("not_a_current_request")==true);
+    for(auto& pick:picks)pick["kind"]=pick.at("id").get<std::string>().starts_with("user")?"user_message":"assistant_message";offered=rememberOfferedEncounters(offered,picks);CHECK(offered.size()==2);CHECK(rememberOfferedEncounters(offered,picks)==offered);
+    auto second=conversationOpportunities(rows,offered);CHECK(second[0].at("id")=="user-1");for(auto& pick:second)pick["kind"]=pick.at("id").get<std::string>().starts_with("user")?"user_message":"assistant_message";offered=rememberOfferedEncounters(offered,second);CHECK(conversationOpportunities(rows,offered).size()==2); // the latest pair is still ordinary continuity
+    rows[2]["revision"]=2;CHECK(conversationOpportunities(rows,offered)[0].at("id")=="user-2");rows.erase(rows.begin()+2,rows.begin()+4);CHECK(conversationOpportunities(rows,Json::array())[0].at("id")=="user-1"); // caller's access-filtered view cannot restore hidden origins
+    CHECK(conversationOpportunities(Json::array(),offered).empty());rows=Json::array({Json{{"id","alone"},{"revision",1},{"kind","user_message"},{"created_at",42}}});CHECK(conversationOpportunities(rows,offered).size()==1);
+    for(int i=0;i<300;++i)offered=rememberOfferedEncounters(offered,Json::array({Json{{"id","u"+std::to_string(i)},{"revision",1},{"kind","user_message"},{"context_role","earlier_encounter"}}}));CHECK(offered.size()==256);
 }
 TEST_CASE(activity_batches_accept_only_bounded_semantic_commands){
     Json plan={{"version",1},{"commands",Json::array({{{"kind","eat_nearest"},{"seconds",0}},{{"kind","rest"},{"seconds",30}},{{"kind","wait"},{"seconds",1}}})}};CHECK(validateActivities(plan.dump()).ok);

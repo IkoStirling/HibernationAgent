@@ -19,6 +19,7 @@
 #include <Hibernation/RecentDialogue.h>
 #include <Hibernation/TimeContext.h>
 #include <Hibernation/ConversationFocus.h>
+#include <Hibernation/ConversationOpportunities.h>
 #include <Hibernation/TextPlayback.h>
 #include <Hibernation/DesktopServices.h>
 #include <Hibernation/ReactionCache.h>

@@ -39,7 +39,7 @@
     Json activityEvidence(const Json& plan)const{
         Json evidence=Json::array();std::set<std::string> seen;const auto policy=visibility();const auto projection=get("ha.context","dialogue").value;
         const auto add=[&](const std::string& key){
-            if(key.empty()||evidence.size()>=6||!seen.insert(key).second)return;
+            if(key.empty()||evidence.size()>=8||!seen.insert(key).second)return;
             const auto row=get(archiveScope,key);if(!row.revision)return;const auto kind=row.value.value("kind",std::string{});
             if(kind!="user_message"&&kind!="assistant_message"&&kind!="tool_observation"&&kind!="tool_attempt"&&kind!="outer_event")return;
             const Source ref{key,row.revision,kind,archiveScope};if(!policy.source(ref)||(row.value.contains("sources")&&!policy.allows(row.value))||isLegacyMetaReply(row.value)||(kind=="assistant_message"&&dialogueExcluded(projection,key)))return;
@@ -53,8 +53,27 @@
         const auto recent=plan.value("recent",Json::array());std::size_t own=0;for(auto it=recent.rbegin();it!=recent.rend()&&own<2;++it){const auto before=evidence.size();add(it->value("source_id",std::string{}));if(evidence.size()!=before)++own;}
         const auto observations=get("ha.observations","recent",Json::array()).value;for(auto it=observations.rbegin();it!=observations.rend()&&evidence.size()<3;++it)add(it->get<std::string>());
         const auto world=get("ha.world","recent",Json::array()).value;for(auto it=world.rbegin();it!=world.rend()&&evidence.size()<4;++it)add(it->get<std::string>());
-        const auto dialogue=recentDialogueIds();std::size_t spoken=0;for(auto it=dialogue.rbegin();it!=dialogue.rend()&&spoken<2;++it){const auto before=evidence.size();add(it->get<std::string>());if(evidence.size()!=before)++spoken;}
+        auto dialogueIds=recentDialogueIds();if(dialogueIds.size()>96)dialogueIds.erase(dialogueIds.begin(),dialogueIds.end()-96);
+        Json encounters=Json::array();for(const auto& row:readIds(archiveScope,dialogueIds)){
+            auto value=Json::parse(row.payload);const auto kind=value.value("kind",std::string{});if(kind!="user_message"&&kind!="assistant_message")continue;
+            const Source ref{row.id,row.revision,kind,archiveScope};if(!policy.source(ref)||(value.contains("sources")&&!policy.allows(value))||isLegacyMetaReply(value)||(kind=="assistant_message"&&dialogueExcluded(projection,row.id)))continue;
+            value["id"]=row.id;value["revision"]=row.revision;encounters.push_back(std::move(value));
+        }
+        const auto offered=get("ha.autonomy","offered-encounters",Json::array()).value;
+        for(const auto& pick:conversationOpportunities(encounters,offered)){
+            const auto before=evidence.size();add(pick.at("id"));if(evidence.size()==before)continue;
+            for(const auto* field:{"context_role","encounter_id","not_a_current_request"})evidence.back()[field]=pick.at(field);
+        }
         return evidence;
+    }
+    void markActivityEncounters(const ActivityBatch& batch,const std::string& key){
+        const auto policy=visibility();Json actual=Json::array();for(const auto& item:batch.evidence){
+            if(item.value("scope",std::string{})!=archiveScope||item.value("kind",std::string{})!="user_message")continue;
+            const Source ref{item.at("id"),item.at("revision"),"user_message",archiveScope};const auto row=get(archiveScope,ref.id);
+            if(row.revision==ref.revision&&policy.source(ref)&&(!row.value.contains("sources")||policy.allows(row.value)))actual.push_back(item);
+        }
+        const auto prior=get("ha.autonomy","offered-encounters",Json::array());const auto changed=rememberOfferedEncounters(prior.value,actual);
+        if(changed!=prior.value)commit({mutation("ha.autonomy","offered-encounters",prior,changed,key)},key);
     }
     Json applyActivityCarry(const ActivityBatch& batch,const std::string& key){
         ProposalContext context;context.eventKind="activity_planning";const auto policy=visibility();
@@ -210,7 +229,9 @@
             const bool current=mode&&!runtimePaused&&!inputActive&&!busy()&&batch->key==activityKey()&&std::chrono::steady_clock::now()-batch->createdAt<std::chrono::minutes(2);
             if(current){
                 if(batch->status=="ok"){const auto receipt=enqueueActivities(batch->entries,key,batch->narrativeSources);if(!receipt.value("ok",false))activityError=receipt.at("error").at("code");
-                    const auto results=receipt.value("ok",false)?applyActivityCarry(*batch,key):Json::array();auto archived=get("ha.activity-generations",key);auto detail=archived.value;detail["application_status"]=receipt.value("ok",false)?"accepted":"queue_rejected";detail["carry_forward_results"]=results;commit({mutation("ha.activity-generations",key,archived,detail,key)},key);
+                    const auto results=receipt.value("ok",false)?applyActivityCarry(*batch,key):Json::array();
+                    if(receipt.value("ok",false)&&!runtimePaused&&!inputActive&&!busy()&&batch->key==activityKey()&&std::all_of(results.begin(),results.end(),[](const auto& result){return result.at("receipt").value("ok",false);}))markActivityEncounters(*batch,key);
+                    auto archived=get("ha.activity-generations",key);auto detail=archived.value;detail["application_status"]=receipt.value("ok",false)?"accepted":"queue_rejected";detail["carry_forward_results"]=results;commit({mutation("ha.activity-generations",key,archived,detail,key)},key);
                     planningResult(receipt.value("ok",false),batch->entries.empty(),now);}
                 else if(batch->status!="cancelled")planningResult(false,false,now);
             }

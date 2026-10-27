@@ -39,6 +39,10 @@ try{
  $configPath=Join-Path $root config.json;$ready=Join-Path $root ready.json;$cfg|ConvertTo-Json -Depth 60|Set-Content -LiteralPath $configPath -Encoding utf8;$approval=@{decision='approve';reason='ok';guidance=''};Start-Backend;$null=Api '/api/model' @{id='actor'};$original=Api '/api/state'
  Message @((Call work atelier.write @{id='own-unfinished';expected_revision=0;kind='story';title='未画完的圆';content='一个圆缺了一小截，纸上的风从那里穿过。';stage='draft'}),(Silent));$workSource=((Capture).messages[-1].content|ConvertFrom-Json -Depth 60).tool_results[0].source_id;Check ([bool]$workSource) 'real private work provides an original source'
  Message @((Call source memory.remember @{kind='inference';text='那段创作还可以继续，只是一个打算。';source_ids=@($workSource)}),(Silent));$memory=((Capture).messages[-1].content|ConvertFrom-Json -Depth 60).tool_results[0].result.id
+ Message @((Silent))
+ $hiddenEncounter=@((Api '/api/chat').messages|Where-Object role -eq user)[0].id
+ Message @((Call old memory.archive_read @{id=$hiddenEncounter}),(Call protect memory.remember @{kind='conversation';text='用于检查已受限旧交谈的轮换边界';source_ids=@($hiddenEncounter)}),(Silent));$encounterMemory=((Capture).messages[-1].content|ConvertFrom-Json -Depth 65).tool_results[0].result.id
+ Check ([bool]$encounterMemory) 'an actual older encounter has its own access-controlled original source';$null=Api '/api/access' @{id=$encounterMemory;accessible=$false}
  $note=Note own-continuation;$first=Batch $note $null $null '' 200 $null @{source_id=$workSource;valence=.35} -Singleton
  Check ($first.feedback.results[0].ok-and$first.feedback.results[0].revision-eq1) 'background actor can save its own sourced intention'
  Check ($first.actor_calls-eq1-and$first.review_calls-eq1) 'private carry uses the existing actor and review calls without another model request'
@@ -46,9 +50,12 @@ try{
  Check ($canonical.carry_forward-is[Array]-and$canonical.carry_forward.Count-eq1-and$canonical.carry_forward[0].id-eq$note.id) 'review sees the canonical single-item array before the actual private save'
  Check (@($first.feedback.results|Where-Object {$_.tool-eq'state.appraise'-and$_.ok}).Count-eq1-and(Api '/api/state').continuous_state.target_valence-eq.35) 'autonomous feeling uses its real experience and the same existing actor and review pass'
  Check (@($first.context.evidence|Where-Object {$_.id-eq$workSource-and$_.kind-eq'tool_observation'-and$_.data.result.written}).Count-eq1) 'planner receives a bounded real writing receipt rather than invented evidence'
+ $previous=@($first.context.evidence|Where-Object {$_.kind-eq'user_message'-and$_.context_role-eq'earlier_encounter'})[0];Check ($previous.id-and$previous.not_a_current_request-and$first.context.evidence.Count-le8) 'a previous real encounter gets a bounded opportunity alongside current world evidence'
+ Check (@($first.context.evidence|Where-Object id -eq $hiddenEncounter).Count-eq0) 'rotating prior conversations cannot restore a restricted original encounter'
  $repeat=$note.Clone();$repeat.expected_revision=1;$again=Batch $repeat
  Check ($again.feedback.results[0].ok-and$again.feedback.results[0].deduplicated-and$again.feedback.results[0].revision-eq1) 'same source and meaning do not strengthen or version the intention again'
  Check ($again.context.previous_carry_forward_results.generation-eq$first.feedback.generation) 'next planning request receives the actual prior private-operation outcome'
+ $next=@($again.context.evidence|Where-Object {$_.kind-eq'user_message'-and$_.context_role-eq'earlier_encounter'})[0];Check ($next.id-and$next.id-ne$previous.id) 'successful accepted planning rotates to an earlier unoffered encounter without reinforcing the same one'
  $old=Batch $note;Check (!$old.feedback.results[0].ok-and$old.feedback.results[0].error.code-eq'personal_revision_conflict') 'stale personal versions remain rejected during background planning'
  $forged=Note forged;$forged.source_ids=@('activity-generation-invented');$bad=Batch $forged;Check (!$bad.feedback.results[0].ok-and$bad.feedback.results[0].error.code-eq'personal_source_not_available') 'a plan cannot serve as its own factual source'
  $hidden=Batch (Note hidden-after-start) {$null=Api '/api/access' @{id=$memory;accessible=$false}}
