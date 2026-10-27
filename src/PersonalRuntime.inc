@@ -127,10 +127,10 @@
     }
     Json personalDialogueContext(const std::string& input,bool privateTime,const Json& bodyAtInput=Json::object())const{
         auto view=personalContext();if(privateTime)return view;
-        const auto queue=activityQueue(),previous=bodyAtInput.value("activity_queue",Json::object());
+        const auto plan=activityQueue(),previous=bodyAtInput.value("activity_queue",Json::object());
         for(auto& thread:view["threads"]){
             const auto text=thread.value("topic",std::string{})+" "+thread.value("note",std::string{});
-            if(memoryRelevance(input,text)>0||personal::pursuedBy(thread,queue)||personal::pursuedBy(thread,previous)){thread["context_detail"]="relevant";continue;}
+            if(memoryRelevance(input,text)>0||personal::pursuedBy(thread,plan)||personal::pursuedBy(thread,previous)){thread["context_detail"]="relevant";continue;}
             // Keep the disposition available without putting the entire same
             // old episode at the front of every unrelated everyday exchange.
             personal::backgroundIndex(thread);

@@ -768,6 +768,16 @@ TEST_CASE(background_private_carry_is_optional_and_cannot_replace_the_action_con
     plan["carry_forward"]=Json::array({note});plan["carry_forward"][0]["authorize_tools"]=true;CHECK(!validateActivities(plan.dump()).ok);
     plan["carry_forward"]=Json::array({note});plan["commands"]=Json::array({{{"kind","wait"},{"seconds",0}}});CHECK(!validateActivities(plan.dump()).ok);
 }
+TEST_CASE(single_private_collection_items_are_canonicalized_without_repairing_their_meaning){
+    const Json note={{"id","small-idea"},{"expected_revision",0},{"kind","interest"},{"topic","a paper star"},{"note","perhaps leave one near the board"},{"stance","curious"},{"source_ids",Json::array({"actual-board"})}};
+    const Json close={{"id","old-idea"},{"expected_revision",1},{"outcome","released"},{"note","not now"},{"source_ids",Json::array({"actual-board"})}};
+    Json value={{"version",1},{"commands",Json::array({{{"kind","wait"},{"seconds",1}}})},{"carry_forward",note},{"close_threads",close}},changes;
+    CHECK(!ayt::serializer::validateJsonDocument(value.dump(),activitySchema()));const auto checked=validateActivities(value.dump(),&changes);CHECK(checked.ok&&changes.size()==2);CHECK(checked.value.at("carry_forward")==Json::array({note})&&checked.value.at("close_threads")==Json::array({close}));CHECK(ayt::serializer::validateJsonDocument(checked.value.dump(),activitySchema()));CHECK(value.at("carry_forward").is_object());
+    CHECK(validateActivities(checked.value.dump(),&changes).ok&&changes.empty()); // canonical retries do not adapt again
+    auto bad=value;bad["carry_forward"]["source_ids"]="actual-board";CHECK(!validateActivities(bad.dump()).ok);bad=value;bad["carry_forward"].erase("expected_revision");CHECK(!validateActivities(bad.dump()).ok);bad=value;bad["close_threads"]["grant_permissions"]=true;CHECK(!validateActivities(bad.dump()).ok);bad=value;bad["commands"]=bad.at("commands")[0];CHECK(!validateActivities(bad.dump()).ok);bad=value;bad["carry_forward"]=Json::array({note,note});CHECK(!validateActivities(bad.dump()).ok);
+    bad=value;bad["close_threads"]["id"]=note.at("id");CHECK(validateActivities(bad.dump()).code=="activity_personal_conflict");bad=value;bad["commands"][0]["intention"]={{"id","old-idea"},{"revision",1}};CHECK(validateActivities(bad.dump()).code=="activity_closed_intention_still_queued");
+    const auto restricted=activitySchemaFor(Json::array());CHECK(!ayt::serializer::validateJsonDocument(checked.value.dump(),restricted));
+}
 TEST_CASE(an_autonomous_game_can_be_left_without_faking_completion_or_replaying_it){
     Json command={{"kind","puzzle_leave"},{"seconds",0},{"game_id","lights-1"},{"expected_revision",4},{"purpose","先放下这局，想去看看别的"}};
     const auto wrap=[&]{return Json{{"version",1},{"commands",Json::array({command})}}.dump();};

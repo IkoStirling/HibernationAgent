@@ -3,9 +3,9 @@
 namespace hibernation {
 std::string activitySchema();
 std::string activitySchemaFor(const Json& availableKinds);
-ValidatedOutput validateActivities(std::string_view text);
+ValidatedOutput validateActivities(std::string_view text,Json* formatNormalizations=nullptr);
 struct ActivityBatch : ReactionBatch {
-    Json carryForward=Json::array(),closeThreads=Json::array(),evidence=Json::array(),narrativeSources=Json::array(),appraisal=nullptr;
+    Json carryForward=Json::array(),closeThreads=Json::array(),evidence=Json::array(),narrativeSources=Json::array(),appraisal=nullptr,formatNormalizations=Json::array();
     std::chrono::steady_clock::time_point createdAt=std::chrono::steady_clock::now();
 };
 class ActivityGenerator {

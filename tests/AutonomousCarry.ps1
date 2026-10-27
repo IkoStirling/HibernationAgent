@@ -14,9 +14,10 @@ function Call($Id,$Tool,$Arguments){@{version=1;kind='call';text=$null;calls=@(@
 function Message($Items){Plan $Items;Plan @($script:approval) -Review;$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='合成相处：刚才那段未写完的故事可以先留在这里。'};Await {!(Api '/api/chat').busy} 'fixture dialogue';Check (!(Api '/api/chat').call_failed) 'fixture dialogue succeeds'}
 function Auto($Enabled){$settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 65|ConvertFrom-Json -AsHashtable;$settings.plugins.widget.autonomousMode=$Enabled;$null=Api '/api/settings' @{settings=$settings};Await {(Api '/api/activities/status').enabled-eq$Enabled} 'autonomy setting';if(!$Enabled){Await {!(Api '/api/activities/status').generating} 'planner stopped'}}
 function Note($Id){@{id=$Id;expected_revision=0;kind='intention';topic='未写完的小故事';note='AUTONOMOUS_PRIVATE_MARKER 想在下次有空时续上那个没画完的圆';stance='want';source_ids=@($script:workSource)}}
-function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int]$ReviewHttpStatus=200,$Close=$null,$Appraisal=$null){
+function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int]$ReviewHttpStatus=200,$Close=$null,$Appraisal=$null,[switch]$Singleton){
  Auto $false;$before=(Api '/api/activities/status').personal_carry_feedback.generation;$calls=Requests;$reviews=Requests $true
- Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='AUTONOMY_PRIVATE_PURPOSE'});carry_forward=@($Note|Where-Object {$null-ne$_});close_threads=@($Close|Where-Object {$null-ne$_});appraisal=$Appraisal}) $(if($During){1800}else{0})
+ $carry=@($Note|Where-Object {$null-ne$_});$closures=@($Close|Where-Object {$null-ne$_});if($Singleton-and$Note){$carry=$Note};if($Singleton-and$Close){$closures=$Close}
+ Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='AUTONOMY_PRIVATE_PURPOSE'});carry_forward=$carry;close_threads=$closures;appraisal=$Appraisal}) $(if($During){1800}else{0})
  if($Verdict-and!$ExpectedError){$ExpectedError='activity_review_rejected'}
  Plan @($(if($Verdict){$Verdict}else{$script:approval})) -Review -HttpStatus $ReviewHttpStatus;Auto $true
  Await {(Requests)-gt$calls} 'background request';$context=(Capture).messages[1].content|ConvertFrom-Json -Depth 65
@@ -38,9 +39,11 @@ try{
  $configPath=Join-Path $root config.json;$ready=Join-Path $root ready.json;$cfg|ConvertTo-Json -Depth 60|Set-Content -LiteralPath $configPath -Encoding utf8;$approval=@{decision='approve';reason='ok';guidance=''};Start-Backend;$null=Api '/api/model' @{id='actor'};$original=Api '/api/state'
  Message @((Call work atelier.write @{id='own-unfinished';expected_revision=0;kind='story';title='未画完的圆';content='一个圆缺了一小截，纸上的风从那里穿过。';stage='draft'}),(Silent));$workSource=((Capture).messages[-1].content|ConvertFrom-Json -Depth 60).tool_results[0].source_id;Check ([bool]$workSource) 'real private work provides an original source'
  Message @((Call source memory.remember @{kind='inference';text='那段创作还可以继续，只是一个打算。';source_ids=@($workSource)}),(Silent));$memory=((Capture).messages[-1].content|ConvertFrom-Json -Depth 60).tool_results[0].result.id
- $note=Note own-continuation;$first=Batch $note $null $null '' 200 $null @{source_id=$workSource;valence=.35}
+ $note=Note own-continuation;$first=Batch $note $null $null '' 200 $null @{source_id=$workSource;valence=.35} -Singleton
  Check ($first.feedback.results[0].ok-and$first.feedback.results[0].revision-eq1) 'background actor can save its own sourced intention'
  Check ($first.actor_calls-eq1-and$first.review_calls-eq1) 'private carry uses the existing actor and review calls without another model request'
+ $reviewCapture=Get-Content -LiteralPath (Join-Path $root provider/review-last-request.json) -Raw|ConvertFrom-Json -Depth 70;$canonical=($reviewCapture.messages[1].content|ConvertFrom-Json -Depth 65).candidate
+ Check ($canonical.carry_forward-is[Array]-and$canonical.carry_forward.Count-eq1-and$canonical.carry_forward[0].id-eq$note.id) 'review sees the canonical single-item array before the actual private save'
  Check (@($first.feedback.results|Where-Object {$_.tool-eq'state.appraise'-and$_.ok}).Count-eq1-and(Api '/api/state').continuous_state.target_valence-eq.35) 'autonomous feeling uses its real experience and the same existing actor and review pass'
  Check (@($first.context.evidence|Where-Object {$_.id-eq$workSource-and$_.kind-eq'tool_observation'-and$_.data.result.written}).Count-eq1) 'planner receives a bounded real writing receipt rather than invented evidence'
  $repeat=$note.Clone();$repeat.expected_revision=1;$again=Batch $repeat
@@ -74,7 +77,7 @@ try{
  $close=@{id='own-continuation';expected_revision=1;outcome='completed';note='故事已经实际续写并收尾，先不再追着它了';source_ids=@($finishedSource)}
  $new=Note fresh-interest;$new.kind='interest';$new.stance='curious';$new.topic='给画里的缺口留一点空间';$new.note='AUTONOMOUS_PRIVATE_MARKER 想留意这种没有合拢的小形状';$new.source_ids=@($finishedSource)
  $count=Requests;$reviewCount=Requests $true
- Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='UNRELATED_FROM_NEW_PLAN'});close_threads=@($close);carry_forward=@($new)});Plan @($approval) -Review
+ Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='UNRELATED_FROM_NEW_PLAN'});close_threads=$close;carry_forward=$new});Plan @($approval) -Review
  Await {$f=(Api '/api/activities/status').personal_carry_feedback;@($f.results|Where-Object {$_.tool-eq'self.close'-and$_.id-eq'own-continuation'-and$_.ok}).Count-eq1} 'background closes its own old intention' 45
  Await {$a=Api '/api/activities/status';@($a.recent|Where-Object {$_.purpose-eq'UNRELATED_ALREADY_QUEUED'-and$_.status-eq'completed'}).Count-eq1-and@($a.recent|Where-Object {$_.purpose-eq'UNRELATED_FROM_NEW_PLAN'-and$_.status-eq'completed'}).Count-eq1} 'unrelated prior and new activities survive the closure'
  $status=Api '/api/activities/status';Check (@($status.recent|Where-Object {$_.intention.id-eq'own-continuation'-and$_.status-eq'intention_changed'}).Count-eq1) 'the old active goal is stopped without cancelling unrelated life'

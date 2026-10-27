@@ -206,7 +206,7 @@
         if(auto batch=activityGenerator.poll()){
             activityError=batch->status=="ok"||batch->status=="cancelled"?"":batch->status;const auto key=id("activity-generation");
             Json refs=Json::array();for(const auto& source:batch->evidence)refs.push_back({{"scope",source.at("scope")},{"id",source.at("id")},{"revision",source.at("revision")},{"kind",source.at("kind")}});
-            commit({{"ha.activity-generations",key,0,1,Json{{"status",batch->status},{"proposal",batch->proposal},{"review",batch->review},{"usage",batch->usage},{"timing_ms",{{"actor",batch->modelMs},{"review",batch->reviewMs}}},{"evidence_refs",refs},{"created_at",now}}.dump(),"autonomy"}},key);
+            commit({{"ha.activity-generations",key,0,1,Json{{"status",batch->status},{"proposal",batch->proposal},{"format_normalizations",batch->formatNormalizations},{"review",batch->review},{"usage",batch->usage},{"timing_ms",{{"actor",batch->modelMs},{"review",batch->reviewMs}}},{"evidence_refs",refs},{"created_at",now}}.dump(),"autonomy"}},key);
             const bool current=mode&&!runtimePaused&&!inputActive&&!busy()&&batch->key==activityKey()&&std::chrono::steady_clock::now()-batch->createdAt<std::chrono::minutes(2);
             if(current){
                 if(batch->status=="ok"){const auto receipt=enqueueActivities(batch->entries,key,batch->narrativeSources);if(!receipt.value("ok",false))activityError=receipt.at("error").at("code");
