@@ -1,0 +1,50 @@
+param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
+$ErrorActionPreference='Stop';$service=$null;$provider=$null;$checks=0
+$root=Join-Path $ScratchRoot ('appraisals-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
+$env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='appraisal-fixture'
+function Check($Value,$Name){if(!$Value){throw "CHECK FAILED: $Name"};$script:checks++;Write-Output "PASS $Name"}
+function Await([scriptblock]$Probe,$Name){$end=[DateTime]::UtcNow.AddSeconds(25);while([DateTime]::UtcNow-lt$end){if(&$Probe){return};Start-Sleep -Milliseconds 50};throw "TIMEOUT $Name"}
+function Api($Path,$Data=$null){$p=@{Uri=$script:origin+$Path;Headers=@{Authorization='Bearer appraisal-fixture'};TimeoutSec=10};if($null-ne$Data){$p.Method='Post';$p.ContentType='application/json';$p.Body=[Text.Encoding]::UTF8.GetBytes(($Data|ConvertTo-Json -Depth 65 -Compress))};Invoke-RestMethod @p}
+function Call($Id,$Tool,$Arguments){@{version=1;kind='call';text=$null;calls=@(@{id=$Id;tool=$Tool;args=$Arguments})}}
+function Silent{@{version=1;kind='silence';text=$null;calls=@()}}
+function Plan($Items,$Review=$false){$name=if($Review){'review-plan.json'}else{'plan.json'};@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Items|ForEach-Object {@{response=$_}})}|ConvertTo-Json -Depth 65|Set-Content -LiteralPath (Join-Path $root provider/$name) -Encoding utf8}
+function Result{$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 75;($capture.messages[-1].content|ConvertFrom-Json -Depth 65).tool_results[0]}
+function Message($Items,$Verdict=$null){Plan $Items;Plan @($(if($Verdict){$Verdict}else{@{decision='approve';reason='ok';guidance=''}})) $true;$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='只是聊刚才的小故事。'};Await {!(Api '/api/chat').busy} 'appraisal dialogue';$job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$info=$job.result|ConvertFrom-Json;Api '/api/trace' @{id=$info.trace_id}}
+function Start-Backend{$script:service=Start-Process -FilePath $Executable -ArgumentList ('--config "'+$configPath+'" --ready-file "'+$ready+'"') -WindowStyle Hidden -PassThru;Await {if($service.HasExited){throw 'appraisal host exited'};if(Test-Path -LiteralPath $ready){return (Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).pid-eq$service.Id};$false} 'backend';$script:origin='http://127.0.0.1:'+((Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).port)}
+function Stop-Backend{$null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)-and$service.ExitCode-eq0) 'clean process exit'}
+try{
+ $providerRoot=Join-Path $root provider;New-Item -ItemType Directory -Force $providerRoot|Out-Null
+ $provider=Start-Process -FilePath $ProviderExecutable -ArgumentList ('"'+$providerRoot+'"') -WindowStyle Hidden -PassThru;Await {Test-Path -LiteralPath (Join-Path $providerRoot port)} 'provider';$fixture='http://127.0.0.1:'+(Get-Content -LiteralPath (Join-Path $providerRoot port))
+ $cfg=Get-Content -LiteralPath (Join-Path $ProjectRoot config/example.json) -Raw|ConvertFrom-Json -AsHashtable
+ $cfg.dataRoot=Join-Path $root data;$cfg.characterRoot=Join-Path $ProjectRoot character;$cfg.uiRoot=Join-Path $ProjectRoot ui;$cfg.pluginRoot=Join-Path (Split-Path $Executable) plugins
+ $cfg.plugins=@{};$cfg.computer=@{enabled=$false};$cfg.solitudeIntervalMs=604800000;$cfg.idleBeforeSolitudeMs=86400000;$cfg.reflectOnActivities=$false;$cfg.maxStartsPerHour=1000
+ $cfg.profiles=@($cfg.profiles[0],@{id='actor';label='appraisal actor';enabled=$true;protocol='chat-completions';origin=$fixture;model='fixture-model';supportsJsonObject=$true},@{id='review';label='appraisal review';enabled=$true;protocol='chat-completions';origin=$fixture;model='fixture-reviewer';supportsJsonObject=$true})
+ $cfg.review=@{enabled=$true;profileId='review';maxRewrites=0;retainConversationFocus=$false};$cfg.contextControl=@{enabled=$true;reviewSilence=$false};$configPath=Join-Path $root config.json;$ready=Join-Path $root ready.json;$cfg|ConvertTo-Json -Depth 65|Set-Content -LiteralPath $configPath -Encoding utf8;Start-Backend;$null=Api '/api/model' @{id='actor'}
+ $first=Message @((Call feeling state.appraise @{source_id='${event_id}';valence=.6}),(Silent));$sourceA=$first.source_event_id;$a=Result
+ Check ($a.ok-and$a.result.revision-eq1-and$a.result.state.target_valence-eq.6-and$a.result.state.appraisal_source_id-eq$sourceA) 'a real encounter can carry a sourced subjective feeling'
+ Check ($a.result.state.mood-eq$first.continuous_state.mood-and$a.result.state.desired_activity-eq$first.continuous_state.desired_activity) 'appraisal does not instantly replace mood or choose a physical activity'
+ $null=Message @((Call repeat state.appraise @{source_id=$sourceA;valence=.6}),(Silent));Check ((Result).result.deduplicated-and(Result).result.revision-eq1) 'same source and same feeling reuse the recorded appraisal'
+ $final=Message @(@{version=1;kind='reply';text='嗯，先留着。';calls=@();appraisal=@{source_id='${event_id}';valence=.2}})
+ Check ($final.turns.Count-eq1-and$final.reviews.Count-eq1-and$final.appraisal_result.ok-and$final.appraisal_result.result.state.target_valence-eq.2) 'ordinary final dialogue may carry its feeling without an additional generation or tool review'
+ $second=Message @((Call another state.appraise @{source_id='${event_id}';valence=-.4}),(Silent));$sourceB=$second.source_event_id
+ Check ((Result).result.state.target_valence-eq-.4-and(Result).result.state.appraisal_source_id-eq$sourceB) 'a different lived moment may point mood in a different direction'
+ $quiet=Message @(@{version=1;kind='silence';text=$null;calls=@();appraisal=@{source_id=$sourceB;valence=-.4}})
+ Check ($quiet.silent-and$quiet.reviews.Count-eq1-and$quiet.appraisal_result.ok) 'otherwise skippable silence with a private feeling still requires semantic review'
+ $null=Message @((Call source memory.archive_read @{id=$sourceA}),(Call old state.appraise @{source_id=$sourceA;valence=.6}),(Silent));Check ((Result).result.deduplicated-and(Result).result.state.target_valence-eq-.4-and(Result).result.state.appraisal_source_id-eq$sourceB) 'replaying an older appraisal cannot replace a later feeling'
+ $null=Message @((Call body state.propose @{activity='resting';intensity=-.2;source_id=$sourceB}),(Silent));Check ((Result).ok-and(Result).result.state.desired_activity-eq'resting'-and(Result).result.state.target_valence-eq-.4-and(Result).result.state.appraisal_source_id-eq$sourceB) 'activity proposal without valence preserves the distinct emotional stimulus'
+ $null=Message @((Call source memory.archive_read @{id=$sourceA}),(Call compatibility state.propose @{activity='idle';intensity=0;source_id=$sourceA;valence=.6}),(Silent));Check ((Result).ok-and(Result).result.state.target_valence-eq-.4) 'explicit valence in the older state tool follows the same duplicate gate'
+ $null=Message @((Call original memory.archive_read @{id=$sourceA}),(Call retain memory.remember @{kind='inference';text='APPRAISAL_PRIVATE_MARKER 这次感觉的来源';source_ids=@($sourceA)}),(Silent));$memory=(Result).result.id;Check ([bool]$memory) 'appraised origin can be restricted through the existing memory-access boundary'
+ $null=Api '/api/access' @{id=$memory;accessible=$false};$null=Message @((Call restricted state.appraise @{source_id=$sourceA;valence=1}),(Silent));Check ((Result).error.code-eq'appraisal_source_not_available'-and(Api '/api/state').continuous_state.target_valence-eq-.4) 'a hidden origin cannot be reappraised or restored by naming its old id'
+ $null=Api '/api/access' @{id=$memory;accessible=$true}
+ $null=Message @((Call imagined state.appraise @{source_id='invented-source';valence=1}),(Silent));Check ((Result).error.code-eq'appraisal_source_not_available') 'unknown sources cannot set emotional targets'
+ $null=Message @((Call rawscore state.appraise @{source_id='${event_id}';valence=2}),(Silent));Check ((Result).error.code-eq'invalid_tool_arguments') 'out-of-range emotional targets remain schema errors'
+ $null=Message @((Call override state.appraise @{source_id='${event_id}';valence=.2;mood=1}),(Silent));Check ((Result).error.code-eq'invalid_tool_arguments') 'direct mood replacement is not a tool argument'
+ $null=Message @((Call denied state.appraise @{source_id='${event_id}';valence=1}),(Silent)) @{decision='deny';reason='other';guidance='本测试不批准这次提案。'}
+ Check ((Api '/api/chat').call_failed-and(Api '/api/state').continuous_state.target_valence-eq-.4) 'semantic rejection never applies an emotional proposal'
+ $saved=(Api '/api/state').continuous_state;Stop-Backend;Start-Backend;$restored=(Api '/api/state').continuous_state
+ Check ($restored.version-eq3-and$restored.target_valence-eq-.4-and$restored.appraisal_source_id-eq$sourceB-and[Math]::Abs($restored.mood-$saved.mood)-lt.01) 'real restart preserves the current feeling without an offline mood jump'
+ $null=Message @((Call original memory.archive_read @{id=$sourceA}),(Call replay state.appraise @{source_id=$sourceA;valence=.6}),(Silent));Check ((Result).result.deduplicated-and(Result).result.state.target_valence-eq-.4) 'persistent duplicate protection also survives a process restart'
+ Check (@((Api '/api/state').reviews|Where-Object status -eq pending).Count-eq0-and(Api '/api/state').stage.id-eq'initial') 'appraisal does not create a developmental stage or relationship update'
+ Stop-Backend;$bytes=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)));Check (!$bytes.Contains('APPRAISAL_PRIVATE_MARKER')) 'the private source and appraisal archive use encrypted storage'
+ @{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json);Write-Output "Appraisal checks passed: $checks. Evidence: $root"
+}finally{foreach($process in @($service,$provider)){if($process){$process.Refresh();if(!$process.HasExited){Stop-Process -Id $process.Id}}}}

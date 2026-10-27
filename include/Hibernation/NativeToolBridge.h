@@ -28,9 +28,9 @@ inline nlohmann::json nativeArgumentSchema(nlohmann::json schema){
 struct NativeToolBridge {
     static nlohmann::json finalReplyParameters(){
         const auto turn=nlohmann::json::parse(turnSchema());
-        return {{"type","object"},{"additionalProperties",false},{"properties",{{"text",{{"type","string"},{"minLength",1},{"maxLength",6000}}},{"presentation",turn.at("properties").at("presentation")},{"carry_forward",personalCarrySchema()}}},{"required",nlohmann::json::array({"text"})}};
+        return {{"type","object"},{"additionalProperties",false},{"properties",{{"text",{{"type","string"},{"minLength",1},{"maxLength",6000}}},{"presentation",turn.at("properties").at("presentation")},{"carry_forward",personalCarrySchema()},{"appraisal",appraisalParameters()}}},{"required",nlohmann::json::array({"text"})}};
     }
-    static nlohmann::json finalSilenceParameters(){return {{"type","object"},{"properties",{{"carry_forward",personalCarrySchema()}}},{"additionalProperties",false}};}
+    static nlohmann::json finalSilenceParameters(){return {{"type","object"},{"properties",{{"carry_forward",personalCarrySchema()},{"appraisal",appraisalParameters()}}},{"additionalProperties",false}};}
     static std::vector<ayt::inference::ToolDefinition> finalDefinitions(){
         return {{"ha_turn_reply","提交本轮最终对白。text直接写对对方说的台词，普通交谈不加舞台旁白或整段扮演引号；明确请求故事或剧本时按所需文体。校验和审核后才显示，不与操作提案同批。",nativeArgumentSchema(finalReplyParameters()).dump(),false},
                 {"ha_turn_silence","选择本轮不发言；不代表发生了任何动作。可选carry_forward仅留下一点有来源的持续关注，不是对外发言。",nativeArgumentSchema(finalSilenceParameters()).dump(),false}};
@@ -55,7 +55,7 @@ struct NativeToolBridge {
                 args=normalizeToolArguments(std::move(args),call.name=="ha_turn_reply"?finalReplyParameters():finalSilenceParameters());
                 if(!ayt::serializer::validateJsonDocument(args.dump(),declaration.parameters))return {false,"native_final_arguments",{}};
                 Json turn={{"version",1},{"kind",call.name=="ha_turn_reply"?"reply":"silence"},{"text",call.name=="ha_turn_reply"?args.at("text"):Json(nullptr)},{"calls",Json::array()}};
-                if(args.contains("presentation"))turn["presentation"]=args.at("presentation");if(args.contains("carry_forward"))turn["carry_forward"]=args.at("carry_forward");return validateTurn(turn.dump());
+                for(const auto* key:{"presentation","carry_forward","appraisal"})if(args.contains(key))turn[key]=args.at(key);return validateTurn(turn.dump());
             }catch(...){return {false,"native_final_arguments",{}};}
         }
         try{for(std::size_t i=0;i<calls.size();++i){const auto found=catalog.find(calls[i].name);if(found==catalog.end())return {false,"native_tool_not_declared",{}};

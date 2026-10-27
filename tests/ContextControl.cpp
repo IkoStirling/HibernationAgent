@@ -18,11 +18,13 @@ TEST_CASE(only_explicit_read_queries_skip_semantic_review){
     CHECK(!readOnlyModelTool("plugin.read"));CHECK(!readOnlyModelTool("napcat.capture_and_send"));CHECK(replayProtectedOperation("napcat.capture_and_send"));
     CHECK(readOnlyModelTool("habitat.observe")&&readOnlyModelTool("atelier.list")&&readOnlyModelTool("atelier.read")&&readOnlyModelTool("pocket.observe"));CHECK(!readOnlyModelTool("atelier.append")&&!readOnlyModelTool("pocket.press"));
     CHECK(readOnlyModelTool("activity.status"));CHECK(!readOnlyModelTool("activity.enqueue"));
+    CHECK(!readOnlyModelTool("state.appraise"));
 }
 TEST_CASE(review_projection_preserves_current_input_and_referenced_evidence){
     const Json event={{"event_id","current"},{"input",std::string(8000,'u')},{"channel_identity",{{"trusted",true}}},{"authorized_context",Json::array({{{"id","old"},{"data",{{"text",std::string(8000,'h')}}}},{{"id","proof"},{"data",{{"text",std::string(8000,'e')}}}},{{"id","current"},{"data",{{"text","unaltered"}}}}})}};
     const Json candidate={{"calls",Json::array({{{"args",{{"source_ids",Json::array({"proof"})}}}}})}};
     const auto projected=reviewEventContext(event.dump(),candidate,1024);CHECK(projected.at("input")==event.at("input"));CHECK(projected.at("channel_identity")==event.at("channel_identity"));CHECK(projected.at("authorized_context").size()==2);CHECK(projected.at("authorized_context")[0].at("id")=="proof");CHECK(projected.at("review_context_omitted_ids")==Json::array({"old"}));CHECK(event.at("authorized_context").size()==3);
+    const auto feeling=reviewEventContext(event.dump(),Json{{"appraisal",{{"source_id","proof"},{"valence",.2}}}},0);CHECK(feeling.at("authorized_context").size()==2&&feeling.at("authorized_context")[0].at("id")=="proof");
 }
 TEST_CASE(old_receipts_preserve_execution_and_source_facts_without_mutating_original){
     const Json receipt={{"ok",true},{"source_id","evidence"},{"call_id","a"},{"result",{{"completed",false},{"queued",true},{"text",std::string(20000,'x')}}}};

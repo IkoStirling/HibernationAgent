@@ -14,9 +14,9 @@ function Call($Id,$Tool,$Arguments){@{version=1;kind='call';text=$null;calls=@(@
 function Message($Items){Plan $Items;Plan @($script:approval) -Review;$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='合成相处：刚才那段未写完的故事可以先留在这里。'};Await {!(Api '/api/chat').busy} 'fixture dialogue';Check (!(Api '/api/chat').call_failed) 'fixture dialogue succeeds'}
 function Auto($Enabled){$settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 65|ConvertFrom-Json -AsHashtable;$settings.plugins.widget.autonomousMode=$Enabled;$null=Api '/api/settings' @{settings=$settings};Await {(Api '/api/activities/status').enabled-eq$Enabled} 'autonomy setting';if(!$Enabled){Await {!(Api '/api/activities/status').generating} 'planner stopped'}}
 function Note($Id){@{id=$Id;expected_revision=0;kind='intention';topic='未写完的小故事';note='AUTONOMOUS_PRIVATE_MARKER 想在下次有空时续上那个没画完的圆';stance='want';source_ids=@($script:workSource)}}
-function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int]$ReviewHttpStatus=200,$Close=$null){
+function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int]$ReviewHttpStatus=200,$Close=$null,$Appraisal=$null){
  Auto $false;$before=(Api '/api/activities/status').personal_carry_feedback.generation;$calls=Requests;$reviews=Requests $true
- Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='AUTONOMY_PRIVATE_PURPOSE'});carry_forward=@($Note|Where-Object {$null-ne$_});close_threads=@($Close|Where-Object {$null-ne$_})}) $(if($During){1800}else{0})
+ Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='AUTONOMY_PRIVATE_PURPOSE'});carry_forward=@($Note|Where-Object {$null-ne$_});close_threads=@($Close|Where-Object {$null-ne$_});appraisal=$Appraisal}) $(if($During){1800}else{0})
  if($Verdict-and!$ExpectedError){$ExpectedError='activity_review_rejected'}
  Plan @($(if($Verdict){$Verdict}else{$script:approval})) -Review -HttpStatus $ReviewHttpStatus;Auto $true
  Await {(Requests)-gt$calls} 'background request';$context=(Capture).messages[1].content|ConvertFrom-Json -Depth 65
@@ -38,9 +38,10 @@ try{
  $configPath=Join-Path $root config.json;$ready=Join-Path $root ready.json;$cfg|ConvertTo-Json -Depth 60|Set-Content -LiteralPath $configPath -Encoding utf8;$approval=@{decision='approve';reason='ok';guidance=''};Start-Backend;$null=Api '/api/model' @{id='actor'};$original=Api '/api/state'
  Message @((Call work atelier.write @{id='own-unfinished';expected_revision=0;kind='story';title='未画完的圆';content='一个圆缺了一小截，纸上的风从那里穿过。';stage='draft'}),(Silent));$workSource=((Capture).messages[-1].content|ConvertFrom-Json -Depth 60).tool_results[0].source_id;Check ([bool]$workSource) 'real private work provides an original source'
  Message @((Call source memory.remember @{kind='inference';text='那段创作还可以继续，只是一个打算。';source_ids=@($workSource)}),(Silent));$memory=((Capture).messages[-1].content|ConvertFrom-Json -Depth 60).tool_results[0].result.id
- $note=Note own-continuation;$first=Batch $note
+ $note=Note own-continuation;$first=Batch $note $null $null '' 200 $null @{source_id=$workSource;valence=.35}
  Check ($first.feedback.results[0].ok-and$first.feedback.results[0].revision-eq1) 'background actor can save its own sourced intention'
  Check ($first.actor_calls-eq1-and$first.review_calls-eq1) 'private carry uses the existing actor and review calls without another model request'
+ Check (@($first.feedback.results|Where-Object {$_.tool-eq'state.appraise'-and$_.ok}).Count-eq1-and(Api '/api/state').continuous_state.target_valence-eq.35) 'autonomous feeling uses its real experience and the same existing actor and review pass'
  Check (@($first.context.evidence|Where-Object {$_.id-eq$workSource-and$_.kind-eq'tool_observation'-and$_.data.result.written}).Count-eq1) 'planner receives a bounded real writing receipt rather than invented evidence'
  $repeat=$note.Clone();$repeat.expected_revision=1;$again=Batch $repeat
  Check ($again.feedback.results[0].ok-and$again.feedback.results[0].deduplicated-and$again.feedback.results[0].revision-eq1) 'same source and meaning do not strengthen or version the intention again'

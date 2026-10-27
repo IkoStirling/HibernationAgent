@@ -304,7 +304,7 @@ TEST_CASE(behavior_changes_gradually_and_does_not_override_autonomy){
 }
 TEST_CASE(legacy_state_migrates_without_jumping_or_resetting_activity_dwell){
     RoleState state;state.restore({{"version",1},{"energy",0.31},{"mood",0.4},{"updated_ms",10000},{"entered_ms",5000},{"activity","resting"},{"desired_activity","reflecting"}},86410000);
-    CHECK(state.snapshot().at("energy")==0.31);CHECK(state.snapshot().at("mood")==0.4);CHECK(state.snapshot().at("version")==2);state.tick(86410001);CHECK(state.snapshot().at("activity")=="reflecting");
+    CHECK(state.snapshot().at("energy")==0.31);CHECK(state.snapshot().at("mood")==0.4);CHECK(state.snapshot().at("version")==3);state.tick(86410001);CHECK(state.snapshot().at("activity")=="reflecting");
 }
 TEST_CASE(memory_retrieval_matches_chinese_topics_and_forgetting_closes_derived_sources){
     CHECK(memoryRelevance("那座钟塔后来怎样了", "钟塔外的雨声还没有停止")>memoryRelevance("那座钟塔后来怎样了", "桌上的杯子是蓝色"));CHECK(memoryRelevance("RAIN", "rain outside")>0);
@@ -412,7 +412,7 @@ TEST_CASE(strict_provider_schema_and_optional_nulls_preserve_permission_validati
     const Json parameters={{"type","object"},{"additionalProperties",false},{"required",Json::array({"query"})},{"properties",{{"query",{{"type","string"}}},{"limit",{{"type","integer"},{"minimum",1}}}}}};
     const Json catalog=Json::array({{{"name","memory.search"},{"parameters",parameters}}});const auto schema=turnProviderSchema(catalog);CHECK(static_cast<bool>(ayt::serializer::validateJsonSchema(schema)));
     Json turn={{"version",1},{"kind","call"},{"text",nullptr},{"calls",Json::array({{{"id","c"},{"tool","memory.search"},{"args",{{"query","x"},{"limit",nullptr}}}}})},{"presentation",{{"speech",false},{"bubble",false}}}};
-    turn["carry_forward"]=nullptr;CHECK(static_cast<bool>(ayt::serializer::validateJsonDocument(turn.dump(),schema)));CHECK(validateTurn(turn.dump()).ok);auto args=normalizeToolArguments(turn.at("calls")[0].at("args"),parameters);CHECK(!args.contains("limit"));CHECK(args.at("query")=="x");
+    turn["carry_forward"]=nullptr;turn["appraisal"]=nullptr;CHECK(static_cast<bool>(ayt::serializer::validateJsonDocument(turn.dump(),schema)));CHECK(validateTurn(turn.dump()).ok);auto args=normalizeToolArguments(turn.at("calls")[0].at("args"),parameters);CHECK(!args.contains("limit"));CHECK(args.at("query")=="x");
     args=normalizeToolArguments({{"query",nullptr},{"unknown",nullptr}},parameters);CHECK(args.contains("query"));CHECK(args.contains("unknown"));CHECK(!ayt::serializer::validateJsonDocument(args.dump(),parameters.dump()));
     turn["calls"][0]["tool"]="shell.run";CHECK(!ayt::serializer::validateJsonDocument(turn.dump(),schema));
 }
@@ -861,6 +861,43 @@ TEST_CASE(only_real_domain_failures_with_known_targets_become_failed_experiences
     receipt["error"]["code"]="atelier_revision_conflict";CHECK(failedDomainAttempt("unknown.tool",args,receipt,target).is_null());CHECK(failedDomainAttempt("atelier.append",args,receipt,Json(nullptr)).is_null());
     auto equal=target;equal["revision"]=1;CHECK(failedDomainAttempt("atelier.append",args,receipt,equal).is_null());auto wrong=target;wrong["id"]="some-other-piece";CHECK(failedDomainAttempt("atelier.append",args,receipt,wrong).is_null());
     receipt["ok"]=true;CHECK(failedDomainAttempt("atelier.append",args,receipt,target).is_null());
+}
+TEST_CASE(subjective_appraisal_has_its_own_clock_and_does_not_move_the_body_or_jump_mood){
+    RoleState state;state.restore(Json::object(),1000);const auto initial=state.snapshot();std::string issue;
+    CHECK(state.appraise(.8,"experienced-event",1000,issue));auto value=state.snapshot();
+    for(const auto* key:{"mood","energy","attention","openness","activity","desired_activity"})CHECK(value.at(key)==initial.at(key));
+    CHECK(value.at("target_valence")==.8&&value.at("appraisal_source_id")=="experienced-event");
+    CHECK(state.propose("idle",-.5,"chosen-reserve",1500,issue));const auto openness=state.snapshot().at("target_openness");
+    CHECK(state.propose("resting",std::nullopt,"physical-rest",2000,issue));state.tick(2000);value=state.snapshot();
+    CHECK(value.at("target_valence")==.8&&value.at("appraisal_source_id")=="experienced-event");CHECK(value.at("mood").get<double>()>.5&&value.at("mood").get<double>()<=.500751);CHECK(value.at("target_openness")==openness);
+    CHECK(value.at("desired_activity")=="resting");CHECK(state.propose("idle",0,"physical-wake",3000,issue));state.contact(600999);state.tick(601001);
+    CHECK(state.snapshot().at("target_valence")==0);CHECK(state.snapshot().at("appraisal_age_ms").get<std::int64_t>()>600000);
+    CHECK(state.appraise(.8,"experienced-event",601002,issue));CHECK(state.snapshot().at("target_valence")==0); // same old appraisal cannot rearm itself
+    CHECK(!state.appraise(2,"source",601003,issue));CHECK(!state.appraise(.2,"",601003,issue));
+}
+TEST_CASE(appraisal_pause_restart_and_legacy_migration_preserve_existing_values){
+    RoleState state;state.restore(Json{{"version",2},{"mood",.43},{"target_mood",.42},{"target_valence",-.6},{"evidence","old-experience"},{"stimulus_age_ms",120000}},1000);
+    auto before=state.snapshot();CHECK(before.at("version")==3&&before.at("mood")==.43&&before.at("target_valence")==-.6);CHECK(before.at("appraisal_source_id")=="old-experience"&&before.at("appraisal_age_ms")==120000);
+    state.tick(86401000,false);const auto paused=state.snapshot();CHECK(paused.at("appraisal_age_ms")==before.at("appraisal_age_ms"));CHECK(paused.at("mood")==before.at("mood"));
+    RoleState restored;restored.restore(paused,172801000);const auto after=restored.snapshot();for(const auto* key:{"mood","energy","attention","target_valence","appraisal_valence","appraisal_source_id","appraisal_age_ms"})CHECK(after.at(key)==paused.at(key));
+}
+TEST_CASE(background_appraisal_is_optional_and_uses_the_same_bounded_tool_contract){
+    Json plan={{"version",1},{"commands",Json::array()},{"appraisal",{{"source_id","actual-work"},{"valence",-.3}}}};CHECK(validateActivities(plan.dump()).ok);CHECK(ayt::serializer::validateJsonDocument(plan.at("appraisal").dump(),appraisalParameters().dump()));
+    plan["appraisal"]["mood"]=1;CHECK(!validateActivities(plan.dump()).ok);plan["appraisal"].erase("mood");plan["appraisal"]["valence"]=1.1;CHECK(!validateActivities(plan.dump()).ok);
+    plan["appraisal"]=nullptr;const auto omitted=validateActivities(plan.dump());CHECK(omitted.ok&&!omitted.value.contains("appraisal"));
+}
+TEST_CASE(final_dialogue_and_native_functions_share_optional_appraisal_without_call_phase_effects){
+    const Json appraisal={{"source_id","actual-experience"},{"valence",.2}};Json turn={{"version",1},{"kind","silence"},{"text",nullptr},{"calls",Json::array()},{"appraisal",appraisal}};
+    const auto checked=validateTurn(turn.dump());CHECK(checked.ok&&turnHasPrivateUpdates(checked.value));
+    NativeToolBridge bridge(Json::array());const auto native=bridge.candidate({{"final","ha_turn_silence",Json{{"appraisal",appraisal}}.dump()}},0);CHECK(native.ok&&native.value.at("appraisal")==appraisal&&turnHasPrivateUpdates(native.value));
+    turn["kind"]="call";turn["calls"]=Json::array({{{"id","a"},{"tool","state.observe"},{"args",Json::object()}}});CHECK(validateTurn(turn.dump()).error=="appraisal_requires_final");
+    turn["kind"]="silence";turn["calls"]=Json::array();turn["appraisal"]=nullptr;const auto empty=validateTurn(turn.dump());CHECK(empty.ok&&!empty.value.contains("appraisal")&&!turnHasPrivateUpdates(empty.value));
+}
+TEST_CASE(appraisals_need_original_encounters_or_world_observations_rather_than_internal_snapshots){
+    CHECK(appraisalExperienceRecord(Json{{"kind","user_message"}}));CHECK(appraisalExperienceRecord(Json{{"kind","tool_attempt"}}));
+    CHECK(appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","atelier.read"}}));CHECK(appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","pocket.observe"}}));
+    CHECK(!appraisalExperienceRecord(Json{{"kind","tool_intent"},{"tool","habitat.act"}}));CHECK(!appraisalExperienceRecord(Json{{"kind","personal_attempt"}}));CHECK(!appraisalExperienceRecord(Json{{"kind","inference"}}));
+    CHECK(!appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","body.observe"}}));CHECK(!appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","state.observe"}}));CHECK(!appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","activity.status"}}));
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

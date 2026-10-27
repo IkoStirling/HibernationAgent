@@ -291,6 +291,7 @@ struct Application::Impl {
     #include "ActivityRuntime.inc"
     #include "SolitudeRuntime.inc"
     #include "PersonalRuntime.inc"
+    #include "AppraisalRuntime.inc"
     #include "ObservationRuntime.inc"
     #include "NapcatHostRuntime.inc"
     #include "PluginDispatch.inc"
@@ -359,6 +360,7 @@ struct Application::Impl {
         add("stage.observe","读取当前发展阶段与下一阶段要求，不改变阶段。",object(Json::object(),Json::array()));
         add("stage.propose","提交有真实经历依据的下一阶段候选，仅人工审核后生效。",object({{"stage_id",shortText},{"reason",text},{"evidence_ids",{{"type","array"},{"minItems",1},{"maxItems",8},{"items",shortText}}}},Json::array({"stage_id","reason","evidence_ids"})));
         add("state.propose","提出有来源的活动意图；数值由程序渐变，不能直接覆盖。",object({{"activity",{{"enum",Json::array({"idle","engaging","watching","reflecting","resting","withdrawing"})}}},{"intensity",{{"type","number"},{"minimum",-1},{"maximum",1}}},{"source_id",shortText},{"focus",shortText},{"valence",{{"type","number"},{"minimum",-1},{"maximum",1}}}},Json::array({"activity","intensity","source_id"})));
+        add("state.appraise","可选，为当前已有来源的原始交谈或真实经历留下此刻自己的感受方向，不要求每件事表态。它不会改变活动、关系或固定偏好；心情由程序缓慢趋近有限目标，同一来源同一感受不会反复刷新。",appraisalParameters());
         add("schedule.create","安排以后重审问题。after_ms 至少一分钟；interval_ms 为零时只执行一次。",object({{"id",shortText},{"topic",text},{"question_id",shortText},{"source_ids",{{"type","array"},{"minItems",1},{"maxItems",8},{"items",shortText}}},{"after_ms",{{"type","integer"},{"minimum",60000},{"maximum",604800000}}},{"interval_ms",{{"type","integer"},{"minimum",0},{"maximum",604800000}}}},Json::array({"id","topic","after_ms"})));
         const Json sourceIds={{"type","array"},{"minItems",1},{"maxItems",8},{"items",shortText}};
         add("reflection.open","留下一个有真实来源的未解问题；不等于已经形成结论，也不会自动向用户发言。",object({{"id",shortText},{"question",text},{"source_ids",sourceIds}},Json::array({"id","question","source_ids"})));
@@ -473,7 +475,8 @@ struct Application::Impl {
             if(evidence.size()<definition.at("minimumEvidence").get<std::size_t>())return toolFailure("stage_evidence_count");
             const auto reviewId=id("review");auto index=get("ha.index","reviews",Json::array());pushIndex(index.value,reviewId,128);auto proposal=args;proposal["evidence"]=evidence;proposal["status"]="pending";proposal["from_stage"]=stage.value.at("id");proposal["trace_id"]=traceId;proposal["created_at"]=serviceNowMs();commit({{"ha.reviews",reviewId,0,1,proposal.dump(),traceId},mutation("ha.index","reviews",index,index.value,traceId)},traceId);return toolSuccess({{"review_id",reviewId},{"status","pending"},{"applied",false}});
         }
-        if(name=="state.propose") {const auto source=args.at("source_id").get<std::string>();if(!context.sources.contains(source)||!policy.source(context.sources.at(source)))return toolFailure("state_evidence_missing");std::string issue;if(!life.propose(args.at("activity"),args.at("intensity"),source,serviceNowMs(),issue,args.value("valence",0.0),args.value("focus",std::string{})))return toolFailure(issue.c_str());saveLife();return toolSuccess({{"accepted",true},{"state",life.snapshot()}});}
+        if(name=="state.appraise")return appraiseExperience(args,context,traceId);
+        if(name=="state.propose") {const auto source=args.at("source_id").get<std::string>();if(!context.sources.contains(source)||!policy.source(context.sources.at(source)))return toolFailure("state_evidence_missing");if(args.contains("valence")){const auto receipt=appraiseExperience({{"source_id",source},{"valence",args.at("valence")}},context,traceId);if(!receipt.value("ok",false))return receipt;}std::string issue;if(!life.propose(args.at("activity"),args.at("intensity").get<double>(),source,serviceNowMs(),issue,std::nullopt,args.value("focus",std::string{})))return toolFailure(issue.c_str());saveLife();return toolSuccess({{"accepted",true},{"state",life.snapshot()}});}
         if(name=="reflection.list")return toolSuccess({{"questions",openQuestions()}});
         if(name=="reflection.open"||name=="reflection.resolve"){
             const auto key=args.at("id").get<std::string>();if(!validRequestId(key))return toolFailure("question_id");
@@ -606,7 +609,7 @@ struct Application::Impl {
         trace["reviews"]=Json::array();ayt::inference::Result reviewFailure;
         auto reviewCandidate=[&](const char* target,const Json& candidate){
             if(!cfg.reviewEnabled)return std::string("approve");
-            if((!control.reviewReadOnlyTools&&readOnlyModelBatch(candidate))||(!trackFocus&&!control.reviewSilence&&candidate.value("kind",std::string{})=="silence"&&candidate.value("carry_forward",Json::array()).empty())){
+            if((!control.reviewReadOnlyTools&&readOnlyModelBatch(candidate))||(!trackFocus&&!control.reviewSilence&&candidate.value("kind",std::string{})=="silence"&&!turnHasPrivateUpdates(candidate))){
                 trace["reviews_skipped"].push_back({{"target",target},{"reason",candidate.value("kind",std::string{})=="silence"?"silent_without_actions":"read_only_program_validated"}});return std::string("approve");
             }
             auto reviewer=profile(cfg.reviewProfileId);ayt::inference::Request check;check.cancelled=cancelled;check.maxOutputTokens=reviewer.maxOutputTokens;
@@ -619,7 +622,7 @@ struct Application::Impl {
             auto currentCapabilities=characterCapabilities();if(control.enabled)currentCapabilities.erase("tools");currentCapabilities["vision_available"]=selected.model.supportsVision;
             const auto userSource=trackFocus?get(archiveScope,context.eventId):Doc{};
             check.messages={{"system",policy},{"user",Json{{"target",target},{"conversation_delivery",dialogueDeliveryContext()},{"current_user_message",trackFocus?userSource.value.value("text",Json(nullptr)):Json(nullptr)},{"event_context",control.enabled?Json(reviewEventContext(request.messages.at(1).text,candidate,control.reviewHistoryBytes).dump()):Json(request.messages.at(1).text)},{"perception",imageDeliveryContext(selected.model.supportsVision,observedImages)},{"current_capabilities",currentCapabilities},{"approved_receipts",receipts},{"program_executed_operations",operationReplay.executionFacts()},{"authoritative_state",trace.at("continuous_state")},{"time_context",trace.at("time_context")},{"open_questions",trace.at("open_questions")},{"candidate",candidate}}.dump()}};
-            check.messages.front().text+="\ncarry_forward是角色可选的私下延续笔记：只记这次经历对自己的具体吸引、偏好或未完打算，不是内部思维链，不对用户展示。新兴趣本来可以来自这一次交谈，不要求已有长期偏好证明；但不能凭它宣告事实完成、改变核心人格/阶段，或编造用户关系和过去经历。没有内容也完全可以，不要求补写总结或示范台词。";
+            check.messages.front().text+="\nappraisal是角色对原始交谈或真实经历可选的主观感受；审来源、归属和连续边界，不代选正负、不要求每轮评分，不把成功/失败固定映射为情绪。程序只渐变有限目标，不能直接替换心情、身体、关系或偏好。\ncarry_forward是角色可选的私下延续笔记：只记这次经历对自己的具体吸引、偏好或未完打算，不是内部思维链，不对用户展示。新兴趣本来可以来自这一次交谈，不要求已有长期偏好证明；但不能凭它宣告事实完成、改变核心人格/阶段，或编造用户关系和过去经历。没有内容也完全可以，不要求补写总结或示范台词。";
             // The reviewer must see the same newest visual evidence as the actor.
             // Images remain content parts, never base64 text in instructions/logs.
             if(!reviewImages.empty()){
@@ -731,6 +734,7 @@ struct Application::Impl {
                 // only run after semantic approval; silence with notes is not
                 // read-only. Stable slots prevent duplicate edits on job retry.
                 trace["carry_forward_results"]=applyPersonalCarry(turn.value.value("carry_forward",Json::array()),context,stableTurnId,traceId,cancelled);
+                trace["appraisal_result"]=turn.value.contains("appraisal")?applyPrivateOperation("state.appraise",turn.value.at("appraisal"),context,stableTurnId+".appraisal",traceId,cancelled):Json(nullptr);
                 auto output=emptyOutput();if(kind=="reply")output["visible_reply"]=turn.value.at("text");trace["silent"]=kind=="silence";trace["proactive"]=kind=="reply"&&context.eventKind=="solitude";trace["presentation"]=turn.value.value("presentation",Json::object());result.text=output.dump();return result;
             }
             if(control.enabled){compactPriorToolMessages(request.messages,control.oldReceiptBytes);compactPriorToolMessages(completedMessages,control.oldReceiptBytes);}
@@ -904,6 +908,7 @@ struct Application::Impl {
         if(contextControl.enabled&&selectedProfile.model.supportsToolCalls)system+="\n标准函数已声明全部参数，优先将彼此独立的查询/操作放入同一批；只为真实依赖拆成多轮。QQ要求截图、拍照或自拍并发来时优先napcat.capture_and_send；包括先改变姿态再拍照的请求。需要先自行观察或裁图才拆成截图与发送，截图成功不等于送达。";
         system+="\n延续自己的生活：不必把每次相处都记成心得。某个具体细节确实留住了你的注意，或形成了还想做的小事，可以在最终reply/silence的carry_forward里留下至多两条简短私记；这些是你愿意带到以后的一点意思，不是内部推理、用户画像、固定人格或关系升级。它走self.notice同样的权限与来源检查，程序保存后下轮self中可见；source_ids选本轮真实交谈/经历，id与expected_revision参照已有self，新条目取新id和0。之后可以续接、犹豫、改变主意或放下，不必每轮提及，更不用向对方报告记录。普通应声也可以什么都不留。";
         system+="\n如果某项活动是在接续self里已有的intention，可在命令中加intention:{id,revision}。应用保留这次尝试、被打断或尚未开始的实际结果，下次在self.threads相应条目的attempts里可见；完成动作不自动等于完成整个打算。意图改变或放下后旧队列不再执行。随手玩、休息和无目的的小动作不必绑定意图；本轮新打算要立即绑定时先self.notice取得真实版本，不把尚未保存的carry_forward当成已经存在。";
+        system+="\n某次实际交谈或经历让你此刻有了感受时，也可在最终reply/silence用appraisal:{source_id,valence}提出，source_id只引用本轮已提供的原始交谈/真实经历，valence为-1到1的主观方向，不是直接设心情。不要求每轮评分或解释；成功可以没有特别感受，未成功也可以觉得有趣。程序缓慢调整有限目标，不改身体动作、关系或长期偏好；同一来源同一感受不会反复刷新。与对白用同次审核，实际效果以下次连续状态为准。也可用已有state.appraise工具，不把待做计划、私记或数值快照当成新经历。";
         trace["interaction_policy"]="embodied-dialogue-v6-direct-utterance";trace["plugin_context_projection"]=alone?"character-surfaces-v1":"character-surfaces-v2-dialogue-index";trace["activity_purpose_supported"]=true;trace["body_at_input"]=bodyForModel(payload.value("body_at_input",Json::object()));
         trace["dialogue_context_generation"]=dialogueProjection.value("generation",std::uint64_t(0));
         trace["personal_context"]=personalDialogueContext(payload.value("topic",text),alone);

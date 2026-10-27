@@ -42,22 +42,27 @@ try{
  $package=@((Api '/api/skills').packages|Where-Object id -eq 'workspace-helper')[0];Check ($package.approved) 'built-in Skill scope is available for the permission check'
  foreach($protocol in @('chat-completions','responses')){
   $script:protocol=$protocol;$null=Api '/api/model' @{id=$protocol};$note=Note ('ship-'+$protocol)
-  Plan @((Native ha_turn_reply @{text='那就先别替它决定。';carry_forward=@($note)}));$trace=Message
+  Plan @((Native ha_turn_reply @{text='那就先别替它决定。';carry_forward=@($note);appraisal=@{source_id='${event_id}';valence=.25}}));$trace=Message
   Check ($trace.carry_forward_results[0].receipt.ok) "$protocol final note passes ordinary self.notice validation"
   Check ($trace.turns.Count-eq1-and$trace.reviews.Count-eq1) "$protocol note and dialogue share one generation and semantic review"
+  Check ($trace.appraisal_result.ok-and$trace.appraisal_result.result.state.target_valence-eq.25) "$protocol native final reply carries its feeling through the existing approved update path"
   $observed=Observe;Check (@($observed.threads|Where-Object id -eq $note.id).Count-eq1) "$protocol successful note is in the following private self context"
   Check (!((Api '/api/chat').messages|ConvertTo-Json -Depth 20).Contains('CARRY_PRIVATE_MARKER')) "$protocol private note is absent from displayed conversation"
-  $invalid=Note ('forged-'+$protocol);$invalid.source_ids=@('not-an-authorized-source');Plan @((Reply @($invalid)));$trace=Message
+  $invalid=Note ('forged-'+$protocol);$invalid.source_ids=@('not-an-authorized-source');$invalidReply=Reply @($invalid);$invalidReply.appraisal=@{source_id='not-an-authorized-source';valence=1};Plan @($invalidReply);$trace=Message
   Check (!$trace.carry_forward_results[0].receipt.ok-and$trace.carry_forward_results[0].receipt.error.code-eq'personal_source_not_available') "$protocol invented evidence cannot create a disposition"
   Check (!(Api '/api/chat').call_failed) "$protocol failed private update does not erase the approved dialogue"
-  $rejected=Note ('rejected-'+$protocol);Plan @((Reply @($rejected)),(Reply));Plan @(@{decision='rewrite';reason='continuity';guidance='只保留当前意思，不接受这条私记。'},$approve) $true;$trace=Message
-  Check ($trace.carry_forward_results.Count-eq0-and$trace.reviews.Count-eq2) "$protocol rejected candidate leaves no private side effect"
+  Check ($trace.appraisal_result.error.code-eq'appraisal_source_not_available') "$protocol final appraisal cannot fabricate its experience source"
+  $rejected=Note ('rejected-'+$protocol);$rejectedReply=Reply @($rejected);$rejectedReply.appraisal=@{source_id='${event_id}';valence=1};Plan @($rejectedReply,(Reply));Plan @(@{decision='rewrite';reason='continuity';guidance='只保留当前意思，不接受这条私记。'},$approve) $true;$trace=Message
+  Check ($trace.carry_forward_results.Count-eq0-and$trace.reviews.Count-eq2-and$null-eq$trace.appraisal_result) "$protocol rejected candidate leaves no private side effect"
   Plan @($approve) $true
   $silent=Note ('quiet-'+$protocol);Plan @((Native ha_turn_silence @{carry_forward=@($silent)}));$trace=Message
   Check ($trace.silent-and$trace.reviews.Count-eq1-and$trace.carry_forward_results[0].receipt.ok) "$protocol silent authored updates still require semantic review"
+  Plan @((Native ha_turn_silence @{appraisal=@{source_id='${event_id}';valence=-.15}}));$trace=Message
+  Check ($trace.silent-and$trace.reviews.Count-eq1-and$trace.appraisal_result.ok-and$trace.appraisal_result.result.state.target_valence-eq-.15) "$protocol silence with only an appraisal cannot bypass semantic review"
   $restricted=Note ('restricted-'+$protocol)
-  Plan @(@{version=1;kind='call';text=$null;calls=@(@{id='activate';tool='skills.activate';args=@{id='workspace-helper';digest=$package.digest}})},(Reply @($restricted)));$trace=Message
+  $restrictedReply=Reply @($restricted);$restrictedReply.appraisal=@{source_id='${event_id}';valence=1};Plan @(@{version=1;kind='call';text=$null;calls=@(@{id='activate';tool='skills.activate';args=@{id='workspace-helper';digest=$package.digest}})},$restrictedReply);$trace=Message
   Check ($trace.carry_forward_results[0].receipt.error.code-eq'skill_tool_denied') "$protocol final note cannot escape an active Skill tool scope"
+  Check ($trace.appraisal_result.error.code-eq'skill_tool_denied') "$protocol final appraisal cannot escape an active Skill tool scope"
  }
  $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)) 'clean shutdown'
  Start-Backend;$script:protocol='chat-completions';$null=Api '/api/model' @{id=$protocol};$observed=Observe

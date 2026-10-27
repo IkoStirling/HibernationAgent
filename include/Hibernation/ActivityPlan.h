@@ -5,7 +5,7 @@ std::string activitySchema();
 std::string activitySchemaFor(const Json& availableKinds);
 ValidatedOutput validateActivities(std::string_view text);
 struct ActivityBatch : ReactionBatch {
-    Json carryForward=Json::array(),closeThreads=Json::array(),evidence=Json::array(),narrativeSources=Json::array();
+    Json carryForward=Json::array(),closeThreads=Json::array(),evidence=Json::array(),narrativeSources=Json::array(),appraisal=nullptr;
     std::chrono::steady_clock::time_point createdAt=std::chrono::steady_clock::now();
 };
 class ActivityGenerator {

@@ -17,6 +17,12 @@ inline bool continuityObservationTool(const std::string& tool){
     static const std::set<std::string> effects={"workspace.write","workspace.edit","computer.open_application","television.open","television.open_page","television.play","television.pause","television.stop","atelier.write","atelier.append","habitat.create","habitat.act","habitat.arrange","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel"};
     return revisitableObservationTool(tool)||effects.contains(tool);
 }
+inline bool appraisalExperienceRecord(const nlohmann::json& record){
+    const auto kind=record.value("kind",std::string{});
+    if(kind=="user_message"||kind=="story_end"||kind=="outer_event"||kind=="task_complete"||kind=="tool_attempt")return true;
+    const auto tool=record.value("tool",std::string{});
+    return kind=="tool_observation"&&(continuityObservationTool(tool)||tool=="pocket.observe"||tool=="habitat.observe");
+}
 // This proves that an operation/observation really occurred, not that an
 // arbitrarily broad personal goal was achieved. Semantic review still checks
 // the named goal against these facts; a legal press does not mean a won game.

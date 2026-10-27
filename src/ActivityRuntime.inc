@@ -66,6 +66,7 @@
         const auto cancelled=[&]{return !autonomousMode()||runtimePaused||inputActive||busy()||batch.key!=activityKey();};
         auto results=applyPersonalCarry(batch.closeThreads,context,key,key,cancelled,PersonalCarryOperation::Close);
         for(auto& result:applyPersonalCarry(batch.carryForward,context,key,key,cancelled))results.push_back(std::move(result));
+        if(batch.appraisal.is_object())results.push_back({{"id",batch.appraisal.at("source_id")},{"tool","state.appraise"},{"receipt",applyPrivateOperation("state.appraise",batch.appraisal,context,key+".appraisal",key,cancelled)}});
         if(!results.empty()){
             Json summary=Json::array();for(const auto& result:results){const auto& receipt=result.at("receipt");Json item={{"id",result.at("id")},{"tool",result.at("tool")},{"ok",receipt.value("ok",false)}};
                 if(receipt.value("ok",false)){item["revision"]=receipt.at("result").at("revision");item["deduplicated"]=receipt.at("result").value("deduplicated",false);}else item["error"]=receipt.value("error",Json::object());summary.push_back(std::move(item));}

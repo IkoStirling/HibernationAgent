@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <optional>
 namespace hibernation {
 /// Continuous bounded values and discrete activities have independent clocks.
 /// One snapshot is authoritative; the model proposes stimuli, never replacements.
@@ -11,7 +12,8 @@ public:
     void restore(const nlohmann::json& snapshot,std::int64_t now);
     nlohmann::json snapshot()const;
     void tick(std::int64_t now,bool advance=true);
-    bool propose(std::string activity,double intensity,const std::string& evidence,std::int64_t now,std::string& issue,double valence=0,std::string focus={});
+    bool propose(std::string activity,std::optional<double> intensity,const std::string& evidence,std::int64_t now,std::string& issue,std::optional<double> valence={},std::string focus={});
+    bool appraise(double valence,const std::string& evidence,std::int64_t now,std::string& issue);
     void contact(std::int64_t now);
     void weather(double temperature,int weatherCode,std::int64_t observedAt);
 private:
@@ -19,9 +21,10 @@ private:
     double energy_=0.72,openness_=0.55,mood_=0.5,attention_=0.2;
     double targetMood_=0.5,targetOpenness_=0.55,targetAttention_=0.2;
     double willingness_=0.55,socialLoad_=0,targetSocialLoad_=0,targetValence_=0,weatherMood_=0.5;
-    std::string mode_="balanced",focus_;
+    std::string mode_="balanced",focus_,appraisalEvidence_;
+    double appraisalValence_=0;
     std::string activity_="idle",desired_="idle",evidence_;
-    std::int64_t lastMs_=0,enteredMs_=0,stimulusMs_=0,weatherMs_=0;
+    std::int64_t lastMs_=0,enteredMs_=0,stimulusMs_=0,weatherMs_=0,appraisalMs_=0;
     int weatherCode_=-1;
     double weatherComfort_=1.0;
 };

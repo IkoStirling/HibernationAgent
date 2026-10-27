@@ -1,17 +1,21 @@
     mutable std::recursive_mutex personalMutex;
     enum class PersonalCarryOperation{Notice,Close};
+    Json applyPrivateOperation(const std::string& tool,const Json& args,ProposalContext& context,const std::string& key,const std::string& traceId,const std::function<bool()>& cancelled){
+        const Json call={{"tool",tool},{"args",args}};const auto previous=get("ha.calls",key);Json receipt;
+        if(cancelled&&cancelled())receipt=toolFailure("cancelled");
+        else if(!skillAllows(context,tool))receipt=toolFailure("skill_tool_denied");
+        else if(previous.revision)receipt=previous.value.at("call")==call?previous.value.value("output",toolFailure("previous_outcome_unknown")):toolFailure("call_id_reused_with_different_arguments");
+        else{
+            commit({{"ha.calls",key,0,1,Json{{"call",call},{"status","started"}}.dump(),traceId}},traceId);
+            try{receipt=performTool(tool,args,context,traceId,cancelled);}catch(...){receipt=toolFailure("tool_execution_failed");}
+            auto started=get("ha.calls",key);commit({mutation("ha.calls",key,started,{{"call",call},{"status","completed"},{"output",receipt}},traceId)},traceId);
+        }return receipt;
+    }
     Json applyPersonalCarry(const Json& notes,ProposalContext& context,const std::string& stableId,const std::string& traceId,const std::function<bool()>& cancelled,PersonalCarryOperation operation=PersonalCarryOperation::Notice){
         Json results=Json::array();std::size_t slot=0;
         for(const auto& args:notes){
-            const std::string tool=operation==PersonalCarryOperation::Notice?"self.notice":"self.close";const auto key=stableId+(operation==PersonalCarryOperation::Notice?".carry-":".close-")+std::to_string(slot++);const Json call={{"tool",tool},{"args",args}};const auto previous=get("ha.calls",key);Json receipt;
-            if(cancelled&&cancelled())receipt=toolFailure("cancelled");
-            else if(!skillAllows(context,tool))receipt=toolFailure("skill_tool_denied");
-            else if(previous.revision)receipt=previous.value.at("call")==call?previous.value.value("output",toolFailure("previous_outcome_unknown")):toolFailure("call_id_reused_with_different_arguments");
-            else{
-                commit({{"ha.calls",key,0,1,Json{{"call",call},{"status","started"}}.dump(),traceId}},traceId);
-                try{receipt=performTool(tool,args,context,traceId,cancelled);}catch(...){receipt=toolFailure("tool_execution_failed");}
-                auto started=get("ha.calls",key);commit({mutation("ha.calls",key,started,{{"call",call},{"status","completed"},{"output",receipt}},traceId)},traceId);
-            }
+            const std::string tool=operation==PersonalCarryOperation::Notice?"self.notice":"self.close";const auto key=stableId+(operation==PersonalCarryOperation::Notice?".carry-":".close-")+std::to_string(slot++);
+            auto receipt=applyPrivateOperation(tool,args,context,key,traceId,cancelled);
             results.push_back({{"id",args.at("id")},{"tool",tool},{"receipt",receipt}});
         }return results;
     }

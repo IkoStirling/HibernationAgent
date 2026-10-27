@@ -66,9 +66,9 @@
     }
     void applyRhythmState(const Json& event,const std::string& source,std::int64_t now){
         if(!rhythmLifecycle(event))return;const auto kind=event.at("kind").get<std::string>();std::string issue;
-        if(kind=="rhythm.rest_started"){if(life.propose("resting",0,source,now,issue))saveLife();return;}
+        if(kind=="rhythm.rest_started"){if(life.propose("resting",std::nullopt,source,now,issue))saveLife();return;}
         if(kind=="rhythm.rest_finished"||kind=="rhythm.rest_interrupted"){
             const auto current=life.snapshot();const auto evidence=current.value("evidence",std::string{});if(evidence.empty()||current.at("desired_activity")!="resting")return;
-            const auto prior=get("ha.plugin-events",evidence);if(prior.revision&&prior.value.value("plugin",std::string{})=="rhythm"&&prior.value.value("token",std::string{})==event.value("token",std::string{}))if(life.propose("idle",0,source,now,issue))saveLife();
+            const auto prior=get("ha.plugin-events",evidence);if(prior.revision&&prior.value.value("plugin",std::string{})=="rhythm"&&prior.value.value("token",std::string{})==event.value("token",std::string{}))if(life.propose("idle",std::nullopt,source,now,issue))saveLife();
         }
     }

@@ -8,6 +8,8 @@ std::string turnSchema();
 /// A bounded authored disposition for later continuity, never internal reasoning.
 nlohmann::json personalCarrySchema();
 nlohmann::json personalCloseParameters();
+nlohmann::json appraisalParameters();
+inline bool turnHasPrivateUpdates(const nlohmann::json& value){return !value.value("carry_forward",nlohmann::json::array()).empty()||value.value("appraisal",nlohmann::json(nullptr)).is_object();}
 /// Strict-provider schema enumerates only currently enabled tool argument shapes.
 std::string turnProviderSchema(const nlohmann::json& catalog);
 /// Explicit compatibility rule: null for a known optional argument means omitted.
