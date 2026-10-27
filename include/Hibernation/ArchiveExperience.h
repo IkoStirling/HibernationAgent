@@ -20,7 +20,7 @@ inline nlohmann::json archiveWorldExperience(const nlohmann::json& record){
     const auto copy=[&](Json& into,const Json& from,std::initializer_list<const char*> fields){for(const auto* field:fields)if(from.contains(field)&&from.at(field).is_primitive()){
         const auto& value=from.at(field);into[field]=value.is_string()?Json(experienceExcerpt(value.get_ref<const std::string&>(),512)):value;
     }};
-    copy(facts,data,{"written","applied","completed","accepted","queued","opened","scope","source_mount","source_path","path","title","source_url","article_url","revision","retrieved_ms","full_article_read","text_truncated","content_kind","offset","next_offset","total_bytes","eof","content_sha256","sampled_frames","span_seconds","full_video_watched","audio_delivered","frame_index","source_frame_count","position_seconds","frame_time_seconds"});
+    copy(facts,data,{"written","applied","completed","accepted","queued","opened","scope","source_mount","source_path","path","title","source_url","article_url","revision","retrieved_ms","full_article_read","text_truncated","content_kind","detail","content_model","source_total_bytes","source_truncated","reading_identity","offset","next_offset","total_bytes","eof","content_sha256","sampled_frames","span_seconds","full_video_watched","audio_delivered","frame_index","source_frame_count","position_seconds","frame_time_seconds"});
     for(const auto* field:{"piece","game","object"})if(data.contains(field)&&data.at(field).is_object()){
         Json value=Json::object();copy(value,data.at(field),{"id","title","revision","kind","stage","status","lit_count","moves","moves_remaining","limit","name","phase","action","x","y"});
         if(std::string_view(field)=="game"&&data.at(field).contains("rows")){
@@ -37,7 +37,7 @@ inline nlohmann::json archiveWorldExperience(const nlohmann::json& record){
     // Exact text is separate from bounded metadata. A historical image receipt
     // is not another image delivery. Failed writes never enter this branch.
     std::string text,scope;
-    if(tool=="reading.open"){text=data.value("text",std::string{});scope="observed_article_excerpt";}
+    if(tool=="reading.open"){text=data.value("text",std::string{});scope=data.value("scope",std::string{})=="article_source_chunk"?"observed_article_source_chunk":"observed_article_excerpt";}
     else if(tool=="workspace.read"){text=data.value("content",std::string{});scope="observed_file_chunk";}
     else if(tool=="atelier.read"){text=data.value("piece",Json::object()).value("content",std::string{});scope="observed_authored_piece";}
     else if((tool=="atelier.write"||tool=="atelier.append")&&data.value("written",false)&&record.contains("written_content")&&record.at("written_content").is_string()){

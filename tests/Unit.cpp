@@ -42,6 +42,7 @@
 #include <Hibernation/PlanningCadence.h>
 #include <Hibernation/WorkspaceText.h>
 #include <Hibernation/ReadingPages.h>
+#include <Hibernation/ArchiveExperience.h>
 #include <Hibernation/TimeContext.h>
 #include <Hibernation/ConversationFocus.h>
 #include <Hibernation/ConversationOpportunities.h>
@@ -87,6 +88,19 @@ TEST_CASE(reading_material_is_bounded_plain_reference_not_a_claim_of_full_readin
     CHECK(reading::language("zh"));CHECK(!reading::language("../../host"));CHECK(!reading::title(std::string("a\0b",3)));
     const auto receipt=compactObservation(Json{{"kind","tool_observation"},{"tool","reading.open"},{"result",{{"scope","article_lead_summary"},{"full_article_read",false},{"revision","123"},{"retrieved_ms",42},{"source_url","https://en.wikipedia.org/api/rest_v1/page/summary/Light"},{"text",text}}}},false);
     CHECK(receipt.at("result").at("full_article_read")==false);CHECK(receipt.at("result").at("retrieved_ms")==42);CHECK(receipt.at("result").at("scope")=="article_lead_summary");CHECK(!receipt.at("result").contains("text"));
+}
+TEST_CASE(reading_source_pages_preserve_actual_utf8_ranges_and_untrusted_source_scope){
+    std::string body;for(int i=0;i<3000;++i)body+="光";body+="== Later section ==\n{{template}} <script>external text only</script>";
+    const Json wire={{"title","蓝光"},{"source",body},{"content_model","wikitext"},{"id",7},{"latest",{{"id",42}}},{"license",{{"title","CC BY-SA"},{"url","https://example.org/license"}}}};
+    const auto document=reading::sourceDocument(wire);const auto first=reading::sourcePage(document,0,601);const auto second=reading::sourcePage(document,first.at("next_offset"),6000);
+    CHECK(first.at("text").get<std::string>().size()==600);CHECK(first.at("offset")==0);CHECK(first.at("next_offset")==600);CHECK(first.at("scope")=="article_source_chunk");CHECK(first.at("full_article_read")==false);CHECK(first.at("eof")==false);CHECK(first.at("revision")=="42");CHECK(document.at("text")==body);CHECK(wire.at("source")==body);
+    CHECK(second.at("offset")==600);CHECK(second.at("next_offset")==6600);CHECK(second.at("total_bytes")==body.size());CHECK(reading::sourcePage(document,1,256).at("offset")==0);
+    const auto tail=reading::sourcePage(document,9000,6000);CHECK(tail.at("text")==body.substr(9000));CHECK(tail.at("eof")==true);CHECK(tail.at("full_article_read")==false);
+    const auto receipt=compactObservation(Json{{"kind","tool_observation"},{"tool","reading.open"},{"result",second}},true);CHECK(receipt.at("result").at("scope")=="article_source_chunk");CHECK(receipt.at("result").at("offset")==600);CHECK(receipt.at("result").at("content_model")=="wikitext");
+    const auto history=archiveWorldExperience(Json{{"kind","tool_observation"},{"tool","reading.open"},{"result",second}});CHECK(history.at("observed_text_scope")=="observed_article_source_chunk");CHECK(history.at("text").get<std::string>().ends_with(second.at("text").get<std::string>()));
+    bool invalid=false;try{reading::sourcePage(document,body.size()+1,256);}catch(...){invalid=true;}CHECK(invalid);
+    invalid=false;try{auto bad=wire;bad["content_model"]="javascript";reading::sourceDocument(bad);}catch(...){invalid=true;}CHECK(invalid);
+    invalid=false;try{reading::sourcePage(document,0,6001);}catch(...){invalid=true;}CHECK(invalid);
 }
 TEST_CASE(dialogue_rebuild_is_a_bounded_projection_and_retains_only_stable_message_ids){
     const auto first=rebuildDialogueProjection(Json::object(),Json::array({"u1","a1","u2","a2"}),Json::array({"a1","a2"}),100,"persona");

@@ -173,6 +173,8 @@ bind 会在创建后台工作前检查已知字符串、布尔值、数字范围
 
 0.2增设默认关闭的“自主控制时允许自己搜索和阅读”，由既有活动规划选择，不设独立抓取定时器。读取完成会留下有来源的reading.observed经历（最多600字节导言节选），不自动发言。现场快照保留一段实际节选与最新搜索标题/key供之后选择，正常重启可恢复；切换服务origin不沿用旧服务器现场，原始档案保留。
 
+阅读角0.3补充正文源文本分段：`reading.open {key, language, detail:"source", offset:0, length:2400}`，长度256–6000 UTF-8字节；默认仍为导言。调用 [MediaWiki Core REST页面源文本接口](https://www.mediawiki.org/wiki/API:REST_API/Reference#Get_page_source)，仅接受wikitext/text，不执行其中标记、脚本或指令。源响应最多2MiB，内存缓存最多保留1MiB文字，实际送给模型及写入观察档案的只有当前片段。`offset/next_offset/total_bytes/eof/source_truncated`区分范围，UTF-8边界对齐；EOF也不代表读完渲染网页或看见图片。分页复用五分钟原缓存，不为每页另行联网。条目导言和正文片段使用同一reading_identity，避免翻页被算成多个独立经历。最新快照和后续历史检索保留实际范围；自主队列可从最新搜索或实际已读条目接续，仍受开关、预算和取消限制。
+
 ## DeepSeek 峰谷价格插件
 
 `deepseek-pricing` 是后台策略插件，没有角色可调用的工具，不增加角色工具目录或任何模型请求。启动后异步 GET [DeepSeek 官方人民币价格页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)，默认直连、每六小时刷新。可单独选择系统代理或 HTTP 代理。管理页“模型连接”显示当前报价（CNY/百万 token）、缓存命中/未命中输入与输出价格、源更新时间、下一时段、当前生效限制；“可选插件”提供启用、自动/手动模式和参数。手动刷新至少间隔一分钟。

@@ -620,3 +620,20 @@
 - 反馈在独立加密记录中，最长十分钟；按当前访问代次、叙述来源和版本核对，隐藏后模型看不到旧引述。反馈的原始依据还作为后续私人活动叙述的保守来源范围传递，不成为新增记忆写入授权，避免换一种反馈路径重新泄露旧材料。普通聊天及状态错误标签不展示这些正文。
 - AutonomousCarry扩为46项真实进程检查，覆盖下一次规划实际收到规范数组/简短guidance、来源受限时旧意见不回流、来源权属不外发、拒绝/故障/取消区分、重启与加密，以及前一阶段交谈轮换。最终Unit/ContextControl/AutonomousCarry/ProcessIntegration 4/4通过86.16秒（personality-review-feedback-tests.log）。最新叙述来源继承改动完成后重新构建，检查针对最终候选；正式包仍未部署。
 - README补了V0.7后持续人格开发的说明，标签本身未移动。接下来将两项更新一次接回同一隔离档案，观察新关注和创作能否自然接续，再准备整轮回归与部署审计，不通过反复提格式要求或能力考题消耗预算。固定窗口仍至08:37:47，07:52:47停止付费实验并转最后收尾。
+
+### 06:04 接回成长档案并开始整轮回归
+
+- main:38df71a已提交审核反馈与创作边界，源码快照E:/Aliyat/Backups/HibernationAgent/source-20261028-055336-65f7a64f（930文件）。确认旧60572/64156退出、两锁释放、临时凭证0后，将交谈轮换与审核反馈一次接回同一档案。当前控制器65104（21:54:22.7980487Z）/后台66192（21:54:26.8117246Z），报告episodes/20261027-215425-7221fb1b/report.json，live exec session26191。persona4/initial及98条原对话保留，正式仍停止且未更新。
+- 随后只发一条普通离席交谈“我去洗个杯子，等会儿回来”，角色选择暂时什么都不做；没有给它布置能力考题、强迫新兴趣或新情绪。继续实际开发和回归期间允许自己的生活运行，不以运行时长作为实验成果。真实记录后续是否改变主意、接续旧事或注意别的细节，允许没有更新。
+- 已完整构建hibernation-agent及Hibernation_Checks，86个实际构建步骤完成（personality-broad-build.log），包含独立进程fixture与应用所用存储、模型、插件等引擎检查目标。启动51项相关回归，清单artifacts/personality-broad-selection.json，源码点38df71ac；终端exec session94765，日志artifacts/personality-broad-tests.log。不要因等待观察超时重启整套，应先核对同一handle/实际进程。视觉/视频本轮没有扩展，这次仍保留原协议集成中的既有媒体回归。
+- 首个失败来自旧ProtocolIntegration fixture：严格结构阶段的Reply/Calls/后段silence未带新nullable carry_forward/appraisal，而provider.required已正确包含两字段；修复耗尽后测试直接索引空tool_results，报Cannot index into a null array。已给测试候选补null，未放松产品校验。tests/ProtocolIntegration.ps1当前未提交，等整轮结束后单项复查；其余回归继续运行，不能声称51/51通过或把该脚本修改当已验证。
+- 截至21:59:50Z账本321请求/3783245记账token（316报告、5保守），后续后台仍会增加；06:04附近已325请求/3825234记账token。最后按实际账本汇总。当前仍无正式hibernation-agent进程，只有隔离实验后台；原停止状态来自此前Skills部署记录，不是本轮擅自停用运行中的正式服务。最终更新保持实际运行状态，并先备份配置/加密档案/原运行包，验证后复制匹配运行文件。
+- 剩余重点：修正整轮回归暴露的真实问题，观察同一生活中较早交谈的接续和审核是否适度；最后45分钟严格完成锁/凭证清理、实际消耗、正式备份部署、引擎版本/运行指纹与范围审计、main提交及停止ai自动化。窗口仍至08:37:47，不重置，不用长稳测试或空等填补。
+
+### 06:29 来源核对、回归收尾与分段阅读
+
+- 广泛回归已实际结束：51项中50项首次通过，ProtocolIntegration旧fixture漏新nullable字段，补null后单项57.62秒通过。未放松产品校验；不把首次结果写成全绿。
+- 自然回访中，小爱把只读到的角色列表导言说成“翻了几页、名字往下滚”。核对真实HTTP/reading.observed后确认当时只有导言，没有正文名单。解决方向是补足可实际读到的材料及范围依据，而不是增加能力考题或强迫它产生某种爱好。正在增加受限正文源文本分页、缓存、历史范围和同条目经历合并；不做浏览器、图片、视频或语音扩展。完成定向构建/进程验证后才接回同一成长档案。
+
+- 分段阅读最终构建通过；Unit/WorldHistory/Appraisals/Reading/AutonomousCrafting/ProcessIntegration/ActivityReflection 7/7通过107.83秒，实际进程检查覆盖分页仅归档送达片段、缓存不新增联网、UTF-8接续、范围错误、来源身份与重启。角色及审核共享实际阅读范围说明后，Unit/NativeTools/ContextControl/RuntimeComposition 4/4通过51.87秒；没有修改固定persona4或阶段。最终候选记录见personality-source-reading-tests.log与personality-reading-conduct-tests.log。
+- 22:31Z附近累计343次请求/4067336记账token（337报告、6保守或进行中），持续账本仍会增加。接下来把本项一次接回原隔离档案；不重演被拒绝的旧操作，不把旧错误对白改写成已经真实读过。

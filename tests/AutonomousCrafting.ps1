@@ -19,6 +19,7 @@ try{
  Await {Test-Path -LiteralPath (Join-Path $root provider/port)} 'provider';$fixture='http://127.0.0.1:'+(Get-Content -LiteralPath (Join-Path $root provider/port))
  @{pages=@(@{id=1;key='Blue_moss';title='蓝苔';excerpt='雨后的蓝光'})}|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $root provider/reading-search.json) -Encoding utf8
  @{title='蓝苔';lang='zh';extract='虚构的蓝苔在雨后发出淡淡的蓝色光。';pageid=1;revision='crafting-fixture';type='standard'}|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $root provider/reading-summary.json) -Encoding utf8
+ @{title='蓝苔';content_model='wikitext';source='== 夜里 == 蓝苔的光靠近水边时微弱。';id=1;latest=@{id=43}}|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $root provider/reading-source.json) -Encoding utf8
  $cfg=Get-Content -LiteralPath (Join-Path $ProjectRoot config/example.json) -Raw|ConvertFrom-Json -AsHashtable
  $cfg.dataRoot=Join-Path $root data;$cfg.characterRoot=Join-Path $ProjectRoot character;$cfg.uiRoot=Join-Path $ProjectRoot ui;$cfg.pluginRoot=Join-Path $BuildRoot plugins
  $cfg.frontend.startupAnimation=$false;$cfg.profiles=@($cfg.profiles[0],@{id='actor';label='Crafting fixture';protocol='chat-completions';enabled=$true;origin=$fixture;model='fixture-model';supportsJsonObject=$true})
@@ -91,6 +92,9 @@ try{
  Message @((Silent)) '刚才读到的材料是什么内容？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json
  Check (@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'reading.observed'-and$_.data.observation.reference.scope-eq'lead_excerpt'}).Count-ge1) 'later conversation receives an authentic reading experience with explicit excerpt scope'
  Check (@($context.authorized_context|Where-Object {$_.data.tool-eq'reading.open'-and$_.data.context_role-eq'previous_tool_observation'-and$_.data.result.full_article_read-eq$false}).Count-eq1) 'latest autonomous tool receipt reaches later dialogue without relying on prior assistant wording'
+ $sourceRead=$read.Clone();$sourceRead.detail='source';$sourceRead.offset=0;$sourceRead.length=256;Message @((Calls @($sourceRead)),(Silent))
+ Await {(Snapshot reading).last_read.scope-eq'article_source_chunk'} 'cached activity passes source range arguments to the actual tool'
+ Check ((Snapshot reading).last_read.excerpt-eq'== 夜里 == 蓝苔的光靠近水边时微弱。'-and(Snapshot reading).last_read.next_offset-gt0-and!(Snapshot reading).last_read.full_article_read) 'source activity retains exact delivered material and continuation range'
  $unknown=$read.Clone();$unknown.key='Never_observed';Message @((Calls @($unknown)),(Silent));Check (!(Feedback).ok-and(Feedback).error.code-eq'activity_reference_not_observed') 'queued reading rejects a key that was never observed'
  $knownCount=(Snapshot reading).recent.Count;Message @((Calls @(@{kind='wait';seconds=10},$read)),(Silent));Message @((Silent));Check ((Api '/api/activities/status').queued-eq0-and(Snapshot reading).recent.Count-eq$knownCount) 'new input consumes no deferred reading after cancellation'
  $settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 50|ConvertFrom-Json -AsHashtable;$settings.plugins.reading.autonomousReading=$false;$null=Api '/api/settings' @{settings=$settings}

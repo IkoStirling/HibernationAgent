@@ -28,6 +28,9 @@ inline std::string activityConsiderationKey(const SolitudeJson& record){
         const auto piece=result.value("piece",SolitudeJson::object());if(!result.value("written",false)||!result.value("completed",false)||!piece.contains("id")||!piece.contains("revision"))return {};
         const auto key=SolitudeJson::array({"authored_piece",piece.at("id"),piece.at("revision")}).dump();return key.size()<=800?key:std::string{};
     }
+    if(tool=="reading.open"&&result.value("scope",std::string{})=="article_source_chunk"&&result.contains("text")&&result.at("text").is_string()&&!result.at("text").get_ref<const std::string&>().empty()){
+        const auto key=SolitudeJson::array({"read_source",result.value("reading_identity",result.value("source_url",std::string{})),result.value("revision",std::string{}),result.value("offset",std::size_t(0)),result.value("next_offset",std::size_t(0))}).dump();return key.size()<=800?key:std::string{};
+    }
     if(tool=="reading.open"&&result.value("scope",std::string{})=="article_lead_summary"&&result.contains("text")&&result.at("text").is_string()&&!result.at("text").get_ref<const std::string&>().empty()){
         const auto key=SolitudeJson::array({"read_lead",result.value("source_url",std::string{}),result.value("revision",std::string{}),result.value("retrieved_ms",std::int64_t(0))}).dump();return key.size()<=800?key:std::string{};
     }

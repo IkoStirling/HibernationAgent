@@ -38,4 +38,21 @@ inline Json summary(const Json& wire){
     if(wire.contains("description")&&wire.at("description").is_string())result["description"]=bounded(wire.at("description").get<std::string>(),600);
     return result;
 }
+inline Json sourceDocument(const Json& wire){
+    if(!wire.is_object()||!wire.contains("title")||!wire.at("title").is_string()||!title(wire.at("title").get_ref<const std::string&>())||!wire.contains("source")||!wire.at("source").is_string()||wire.at("source").get_ref<const std::string&>().empty())throw std::runtime_error("reading_source_format");
+    const auto model=wire.value("content_model",std::string{});if(model!="wikitext"&&model!="text")throw std::runtime_error("reading_content_model");
+    const auto& text=wire.at("source").get_ref<const std::string&>();if(text.find('\0')!=std::string::npos)throw std::runtime_error("reading_source_format");
+    Json result={{"title",wire.at("title")},{"text",bounded(text,1024*1024)},{"content_model",model},{"source_total_bytes",text.size()},{"source_truncated",text.size()>1024*1024},{"full_article_read",false},{"content_kind","external_reference_source"}};
+    if(wire.contains("id")&&wire.at("id").is_number_integer()&&wire.at("id").get<std::int64_t>()>0)result["page_id"]=wire.at("id");
+    const auto revision=wire.value("latest",Json::object());if(revision.is_object()&&revision.contains("id")&&revision.at("id").is_number_integer()&&revision.at("id").get<std::int64_t>()>0)result["revision"]=revision.at("id").dump();
+    if(wire.contains("license")&&wire.at("license").is_object()){result["license"]=Json::object();for(const auto* field:{"title","url"})if(wire.at("license").contains(field)&&wire.at("license").at(field).is_string())result["license"][field]=bounded(wire.at("license").at(field).get<std::string>(),512);}
+    return result;
+}
+inline Json sourcePage(Json document,std::size_t offset=0,std::size_t length=2400){
+    const auto& text=document.at("text").get_ref<const std::string&>();if(offset>text.size()||length<256||length>6000)throw std::runtime_error("reading_source_range");
+    while(offset>0&&offset<text.size()&&(static_cast<unsigned char>(text[offset])&0xc0)==0x80)--offset;
+    auto end=std::min(text.size(),offset+length);while(end>offset&&end<text.size()&&(static_cast<unsigned char>(text[end])&0xc0)==0x80)--end;
+    const auto page=text.substr(offset,end-offset);const auto total=text.size();document["text"]=page;document["offset"]=offset;document["next_offset"]=end;document["total_bytes"]=total;document["eof"]=end==total;document["text_truncated"]=offset>0||end<total||document.value("source_truncated",false);document["scope"]="article_source_chunk";document["detail"]="source";document["full_article_read"]=false;
+    return document;
+}
 }

@@ -41,6 +41,13 @@ TEST_CASE(provenance_groups_one_game_one_object_one_piece_and_one_conversation_w
     record={{"kind","tool_observation"},{"tool","atelier.write"},{"result",{{"piece",{{"id","draft-1"},{"revision",1}}},{"written",true}}}};const auto piece=personal::terminalAnchor(record,ref);record["tool"]="atelier.append";record["result"]["piece"]["revision"]=20;CHECK(personal::terminalAnchor(record,ref)==piece);
     CHECK(personal::terminalAnchor(Json{{"kind",17}},ref).is_null());
 }
+TEST_CASE(reading_lead_and_source_chunks_share_one_article_experience){
+    const auto ref=source("receipt")[0];const std::string identity="https://en.wikipedia.org/api/rest_v1/page/summary/Light";
+    Json record={{"kind","tool_observation"},{"tool","reading.open"},{"result",{{"scope","article_lead_summary"},{"source_url",identity},{"text","Actual lead"}}}};const auto lead=personal::terminalAnchor(record,ref);
+    record["result"]={{"scope","article_source_chunk"},{"source_url","https://en.wikipedia.org/w/rest.php/v1/page/Light"},{"reading_identity",identity},{"offset",0},{"text","Actual body"}};const auto first=personal::terminalAnchor(record,ref);record["result"]["offset"]=3000;const auto next=personal::terminalAnchor(record,ref);
+    CHECK(!first.is_null());CHECK(first==lead);CHECK(next==lead);
+    Json event={{"kind","outer_event"},{"observation",{{"kind","reading.observed"},{"reference",{{"reading_identity",identity},{"source_url","https://en.wikipedia.org/w/rest.php/v1/page/Light"}}}}}};CHECK(personal::terminalAnchor(event,ref)==lead);
+}
 TEST_CASE(legacy_state_is_not_recalculated_on_restore_and_changes_only_through_new_authored_evidence){
     auto legacy=personal::notice(nullptr,opinion(),source("old"),1000);legacy["version"]=1;legacy.erase("experience_evidence");legacy.erase("basis");legacy["leaning"]=.4;legacy["target_leaning"]=.6;
     const auto restored=personal::projected(legacy,1000);CHECK(restored.at("leaning")==.4);CHECK(restored.at("target_leaning")==.6);CHECK(restored.at("version")==1);

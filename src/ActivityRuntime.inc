@@ -153,7 +153,7 @@
         if(tools.contains("atelier.write")&&creativeSlotAvailable(atelier))commands.push_back("creative_note");
         if(tools.contains("atelier.append")&&!visibleContinuationDrafts(atelier).empty())commands.push_back("creative_continue");
         const auto reading=snapshots.value("reading",Json::object());
-        if(reading.value("autonomous_allowed",false)){if(tools.contains("reading.search"))commands.push_back("reference_search");if(tools.contains("reading.open")&&!reading.value("last_search",Json::object()).value("pages",Json::array()).empty())commands.push_back("reference_read");}
+        if(reading.value("autonomous_allowed",false)){if(tools.contains("reading.search"))commands.push_back("reference_search");if(tools.contains("reading.open")&&(!reading.value("last_search",Json::object()).value("pages",Json::array()).empty()||!reading.value("last_read",Json::object()).value("key",std::string{}).empty()))commands.push_back("reference_read");}
         const auto game=snapshots.value("pocket",Json::object()).value("current",Json::object()).value("game",Json(nullptr));
         if(tools.contains("pocket.start")&&(!game.is_object()||game.value("status",std::string{})!="active"))commands.push_back("puzzle_start");
         if(tools.contains("pocket.press")&&game.is_object()&&game.value("status",std::string{})=="active")commands.push_back("puzzle_press");
@@ -169,8 +169,10 @@
         for(const auto& command:normalized){const auto kind=command.at("kind").get<std::string>();if(std::find(available.begin(),available.end(),kind)==available.end())return toolFailure("activity_dependency_missing");
             if(command.contains("intention")&&!currentIntention(command.at("intention")))return toolFailure("activity_intention_changed_or_unavailable");
             if(kind=="reference_read"){
-                const auto search=snapshots.value("reading",Json::object()).value("last_search",Json::object());const auto pages=search.value("pages",Json::array());
-                if(search.value("language",std::string{})!=command.at("language").get<std::string>()||std::none_of(pages.begin(),pages.end(),[&](const auto& page){return page.at("key")==command.at("key");}))return toolFailure("activity_reference_not_observed");
+                const auto reading=snapshots.value("reading",Json::object());const auto search=reading.value("last_search",Json::object());const auto pages=search.value("pages",Json::array());const auto read=reading.value("last_read",Json::object());
+                const bool searched=search.value("language",std::string{})==command.at("language").get<std::string>()&&std::any_of(pages.begin(),pages.end(),[&](const auto& page){return page.at("key")==command.at("key");});
+                const bool known=read.value("language",std::string{})==command.at("language").get<std::string>()&&read.value("key",std::string{})==command.at("key").get<std::string>();
+                if(!searched&&!known)return toolFailure("activity_reference_not_observed");
             }
             if(kind=="creative_continue"){
                 const auto pieces=visibleContinuationDrafts(snapshots.value("atelier",Json::object()));
@@ -293,7 +295,7 @@
             else if(kind=="puzzle_leave"){activityEffectTool="pocket.leave";args={{"game_id",command.at("game_id")},{"expected_revision",command.at("expected_revision")}};}
             else if(kind=="creative_continue"){activityEffectTool="atelier.append";args={{"id",command.at("piece_id")},{"expected_revision",command.at("expected_revision")},{"content",command.at("content")},{"stage",command.at("stage")}};}
             else if(kind=="reference_search"){activityEffectTool="reading.search";args={{"query",command.at("query")},{"language",command.at("language")}};}
-            else if(kind=="reference_read"){activityEffectTool="reading.open";args={{"key",command.at("key")},{"language",command.at("language")}};}
+            else if(kind=="reference_read"){activityEffectTool="reading.open";args={{"key",command.at("key")},{"language",command.at("language")}};for(const auto* field:{"detail","offset","length"})if(command.contains(field))args[field]=command.at(field);}
             else {activityEffectTool="atelier.write";args={{"id",id("piece")},{"expected_revision",0},{"title",command.at("title")},{"kind",command.at("piece_kind")},{"stage","draft"},{"content",command.at("content")}};}
             activityEffectArguments=args;const auto tool=activityEffectTool;auto* runtime=plugins.get();activityEffect=std::async(std::launch::async,[runtime,tool,args=std::move(args),cancel]{return runtime->invoke(tool,args,[cancel]{return cancel->load();});});return;
         }

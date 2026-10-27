@@ -67,6 +67,7 @@ int main(int argc,char** argv){
     };
     server.Get("/w/rest.php/v1/search/page",[&](const auto& request,auto& response){readingFixture(request,response,"reading-search.json");});
     server.Get(R"(/api/rest_v1/page/summary/.*)",[&](const auto& request,auto& response){readingFixture(request,response,"reading-summary.json");});
+    server.Get(R"(/w/rest.php/v1/page/.*)",[&](const auto& request,auto& response){readingFixture(request,response,"reading-source.json");});
     server.Get("/fixture/reading-health",[&](const auto&,auto& response){response.set_content(Json{{"requests",readingCalls.load()}}.dump(),"application/json");});
     server.Post("/v1/audio/speech",[&](const auto&,auto& response){++audioCalls;response.set_content(tone(),"audio/wav");});
     server.Post("/fixture/slow-audio",[&](const auto&,auto& response){++audioCalls;std::this_thread::sleep_for(std::chrono::seconds(3));response.set_content(tone(),"audio/wav");});

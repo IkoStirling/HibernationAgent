@@ -31,7 +31,7 @@ inline EvidenceJson terminalAnchor(const EvidenceJson& record,const EvidenceJson
         if(tool=="habitat.create"&&object.is_object()&&object.contains("id"))return anchor("desk_object",object.at("id"),1);
         const auto piece=result.value("piece",EvidenceJson::object());
         if((tool=="atelier.write"||tool=="atelier.append")&&result.value("written",false)&&piece.is_object()&&piece.contains("id"))return anchor("authored_piece",piece.at("id"),1);
-        if(tool=="reading.open"&&result.value("scope",std::string{})=="article_lead_summary"&&!result.value("text",std::string{}).empty())return anchor("reading",result.value("source_url",std::string{}),1);
+        if(tool=="reading.open"&&(result.value("scope",std::string{})=="article_lead_summary"||result.value("scope",std::string{})=="article_source_chunk")&&!result.value("text",std::string{}).empty())return anchor("reading",result.value("reading_identity",result.value("source_url",std::string{})),1);
         if((tool=="workspace.write"||tool=="workspace.edit")&&result.value("written",false))return anchor("draft",result.value("path",std::string{}),1);
         return nullptr; // Queries/internal state do not manufacture experiences.
     }
@@ -44,7 +44,7 @@ inline EvidenceJson terminalAnchor(const EvidenceJson& record,const EvidenceJson
         if(name.starts_with("habitat.")&&object.is_object()&&object.contains("id"))return anchor("desk_object",object.at("id"),1);
         const auto piece=event.value("piece",EvidenceJson::object());
         if(name.starts_with("atelier.")&&piece.is_object()&&piece.contains("id"))return anchor("authored_piece",piece.at("id"),1);
-        if(name=="reading.observed")return anchor("reading",event.value("reference",EvidenceJson::object()).value("source_url",std::string{}),1);
+        if(name=="reading.observed"){const auto reference=event.value("reference",EvidenceJson::object());return anchor("reading",reference.value("reading_identity",reference.value("source_url",std::string{})),1);}
         // Anonymous motion/pose and service messages do not consolidate taste.
         return nullptr;
     }
