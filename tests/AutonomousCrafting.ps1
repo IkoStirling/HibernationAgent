@@ -31,6 +31,7 @@ try{
  Await {Test-Path -LiteralPath $ready} 'backend';$script:origin='http://127.0.0.1:'+((Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).port);$null=Api '/api/model' @{id='actor'}
  Await {(Snapshot widget).animation.ready} 'body ready'
  $initialBody=Body;Check ($initialBody.available_commands-contains'creative_note'-and$initialBody.available_commands-notcontains'creative_continue'-and$initialBody.available_commands-notcontains'puzzle_press'-and$initialBody.available_commands-notcontains'reference_read') 'empty world offers new work and search without inventing old drafts games or article keys'
+ Check ($initialBody.available_commands-notcontains'creative_read'-and$initialBody.available_commands-notcontains'interact'-and$initialBody.available_commands-notcontains'arrange') 'empty world does not offer a nonexistent piece or explicit physical object target'
  $drop=@{kind='create_drop';seconds=0;template='paper_star';name='慢半拍';description='折痕不太整齐的纸星';tint='amber'}
  $note=@{kind='creative_note';seconds=0;purpose='想给那颗纸星留一点小故事，不急着写完';title='纸星旁边';piece_kind='story';content='纸星站在角落，等一阵没有约定的风。'}
  Message @((Calls @($drop,$note,@{kind='wait';seconds=1})),(Silent))
@@ -42,6 +43,11 @@ try{
  $observation=Api '/api/archive' @{id=$written.source_id};$pieceId=$observation.records[0].data.result.piece.id
  Check ($written.purpose-eq$note.purpose-and$observation.records[0].data.result.piece.stage-eq'draft') 'planned purpose survives execution while actual draft state remains separate'
  $piece=Plugin atelier.read @{id=$pieceId};Check ($piece.ok-and$piece.result.piece.content-eq$note.content) 'cached creative command writes actual readable content'
+ $readOwn=@{kind='creative_read';seconds=0;piece_id=$pieceId;purpose='回头读自己留下的小故事'};Message @((Calls @($readOwn)),(Silent))
+ Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'creative_read'-and$_.status-eq'completed'}).Count-eq1} 'cached own reading executes through the bounded read worker'
+ $readReceipt=@((Api '/api/activities/status').recent|Where-Object kind -eq creative_read)[0];$readArchive=Api '/api/archive' @{id=$readReceipt.source_id}
+ Check ($readArchive.records[0].data.tool-eq'atelier.read'-and$readArchive.records[0].data.result.piece.content-eq$note.content-and$readArchive.records[0].data.result.piece.revision-eq1-and(Snapshot atelier).piece_count-eq1) 'rereading returns actual unchanged work rather than treating a piece as a physical object'
+ $badRead=$readOwn.Clone();$badRead.piece_id='not-a-visible-piece';Message @((Calls @($badRead)),(Silent));Check (!(Feedback).ok-and(Feedback).error.code-eq'activity_piece_unavailable') 'unknown own reading targets reject before execution'
  $continue=@{kind='creative_continue';seconds=0;piece_id=$pieceId;expected_revision=1;content='风来的时候，纸星装作没有等过。';stage='draft'}
  Message @((Calls @($continue)),(Silent));Check ((Feedback).ok) 'an observed unfinished piece can enter a continuation batch'
  Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'creative_continue'-and$_.status-eq'completed'}).Count-eq1} 'cached continuation commits through the effect worker'

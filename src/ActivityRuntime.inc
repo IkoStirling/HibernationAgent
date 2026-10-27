@@ -146,12 +146,14 @@
         Json commands=Json::array({"wait"});const auto widget=snapshots.value("widget",Json::object());
         if(tools.contains("widget.move")&&(!background||widget.value("roaming",false)))commands.push_back("move_to");
         if(tools.contains("widget.animate"))commands.push_back("pose");
-        if(tools.contains("habitat.act")){commands.push_back("eat_nearest");commands.push_back("look_nearest");commands.push_back("interact");}
-        if(tools.contains("habitat.arrange"))commands.push_back("arrange");
+        const bool hasObjects=!snapshots.value("habitat",Json::object()).value("objects",Json::array()).empty();
+        if(tools.contains("habitat.act")){commands.push_back("eat_nearest");commands.push_back("look_nearest");if(hasObjects)commands.push_back("interact");}
+        if(tools.contains("habitat.arrange")&&hasObjects)commands.push_back("arrange");
         if(tools.contains("habitat.create"))commands.push_back("create_drop");
         const auto atelier=snapshots.value("atelier",Json::object());
         if(tools.contains("atelier.write")&&creativeSlotAvailable(atelier))commands.push_back("creative_note");
         if(tools.contains("atelier.append")&&!visibleContinuationDrafts(atelier).empty())commands.push_back("creative_continue");
+        if(tools.contains("atelier.read")&&!atelier.value("pieces",Json::array()).empty())commands.push_back("creative_read");
         const auto reading=snapshots.value("reading",Json::object());
         if(reading.value("autonomous_allowed",false)){if(tools.contains("reading.search"))commands.push_back("reference_search");if(tools.contains("reading.open")&&(!reading.value("last_search",Json::object()).value("pages",Json::array()).empty()||!reading.value("last_read",Json::object()).value("key",std::string{}).empty()))commands.push_back("reference_read");}
         const auto game=snapshots.value("pocket",Json::object()).value("current",Json::object()).value("game",Json(nullptr));
@@ -179,6 +181,10 @@
                 const auto found=std::find_if(pieces.begin(),pieces.end(),[&](const auto& item){return item.at("id")==command.at("piece_id");});
                 if(found==pieces.end()||found->at("stage")!="draft")return toolFailure("activity_piece_unavailable");
                 if(found->at("revision")!=command.at("expected_revision"))return toolFailure("activity_piece_revision");
+            }
+            if(kind=="creative_read"){
+                const auto pieces=snapshots.value("atelier",Json::object()).value("pieces",Json::array());
+                if(std::none_of(pieces.begin(),pieces.end(),[&](const Json& piece){return piece.value("id",std::string{})==command.at("piece_id").get<std::string>();}))return toolFailure("activity_piece_unavailable");
             }
             if(kind=="puzzle_press"||kind=="puzzle_leave"){
                 const auto game=snapshots.value("pocket",Json::object()).value("current",Json::object()).value("game",Json(nullptr));
@@ -287,13 +293,14 @@
         if(command.contains("intention")&&!currentIntention(command.at("intention"))){plan["active"]=command;finishActivity(plan,"not_started_intention_changed");saveActivities(plan);return;}
         command["from_state"]=widget.value("state",std::string("idle"));command["started_ms"]=now;command["deadline_ms"]=now+static_cast<std::int64_t>(command.at("seconds").get<double>()*1000)+125000;plan["active"]=command;saveActivities(plan);
         const auto kind=command.at("kind").get<std::string>();Json receipt;
-        if(kind=="create_drop"||kind=="creative_note"||kind=="creative_continue"||kind=="reference_search"||kind=="reference_read"||kind=="puzzle_start"||kind=="puzzle_press"||kind=="puzzle_leave"){
+        if(kind=="create_drop"||kind=="creative_note"||kind=="creative_continue"||kind=="creative_read"||kind=="reference_search"||kind=="reference_read"||kind=="puzzle_start"||kind=="puzzle_press"||kind=="puzzle_leave"){
             activityEffectId=command.at("id");activityEffectCancelled=std::make_shared<std::atomic<bool>>(false);const auto cancel=activityEffectCancelled;
             Json args;if(kind=="create_drop"){activityEffectTool="habitat.create";args={{"kind",command.at("template")},{"definition",{{"name",command.at("name")},{"description",command.at("description")},{"tint",command.at("tint")}}}};}
             else if(kind=="puzzle_start"){activityEffectTool="pocket.start";args=Json::object();}
             else if(kind=="puzzle_press"){activityEffectTool="pocket.press";args={{"game_id",command.at("game_id")},{"expected_revision",command.at("expected_revision")},{"cell",command.at("cell")}};}
             else if(kind=="puzzle_leave"){activityEffectTool="pocket.leave";args={{"game_id",command.at("game_id")},{"expected_revision",command.at("expected_revision")}};}
             else if(kind=="creative_continue"){activityEffectTool="atelier.append";args={{"id",command.at("piece_id")},{"expected_revision",command.at("expected_revision")},{"content",command.at("content")},{"stage",command.at("stage")}};}
+            else if(kind=="creative_read"){activityEffectTool="atelier.read";args={{"id",command.at("piece_id")}};}
             else if(kind=="reference_search"){activityEffectTool="reading.search";args={{"query",command.at("query")},{"language",command.at("language")}};}
             else if(kind=="reference_read"){activityEffectTool="reading.open";args={{"key",command.at("key")},{"language",command.at("language")}};for(const auto* field:{"detail","offset","length"})if(command.contains(field))args[field]=command.at(field);}
             else {activityEffectTool="atelier.write";args={{"id",id("piece")},{"expected_revision",0},{"title",command.at("title")},{"kind",command.at("piece_kind")},{"stage","draft"},{"content",command.at("content")}};}

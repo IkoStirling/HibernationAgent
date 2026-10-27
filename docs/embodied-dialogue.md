@@ -54,3 +54,5 @@
 自主活动规划与短反应准备互斥，同一主角色不同时启动这两种语言批次。手动补充缓存可以保持待处理，待正在进行的规划结束后再准备；对话输入仍优先取消后台候选。该约束不暂停视频解码、窗口动画或已就绪的朗读。
 
 阅读角0.3允许reference_read附detail=source与offset/length，按实际next_offset接续正文源文本；默认仍读导言。可选key来自last_search或last_read，须同语言。模型得到真实文字块与范围，不把导言说成正文名单，不把源文本读取说成浏览器翻页、看图或听声音；允许基于实际文字的联想和创作。
+
+自主队列新增creative_read：选择atelier.pieces中实际piece_id，重读当时执行到的作品全文，seconds固定0，每批最多一次。它不会续写、改版本或把draft标成finished，真实读取回执供后续规划理解；作品不是habitat.objects里的桌面物件，不将piece_id塞入interact。没有真实物件时不提供按object_id操作的interact/arrange；eat_nearest/look_nearest仍在执行时选目标，因此允许先创造小物再观察的队列。读取同一作品与其写作版本归为同一经历，重读本身只提供弱观察，不靠多次重读加强偏好。

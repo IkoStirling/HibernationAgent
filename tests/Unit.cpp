@@ -255,8 +255,14 @@ TEST_CASE(native_proposals_use_local_names_schemas_and_retry_stable_execution_sl
     CHECK(!bridge.candidate({{"final","ha_turn_reply",R"({"text":"说话"})"},{"op","ha_workspace_DOT_read_US_file",R"({"path":"a"})"}},1).ok);
 }
 TEST_CASE(cached_creativity_is_bounded_and_cannot_become_arbitrary_program_execution){
+    const Json reread={{"kind","creative_read"},{"piece_id","paper-star"}};
+    CHECK(validateActivities(Json{{"version",1},{"commands",Json::array({reread})}}.dump()).ok);
+    CHECK(!validateActivities(Json{{"version",1},{"commands",Json::array({reread,reread})}}.dump()).ok);
+    auto invalidRead=reread;invalidRead["path"]="../../persona.json";CHECK(!validateActivities(Json{{"version",1},{"commands",Json::array({invalidRead})}}.dump()).ok);
+    CHECK(!ayt::serializer::validateJsonDocument(Json{{"version",1},{"commands",Json::array({reread})}}.dump(),activitySchemaFor(Json::array({"creative_note"}))));
     const Json note={{"kind","creative_note"},{"seconds",0},{"title","纸星旁边"},{"piece_kind","story"},{"content","纸星等着一阵风。"}};
     const Json continuation={{"kind","creative_continue"},{"seconds",0},{"piece_id","paper-star"},{"expected_revision",1},{"content","风也没有约定。"},{"stage","draft"}};
+    CHECK(validateActivities(Json{{"version",1},{"commands",Json::array({reread,continuation})}}.dump()).ok);
     CHECK(validateActivities(Json{{"version",1},{"commands",Json::array({continuation})}}.dump()).ok);
     CHECK(!validateActivities(Json{{"version",1},{"commands",Json::array({note,continuation})}}.dump()).ok);
     const Json drop={{"kind","create_drop"},{"seconds",0},{"template","paper_star"},{"name","慢半拍"},{"description","折痕不整齐"},{"tint","amber"}};

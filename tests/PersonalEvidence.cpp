@@ -48,6 +48,13 @@ TEST_CASE(reading_lead_and_source_chunks_share_one_article_experience){
     CHECK(!first.is_null());CHECK(first==lead);CHECK(next==lead);
     Json event={{"kind","outer_event"},{"observation",{{"kind","reading.observed"},{"reference",{{"reading_identity",identity},{"source_url","https://en.wikipedia.org/w/rest.php/v1/page/Light"}}}}}};CHECK(personal::terminalAnchor(event,ref)==lead);
 }
+TEST_CASE(rereading_own_work_does_not_manufacture_another_independent_experience){
+    const auto ref=source("read")[0];Json record={{"kind","tool_observation"},{"tool","atelier.read"},{"result",{{"piece",{{"id","same-work"},{"revision",3},{"content","Actual words"}}}}}};
+    const auto read=personal::terminalAnchor(record,ref);CHECK(!read.is_null());CHECK(read.at("weight")==.5);
+    Json anchors=Json::array();for(int i=0;i<20;++i)personal::mergeAnchors(anchors,Json::array({read}),"like");CHECK(anchors.size()==1);
+    record["tool"]="atelier.append";record["result"]["written"]=true;record["result"]["piece"]["revision"]=4;const auto write=personal::terminalAnchor(record,ref);
+    CHECK(read.at("key")==write.at("key"));personal::mergeAnchors(anchors,Json::array({write}),"like");CHECK(anchors.size()==1);CHECK(anchors[0].at("weight")==1);
+}
 TEST_CASE(legacy_state_is_not_recalculated_on_restore_and_changes_only_through_new_authored_evidence){
     auto legacy=personal::notice(nullptr,opinion(),source("old"),1000);legacy["version"]=1;legacy.erase("experience_evidence");legacy.erase("basis");legacy["leaning"]=.4;legacy["target_leaning"]=.6;
     const auto restored=personal::projected(legacy,1000);CHECK(restored.at("leaning")==.4);CHECK(restored.at("target_leaning")==.6);CHECK(restored.at("version")==1);

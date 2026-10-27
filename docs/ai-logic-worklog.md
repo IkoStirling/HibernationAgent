@@ -675,3 +675,10 @@
 - 依赖审计覆盖61个宿主/根DLL/插件DLL，无缺失导入；7组同名DLL没有不同字节版本。首个严格“零Debug依赖”检查失败，原因是4个既有FFmpeg DLL依赖开发版CRT；逐一SHA证明它们与当前已安装包及既有SDK完全相同，没有本轮引入的Debug库替换，也没有重新分发CRT。宿主和插件本身没有新增Debug导入，当前系统依赖均存在。本地运行依据通过，不能称为跨机器便携发行包；README原有本地FFmpeg限制继续有效。详见personality-native-dependency-assessment.json。
 - 12个插件清单均与当前源码字节一致，library文件齐备。发现早先仅筛选tools/runtime漏了tools/bin和两个PowerShell入口，最终筛选应覆盖整个候选tools目录；不要凭旧包恰好已有入口就漏交付。旧personality-release-selection.json还在5466038/旧宿主SHA点，必须按v7候选重建并校验再部署。正式包仍未更改。
 - 已列14项完成审计（personality-completion-audit.json），5项仍明确pending：真实10小时窗口、备份部署、安装位置冒烟与字节保留、最终计量/退出/锁/凭证及ai自动化停止、最终交付。不能把前面功能/测试通过替代这些。固定07:52:47转最后收尾、08:37:47总结束不延长；E盘约3.62GB足够本次已估约0.7GB备份，仍需复制前重查，不反复复制整包填时间。
+
+### 07:42 由真实失败补齐自主重读
+
+- 冻结后观察到真实activity_target_unavailable；核对最新提案发现，角色想看《空处旁边》末句，却将piece-1793140960257-39f7c799236805e-1a交给interact。这不是桌面物件消失，而是既有自主队列只能新建/续写、不能读作品，模型用错了领域；整批含阅读/移动的计划被拒，原提案保留。
+- 补最小只读creative_read，以atelier.pieces实际piece_id排队读当前全文，最多每批一次，既有有限效果线程执行，不改稿、不完成作品、不授予任意文件路径。空物件场景不再提供interact/arrange；nearest动作仍可与先创造小物组合。不是把错误interact自动改成另一操作，也不重跑旧拒绝。来源仍由真实atelier.read回执保存。
+- atelier.read与写作/续写按同一作品身份合并；纯重读弱权重0.5，同一作品已有写作权重1不因重复读而叠加。旧存档启动不重算，未把读自身状态变成新经历。
+- 新单元覆盖读命令的动态可用性、任意路径拒绝、每批上限、读后可续写及同作经历合并；真实桌面过程验证读到原文和版本1、作品数与文件版本不变、未知作品拒绝。Unit/WorldHistory/IntentionActivities/AutonomousCarry/AutonomousCrafting/ProcessIntegration 6/6通过139.42秒（personality-own-reading-tests.log）。宿主变为7B476A26B88B3752AB5A3D0565597EE9B973B3C3F74EC75724FC5DC0B4C85146，正式包未改；原BA指纹的预检/筛选需要更新，不能沿用为新候选证明。
