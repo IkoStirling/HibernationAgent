@@ -877,7 +877,7 @@ TEST_CASE(subjective_appraisal_has_its_own_clock_and_does_not_move_the_body_or_j
 }
 TEST_CASE(appraisal_pause_restart_and_legacy_migration_preserve_existing_values){
     RoleState state;state.restore(Json{{"version",2},{"mood",.43},{"target_mood",.42},{"target_valence",-.6},{"evidence","old-experience"},{"stimulus_age_ms",120000}},1000);
-    auto before=state.snapshot();CHECK(before.at("version")==3&&before.at("mood")==.43&&before.at("target_valence")==-.6);CHECK(before.at("appraisal_source_id")=="old-experience"&&before.at("appraisal_age_ms")==120000);
+    auto before=state.snapshot();CHECK(before.at("version")==3&&before.at("mood")==.43&&before.at("target_valence")==-.6);CHECK(before.at("appraisal_source_id")==""&&before.at("appraisal_age_ms")==120000);
     state.tick(86401000,false);const auto paused=state.snapshot();CHECK(paused.at("appraisal_age_ms")==before.at("appraisal_age_ms"));CHECK(paused.at("mood")==before.at("mood"));
     RoleState restored;restored.restore(paused,172801000);const auto after=restored.snapshot();for(const auto* key:{"mood","energy","attention","target_valence","appraisal_valence","appraisal_source_id","appraisal_age_ms"})CHECK(after.at(key)==paused.at(key));
 }
@@ -898,6 +898,19 @@ TEST_CASE(appraisals_need_original_encounters_or_world_observations_rather_than_
     CHECK(appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","atelier.read"}}));CHECK(appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","pocket.observe"}}));
     CHECK(!appraisalExperienceRecord(Json{{"kind","tool_intent"},{"tool","habitat.act"}}));CHECK(!appraisalExperienceRecord(Json{{"kind","personal_attempt"}}));CHECK(!appraisalExperienceRecord(Json{{"kind","inference"}}));
     CHECK(!appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","body.observe"}}));CHECK(!appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","state.observe"}}));CHECK(!appraisalExperienceRecord(Json{{"kind","tool_observation"},{"tool","activity.status"}}));
+}
+TEST_CASE(legacy_private_focus_stays_preserved_without_becoming_unverified_model_context){
+    ayt::test::ScratchDirectory scratch("legacy-focus-projection");Config cfg;cfg.dataRoot=scratch.path();cfg.characterRoot=std::filesystem::path(HA_PROJECT_ROOT)/"character";cfg.profiles={{"mock","Mock",true,{}}};
+    {Application app(cfg);CHECK(app.initialize());}
+    {ayt::storage::RecordStore store;CHECK(store.open(cfg.dataRoot/"archive/records.sqlite",{openVaultCodec(cfg.dataRoot),true}));const auto rows=store.query({{"ha.life"}},{"ha.life","current"});CHECK(static_cast<bool>(rows));const auto& row=rows.records.at(0);auto value=Json::parse(row.payload);value["version"]=2;value["focus"]="UNVERIFIED_PRIVATE_FOCUS";value["evidence"]="physical-event-without-a-memory";value["target_valence"]=.3;value["mood"]=.46;for(const auto* key:{"appraisal_source_id","appraisal_valence","appraisal_age_ms"})value.erase(key);CHECK(static_cast<bool>(store.commit({{"ha.life","current",row.revision,1,value.dump(),"legacy-fixture"}},"legacy-fixture",1)));}
+    {Application app(cfg);CHECK(app.initialize());CHECK_INT_EQ(app.request({"POST","/api/message",R"({"request_id":"legacy-focus-turn","text":"你好"})"}).status,202);CHECK(ayt::test::waitUntil([&]{app.tick();return !Json::parse(app.request({"GET","/api/chat",""}).body).at("busy").get<bool>();}));const auto state=Json::parse(app.request({"GET","/api/state",""}).body);CHECK(state.at("continuous_state").at("focus")=="UNVERIFIED_PRIVATE_FOCUS");CHECK(state.at("continuous_state").at("mood").get<double>()>.45&&state.at("continuous_state").at("mood").get<double>()<.47);const auto trace=Json::parse(app.request({"POST","/api/trace",Json{{"id",state.at("state").at("lastTraceId")}}.dump()}).body);CHECK(!trace.at("continuous_state").contains("focus"));CHECK(!trace.at("continuous_state").contains("appraisal_source_id"));CHECK(trace.at("continuous_state").at("target_valence")==.3);}
+}
+TEST_CASE(shared_channel_state_carries_body_values_without_inheriting_desktop_private_focus){
+    ayt::test::ScratchDirectory scratch("channel-state-projection");Config cfg;cfg.dataRoot=scratch.path();cfg.characterRoot=std::filesystem::path(HA_PROJECT_ROOT)/"character";cfg.profiles={{"mock","Mock",true,{}}};
+    auto policy=std::make_shared<ChannelPolicy>();policy->selectedProfile="mock";policy->identity={{"channel","qq"},{"sender_user_id","20001"}};policy->stage={{"id",Json::parse(readFile(cfg.characterRoot/"stages.json")).at("initial")},{"changed_at",0}};
+    policy->roleState={{"energy",.42},{"activity","resting"},{"focus","DESKTOP_ONLY_FOCUS"},{"appraisal_source_id","desktop-only-source"},{"appraisal_valence",.3},{"appraisal_age_ms",1000}};cfg.channel=policy;
+    Application app(cfg);CHECK(app.initialize());CHECK_INT_EQ(app.request({"POST","/api/message",R"({"request_id":"channel-state-turn","text":"你好"})"}).status,202);CHECK(ayt::test::waitUntil([&]{app.tick();return !Json::parse(app.request({"GET","/api/chat",""}).body).at("busy").get<bool>();}));
+    const auto state=Json::parse(app.request({"GET","/api/state",""}).body);const auto trace=Json::parse(app.request({"POST","/api/trace",Json{{"id",state.at("state").at("lastTraceId")}}.dump()}).body);const auto observed=trace.at("continuous_state");CHECK(observed.at("energy")==.42&&observed.at("activity")=="resting");CHECK(!observed.contains("focus")&&!observed.contains("appraisal_source_id"));CHECK(policy->roleState.at("focus")=="DESKTOP_ONLY_FOCUS");
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

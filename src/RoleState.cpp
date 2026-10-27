@@ -18,7 +18,7 @@ void RoleState::restore(const nlohmann::json& j,std::int64_t now){std::lock_guar
     weatherComfort_=bounded(j,"weather_comfort",1.0);
     willingness_=bounded(j,"willingness",0.55);socialLoad_=bounded(j,"social_load",0);targetSocialLoad_=bounded(j,"target_social_load",socialLoad_);weatherMood_=bounded(j,"weather_mood",targetMood_);
     targetValence_=j.value("target_valence",0.0);if(!std::isfinite(targetValence_)||std::abs(targetValence_)>1)throw std::runtime_error("role_state_value");
-    appraisalValence_=j.value("appraisal_valence",targetValence_);appraisalEvidence_=j.value("appraisal_source_id",evidence_);
+    appraisalValence_=j.value("appraisal_valence",targetValence_);appraisalEvidence_=j.value("appraisal_source_id",std::string{});
     if(!std::isfinite(appraisalValence_)||std::abs(appraisalValence_)>1||appraisalEvidence_.size()>256)throw std::runtime_error("role_state_appraisal");
     mode_=j.value("conversation_mode",std::string("balanced"));if(mode_!="balanced"&&mode_!="brief"&&mode_!="quiet")throw std::runtime_error("role_state_mode");
     focus_=j.value("focus",std::string{});if(focus_.size()>1024)throw std::runtime_error("role_state_focus");

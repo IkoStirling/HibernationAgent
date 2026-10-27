@@ -183,7 +183,8 @@
         auto environment=snapshots;environment.erase("widget");
         for(auto it=environment.begin();it!=environment.end();++it)it.value()=pluginCharacterContext(it.key(),it.value());
         Json time={{"now_ms",now}};time.update(presentationTimeContext(now));
-        activityGenerator.start(actor,reviewer,persona,{{"_narrative_sources",activityNarrativeSources(narrative)},{"time_context",time},{"state",life.snapshot()},{"self",self},{"evidence",evidence},{"previous_carry_forward_results",activityCarryFeedback()},{"previous_planning_error",activityError},{"body",bodyState()},{"surfaces",environment},{"available_commands",activityCommands(snapshots,true)},{"queue_slots",6-plan.at("entries").size()-(plan.at("active").is_null()?0:1)},{"memories",summaries},{"recent_activities",activityForModel(plan).at("recent")}},activityKey(),[this]{return consumeModelBudget(1,true);},[this](const Profile& p,int status){providerResult(p,status);});
+        const auto state=modelLifeState(life.snapshot(),&narrative);
+        activityGenerator.start(actor,reviewer,persona,{{"_narrative_sources",activityNarrativeSources(narrative)},{"time_context",time},{"state",state},{"self",self},{"evidence",evidence},{"previous_carry_forward_results",activityCarryFeedback()},{"previous_planning_error",activityError},{"body",bodyState()},{"surfaces",environment},{"available_commands",activityCommands(snapshots,true)},{"queue_slots",6-plan.at("entries").size()-(plan.at("active").is_null()?0:1)},{"memories",summaries},{"recent_activities",activityForModel(plan).at("recent")}},activityKey(),[this]{return consumeModelBudget(1,true);},[this](const Profile& p,int status){providerResult(p,status);});
     }
     void collectActivityEffect(std::int64_t now){
         // Finite local effects use one separate worker, keeping disk I/O out of
