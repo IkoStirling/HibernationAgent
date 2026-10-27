@@ -101,10 +101,10 @@
     Json enqueueActivities(const Json& commands,const std::string& source){
         std::lock_guard lock(activityMutex);
         if(!autonomousMode())return toolFailure("autonomous_mode_disabled");if(get("ha.control","current").value.at("paused")==true)return toolFailure("runtime_paused");
-        auto checked=validateActivities(Json{{"version",1},{"commands",commands}}.dump());if(!checked.ok)return toolFailure(checked.code.c_str());
-        auto plan=activityQueue();if(plan.at("entries").size()+commands.size()+(plan.at("active").is_null()?0:1)>6)return toolFailure("activity_queue_full");
+        auto checked=validateActivities(Json{{"version",1},{"commands",commands}}.dump());if(!checked.ok)return toolFailure(checked.code.c_str());const auto& normalized=checked.value.at("commands");
+        auto plan=activityQueue();if(plan.at("entries").size()+normalized.size()+(plan.at("active").is_null()?0:1)>6)return toolFailure("activity_queue_full");
         const auto snapshots=plugins->liveSnapshots();const auto available=activityCommands(snapshots,source.starts_with("activity-generation")||source.starts_with("peak-reuse:"));const auto widget=snapshots.value("widget",Json::object());
-        for(const auto& command:commands){const auto kind=command.at("kind").get<std::string>();if(std::find(available.begin(),available.end(),kind)==available.end())return toolFailure("activity_dependency_missing");
+        for(const auto& command:normalized){const auto kind=command.at("kind").get<std::string>();if(std::find(available.begin(),available.end(),kind)==available.end())return toolFailure("activity_dependency_missing");
             if(command.contains("intention")&&!currentIntention(command.at("intention")))return toolFailure("activity_intention_changed_or_unavailable");
             if(kind=="reference_read"){
                 const auto search=snapshots.value("reading",Json::object()).value("last_search",Json::object());const auto pages=search.value("pages",Json::array());
@@ -124,8 +124,8 @@
             if(kind=="pose"){const auto poses=widget.value("animation_catalog",Json::array());if(std::none_of(poses.begin(),poses.end(),[&](const auto& pose){return pose.at("state")==command.at("state");}))return toolFailure("activity_pose_unavailable");if(command.at("state")=="breathing"&&life.snapshot().value("energy",1.0)>.4)return toolFailure("activity_not_fatigued");}
             if(kind=="interact"||kind=="arrange"){const auto objects=snapshots.value("habitat",Json::object()).value("objects",Json::array());if(std::none_of(objects.begin(),objects.end(),[&](const auto& item){return item.at("id")==command.at("object_id");}))return toolFailure("activity_target_unavailable");}
         }
-        for(auto item:commands){item["id"]=id("activity");item["expires_ms"]=serviceNowMs()+600000;item["source"]=source;plan["entries"].push_back(std::move(item));}saveActivities(plan);
-        return toolSuccess({{"accepted",commands.size()},{"completed",false},{"queued",plan.at("entries").size()}});
+        for(auto item:normalized){item["id"]=id("activity");item["expires_ms"]=serviceNowMs()+600000;item["source"]=source;plan["entries"].push_back(std::move(item));}saveActivities(plan);
+        return toolSuccess({{"accepted",normalized.size()},{"completed",false},{"queued",plan.at("entries").size()}});
     }
     std::string activityKey()const{const auto& actor=profile(get("ha.settings","model").value.at("id"));return Json::array({actor.id,actor.model.model,persona.at("version"),cfg.reviewEnabled,cfg.reviewProfileId,cfg.plugins,pluginAttentionEpoch,activityGenerationEpoch}).dump();}
     void activityEvent(const Json& event){

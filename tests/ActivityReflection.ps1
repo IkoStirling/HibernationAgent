@@ -45,7 +45,8 @@ try{
  $approval=@{decision='approve';reason='ok';guidance=''};$rewrite=@{decision='rewrite';reason='other';guidance='只修改对白，保留已接受的活动。'}
  @{nonce=[Guid]::NewGuid().ToString('N');responses=@($approval,$rewrite,$approval,$approval|ForEach-Object {@{response=$_}})}|ConvertTo-Json -Depth 15|Set-Content -LiteralPath (Join-Path $root provider/review-plan.json) -Encoding utf8
  $repair=@{commands=@(@{kind='creative_note';seconds=0;purpose='只留一个开头';piece_kind='story';title='改写不重排';content='钥匙躲在壶嘴上，只露出一个齿尖。'})}
- Message @((Call 'before-repair' 'activity.enqueue' $repair),(Silent),(Call 'after-repair' 'activity.enqueue' $repair),(Silent));Await {$a=Api '/api/activities/status';$a.queued-eq0-and$null-eq$a.active} 'repaired effect settles'
+ $withoutDuration=$repair|ConvertTo-Json -Depth 20|ConvertFrom-Json -AsHashtable;$withoutDuration.commands[0].Remove('seconds')|Out-Null
+ Message @((Call 'before-repair' 'activity.enqueue' $withoutDuration),(Silent),(Call 'after-repair' 'activity.enqueue' $repair),(Silent));Await {$a=Api '/api/activities/status';$a.queued-eq0-and$null-eq$a.active} 'repaired effect settles'
  $done=@((Api '/api/activities/status').recent|Where-Object title -eq '改写不重排');$job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$trace=Api '/api/trace' @{id=($job.result|ConvertFrom-Json).trace_id}
  Check ($done.Count-eq1-and$done[0].status-eq'completed'-and$trace.tool_results.Count-eq2-and$trace.tool_results[1].reused_after_review) 'reviewed rephrasing cannot queue or write the same draft twice'
  # Finish that genuine queued opportunity first, then distinguish administrator

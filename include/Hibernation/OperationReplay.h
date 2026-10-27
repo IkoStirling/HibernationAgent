@@ -1,6 +1,7 @@
 #pragma once
 #include <Hibernation/ObservationContext.h>
 #include <Hibernation/OperationArguments.h>
+#include <Hibernation/ActivityPlan.h>
 #include <map>
 #include <optional>
 #include <set>
@@ -18,7 +19,11 @@ class OperationReplay {
     std::map<std::string,std::size_t> cursor_;
     std::set<std::string> completedIds_;
     Json facts_=Json::array();
-    static std::string signature(const std::string& tool,const Json& args){auto canonical=args;return tool+":"+(canonicalOperationNumbers(canonical)?canonical:args).dump();}
+    static std::string signature(const std::string& tool,const Json& args){
+        auto canonical=args;if(tool=="activity.enqueue"&&canonical.contains("commands")){
+            const auto normalized=validateActivities(Json{{"version",1},{"commands",canonical.at("commands")}}.dump());if(normalized.ok)canonical["commands"]=normalized.value.at("commands");
+        }return tool+":"+(canonicalOperationNumbers(canonical)?canonical:args).dump();
+    }
 public:
     void afterReviewRejection(){guarded_=executed_;cursor_.clear();}
     std::optional<Json> reuse(const std::string& tool,const Json& args){

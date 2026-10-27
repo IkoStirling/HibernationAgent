@@ -7,12 +7,13 @@
 namespace hibernation {
 std::string activitySchema(){
     Json variants=Json::array();for(const auto* kind:{"move_to","pose","eat_nearest","look_nearest","rest","wait","interact","arrange","create_drop","creative_note","creative_continue","reference_search","reference_read","puzzle_start","puzzle_press","puzzle_leave"}){
-        Json properties={{"kind",{{"type","string"},{"enum",Json::array({kind})}}},{"seconds",{{"type","number"},{"minimum",0},{"maximum",600}}},{"purpose",{{"type","string"},{"minLength",1},{"maxLength",160},{"description","可选的一句活动目的，是打算而非已完成经历，不填思维过程；没有特别目的可以省略。"}}}};Json required=Json::array({"kind","seconds"});
+        Json properties={{"kind",{{"type","string"},{"enum",Json::array({kind})}}},{"seconds",{{"type","number"},{"minimum",0},{"maximum",600}}},{"purpose",{{"type","string"},{"minLength",1},{"maxLength",160},{"description","可选的一句活动目的，是打算而非已完成经历，不填思维过程；没有特别目的可以省略。"}}}};Json required=Json::array({"kind"});
         const std::string_view action=kind;
+        if(action=="rest"||action=="pose"||action=="wait")required.push_back("seconds");
         properties["intention"]={{"type","object"},{"additionalProperties",false},{"required",Json::array({"id","revision"})},{"description","可选，接续self中一个仍活跃的intention；绑定当时的语义版本。动作结果不会自动完成这个更大的打算。"},{"properties",{{"id",{{"type","string"},{"minLength",1},{"maxLength",96}}},{"revision",{{"type","integer"},{"minimum",1}}}}}};
         if(action=="rest")properties["seconds"]={{"type","number"},{"minimum",15},{"maximum",600}};
         else if(action=="pose"||action=="wait")properties["seconds"]={{"type","number"},{"minimum",1},{"maximum",120}};
-        else properties["seconds"]={{"type","number"},{"enum",Json::array({0})},{"description","此动作由真实抵达/完成回执决定何时结束，固定填0，不用填写预估耗时或物件寿命。"}};
+        else properties["seconds"]={{"anyOf",Json::array({Json{{"type","number"},{"enum",Json::array({0})}},Json{{"type","null"}}})},{"description","此动作由真实抵达/完成回执决定何时结束；时长固定由程序按0处理，可省略、null或填0。不填预估耗时或物件寿命。"}};
         if(std::string_view(kind)=="arrange"){properties["object_id"]={{"type","string"},{"minLength",1},{"maxLength",96}};required.push_back("object_id");}
         if(std::string_view(kind)=="move_to"||std::string_view(kind)=="arrange")for(const auto* axis:{"x","y"}){properties[axis]={{"type","number"},{"minimum",0},{"maximum",1}};required.push_back(axis);}
         if(std::string_view(kind)=="pose"){properties["state"]={{"type","string"},{"enum",Json::array({"idle","blink","curious","listening","breathing"})}};required.push_back("state");}
@@ -50,7 +51,7 @@ std::string activitySchema(){
 ValidatedOutput validateActivities(std::string_view text){
     const auto envelope=modelJsonEnvelope(text);if(!envelope)return {false,"activity_format",{}};text=*envelope;
     if(!ayt::serializer::validateJsonDocument(text,activitySchema()))return {false,"activity_format",{}};
-    auto value=Json::parse(text);for(const auto* field:{"carry_forward","close_threads"})if(value.contains(field)&&value.at(field).is_null())value.erase(field);
+    auto value=Json::parse(text);for(auto& command:value["commands"])if(!command.contains("seconds")||command.at("seconds").is_null())command["seconds"]=0;for(const auto* field:{"carry_forward","close_threads"})if(value.contains(field)&&value.at(field).is_null())value.erase(field);
     for(const auto& close:value.value("close_threads",Json::array())){
         for(const auto& note:value.value("carry_forward",Json::array()))if(close.at("id")==note.at("id"))return {false,"activity_personal_conflict",{}};
         for(const auto& command:value.at("commands"))if(command.contains("intention")&&command.at("intention").at("id")==close.at("id"))return {false,"activity_closed_intention_still_queued",{}};

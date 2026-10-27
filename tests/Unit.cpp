@@ -765,6 +765,17 @@ TEST_CASE(background_closure_keeps_goal_identity_and_rejects_contradictory_batch
     CHECK(!personalCompletionObservation(Json{{"kind","tool_intent"},{"tool","activity.enqueue"},{"result",{{"accepted",1},{"completed",false}}}}));
     CHECK(!personalCompletionObservation(Json{{"kind","personal_attempt"},{"tool","self.observe"},{"result",{{"completed",true}}}}));
 }
+TEST_CASE(finite_action_default_is_a_program_constant_without_inventing_required_choices){
+    Json input={{"version",1},{"commands",Json::array({{{"kind","move_to"},{"x",.3},{"y",.4}}})}};
+    const auto omitted=validateActivities(input.dump());CHECK(omitted.ok&&omitted.value.at("commands")[0].at("seconds")==0);CHECK(!input.at("commands")[0].contains("seconds"));
+    input["commands"][0]["seconds"]=nullptr;CHECK(validateActivities(input.dump()).ok);
+    input["commands"][0]["seconds"]=3;CHECK(!validateActivities(input.dump()).ok);
+    input["commands"][0].erase("seconds");input["commands"][0].erase("x");CHECK(!validateActivities(input.dump()).ok);
+    for(const auto* kind:{"wait","pose","rest"}){Json command={{"kind",kind}};if(std::string_view(kind)=="pose")command["state"]="idle";input["commands"]=Json::array({command});CHECK(!validateActivities(input.dump()).ok);input["commands"][0]["seconds"]=nullptr;CHECK(!validateActivities(input.dump()).ok);}
+    OperationReplay replay;const Json plain={{"commands",Json::array({{{"kind","create_drop"},{"template","seed"},{"name","a seed"},{"description","small"},{"tint","mint"}}})}};
+    auto explicitZero=plain;explicitZero["commands"][0]["seconds"]=0;replay.completed("activity.enqueue",plain,{{"ok",true},{"result",{{"accepted",1},{"queued",1},{"completed",false}}}},"first");replay.afterReviewRejection();CHECK(replay.reuse("activity.enqueue",explicitZero).has_value());
+    explicitZero["commands"][0]["seconds"]=1;CHECK(!replay.reuse("activity.enqueue",explicitZero));
+}
 TEST_CASE(puzzle_progress_is_an_actual_step_even_when_the_larger_game_is_unfinished){
     const Json progress={{"applied",true},{"completed",false},{"game",{{"id","one"},{"revision",2},{"status","active"},{"moves",1},{"lit_count",6}}}};
     CHECK(toolObservationKind("pocket.press",progress)=="tool_observation");CHECK(toolObservationKind("activity.enqueue",progress)=="tool_intent");

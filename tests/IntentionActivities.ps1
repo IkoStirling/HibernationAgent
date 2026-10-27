@@ -74,7 +74,7 @@ try{
  Check ($trace.tool_results[2].ok) 'an actual unsolved puzzle step can complete the smaller intention of trying one change'
  $game=@((Api '/api/capabilities').plugins|Where-Object id -eq pocket)[0].current.current.game
  Check ($game.status-eq'active') 'completing a local intention does not change the actual puzzle to won'
- $beforeRows=$game.rows|ConvertTo-Json -Compress;$leave=@{kind='puzzle_leave';seconds=0;game_id=$game.id;expected_revision=$game.revision;purpose='暂时不解了，去看看别的'}
+ $beforeRows=$game.rows|ConvertTo-Json -Compress;$leave=@{kind='puzzle_leave';game_id=$game.id;expected_revision=$game.revision;purpose='暂时不解了，去看看别的'}
  $trace=Message @((Calls @((Tool leave activity.enqueue @{commands=@($leave)}))),(Silent));Check ($trace.tool_results[0].ok) 'voluntarily leaving an active game can be scheduled as a finite real action'
  Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'puzzle_leave'-and$_.status-eq'completed'}).Count-eq1} 'voluntary leave completes'
  $after=@((Api '/api/capabilities').plugins|Where-Object id -eq pocket)[0].current.current.game
