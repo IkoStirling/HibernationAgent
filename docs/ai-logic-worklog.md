@@ -637,3 +637,14 @@
 
 - 分段阅读最终构建通过；Unit/WorldHistory/Appraisals/Reading/AutonomousCrafting/ProcessIntegration/ActivityReflection 7/7通过107.83秒，实际进程检查覆盖分页仅归档送达片段、缓存不新增联网、UTF-8接续、范围错误、来源身份与重启。角色及审核共享实际阅读范围说明后，Unit/NativeTools/ContextControl/RuntimeComposition 4/4通过51.87秒；没有修改固定persona4或阶段。最终候选记录见personality-source-reading-tests.log与personality-reading-conduct-tests.log。
 - 22:31Z附近累计343次请求/4067336记账token（337报告、6保守或进行中），持续账本仍会增加。接下来把本项一次接回原隔离档案；不重演被拒绝的旧操作，不把旧错误对白改写成已经真实读过。
+
+### 06:43 接续阅读与自己的兴趣
+
+- main:beccd05已提交正文分段及范围依据，源码快照E:/Aliyat/Backups/HibernationAgent/source-20261028-063347-4656f543（930文件）。旧控制器65104/后台66192退出、锁释放且临时凭证0后接回原档案。当前控制器63400（22:34:28.8453362Z）、后台59816（22:34:32.8352031Z），报告episodes/20261027-223431-b54602ca/report.json，终端session37964；截止不变。
+- 四轮围绕材料中的本名/英雄名、网名及玩笑自然交谈，全部成功。第一轮主动纠正了此前夸大阅读范围的说法，之后承接了“不战而胜”的玩笑，没有连续追问或行动汇报；但离席时仍把自己关注的空角说成“替你留着”，服务式套语尚未完全消失。没有据此强制改写人设、给模型灌固定示例或复制实验对白到正式存档。
+- 实际独处新建carry-ordinary-after-leaving兴趣，来源为自己真实续写的作品，subjective appraisal +0.15已通过，心情缓慢到0.512，不是直接改值。后续自己排了查找网名材料的队列，暂未以安排冒充已读；生成记录初始版/应用版同id不重复计数。22:39:34Z账本357请求/4280696记账token，351已报告、6保守或进行中。
+- 源码复核发现appendWorldExperience仍把所有阅读事件描述为导言；已改为依真实scope分别记录导言/正文源文本，未知scope不生成事实经历。补过程检查，避免真实正文被应用自己重新标成导言。
+- 此补丁首次定向回归3/4通过，AutonomousCrafting失败于更早的随机远距离到达：只读解密该隔离fixture（明确验证fixture-model和artifacts/data路径）确认1920×1200工作区内角色仍moving=true、目标匹配物件、没有取消或异常，尚差约160像素；65像素/秒的实际路线加转向/观察可能超过原25秒。原40秒寿命也可能在后续挪动前到期。测试物件改120秒、首次到达等待上限40秒，仍要求真实completed及保留寿命不变，单独5秒过期测试保持原样；失败时保存该合成场景的当前状态便于定位。不通过放松产品回执或重放付费调用掩盖失败。待单项复查后才提交。
+
+- 远距fixture修正后AutonomousCrafting单项58.27秒通过，真实到达、挪动、物件寿命不刷新、独立5秒过期和正文经历范围检查全部保留；先前同候选Unit/ProcessIntegration/ActivityReflection已通过。本次没有重跑已通过整套检查填时间。
+- 用独立Mock后台对正文接口做一次必要的真实HTTP连通验证，0次模型调用：英文Pseudonym实际57232字节wikitext，revision1382252604，送达0至1200字节，scope=article_source_chunk、full_article_read=false。该操作明确标operator_only且role_experience_injected=false，不拿管理员探测冒充小爱的阅读经历；后台已干净停止。真实能力验证只此一次，没有扩成能力题库。

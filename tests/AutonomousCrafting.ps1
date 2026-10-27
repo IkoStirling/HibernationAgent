@@ -24,7 +24,7 @@ try{
  $cfg.dataRoot=Join-Path $root data;$cfg.characterRoot=Join-Path $ProjectRoot character;$cfg.uiRoot=Join-Path $ProjectRoot ui;$cfg.pluginRoot=Join-Path $BuildRoot plugins
  $cfg.frontend.startupAnimation=$false;$cfg.profiles=@($cfg.profiles[0],@{id='actor';label='Crafting fixture';protocol='chat-completions';enabled=$true;origin=$fixture;model='fixture-model';supportsJsonObject=$true})
  $cfg.review=@{enabled=$false};$cfg.solitudeIntervalMs=604800000;$cfg.idleBeforeSolitudeMs=86400000
- $cfg.plugins=@{widget=@{enabled=$true;skin='asterlan';animationMode='sequence';size=168;autonomousMode=$true;autonomyIdleSeconds=600;autonomyRefillSeconds=600;roam=$false;showBubble=$false;respectSystemMotion=$false};habitat=@{enabled=$true;autoSpawn=$false;autoInteract=$false;maxObjects=4;lifetimeMinSeconds=40;lifetimeMaxSeconds=40};atelier=@{enabled=$true;maximumPieces=12};pocket=@{enabled=$true;scrambleSteps=4;maximumMoves=24}}
+ $cfg.plugins=@{widget=@{enabled=$true;skin='asterlan';animationMode='sequence';size=168;autonomousMode=$true;autonomyIdleSeconds=600;autonomyRefillSeconds=600;roam=$false;showBubble=$false;respectSystemMotion=$false};habitat=@{enabled=$true;autoSpawn=$false;autoInteract=$false;maxObjects=4;lifetimeMinSeconds=120;lifetimeMaxSeconds=120};atelier=@{enabled=$true;maximumPieces=12};pocket=@{enabled=$true;scrambleSteps=4;maximumMoves=24}}
  $cfg.plugins.reading=@{enabled=$true;autonomousReading=$true;language='zh';serviceOrigin=$fixture;useSystemProxy=$false}
  $configPath=Join-Path $root config.json;$ready=Join-Path $root ready.json;$cfg|ConvertTo-Json -Depth 50|Set-Content -LiteralPath $configPath -Encoding utf8
  $desktop=[PrivateDesktop]::new((Join-Path $BuildRoot hibernation-agent.exe),$configPath,$ready,$ProjectRoot);$service=$desktop.Child
@@ -55,7 +55,7 @@ try{
  Check (@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'atelier.created'}).Count-ge1-and@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'habitat.appeared'}).Count-ge1-and@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'atelier.revised'}).Count-ge1) 'later conversation has real creation and continuation experiences instead of invented memories'
  $objectId=(Snapshot habitat).objects[0].id
  Message @((Calls @(@{kind='interact';seconds=0;object_id=$objectId;action='look'},@{kind='wait';seconds=1})),(Silent))
- Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'interact'-and$_.status-eq'completed'}).Count-eq1} 'explicit target receives real arrival and inspection'
+ Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'interact'-and$_.status-eq'completed'}).Count-eq1} 'explicit target receives real arrival and inspection' 40
  $old=(Snapshot habitat).objects[0];$destinationX=[Math]::Min(.94,[Math]::Max(.04,$old.x+.08));$destinationY=$old.y
  Message @((Calls @(@{kind='arrange';seconds=0;object_id=$objectId;x=$destinationX;y=$destinationY})),(Silent))
  Check ((Feedback).ok) 'a concrete arrangement can enter the deferred plan'
@@ -95,6 +95,8 @@ try{
  $sourceRead=$read.Clone();$sourceRead.detail='source';$sourceRead.offset=0;$sourceRead.length=256;Message @((Calls @($sourceRead)),(Silent))
  Await {(Snapshot reading).last_read.scope-eq'article_source_chunk'} 'cached activity passes source range arguments to the actual tool'
  Check ((Snapshot reading).last_read.excerpt-eq'== 夜里 == 蓝苔的光靠近水边时微弱。'-and(Snapshot reading).last_read.next_offset-gt0-and!(Snapshot reading).last_read.full_article_read) 'source activity retains exact delivered material and continuation range'
+ Message @((Silent)) '刚才那段材料呢？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json
+ Check (@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'reading.observed'-and$_.data.observation.reference.scope-eq'article_source_chunk'-and$_.data.text.Contains('正文源文本')}).Count-ge1) 'program-authored reading experience keeps source scope rather than relabeling body as a lead'
  $unknown=$read.Clone();$unknown.key='Never_observed';Message @((Calls @($unknown)),(Silent));Check (!(Feedback).ok-and(Feedback).error.code-eq'activity_reference_not_observed') 'queued reading rejects a key that was never observed'
  $knownCount=(Snapshot reading).recent.Count;Message @((Calls @(@{kind='wait';seconds=10},$read)),(Silent));Message @((Silent));Check ((Api '/api/activities/status').queued-eq0-and(Snapshot reading).recent.Count-eq$knownCount) 'new input consumes no deferred reading after cancellation'
  $settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 50|ConvertFrom-Json -AsHashtable;$settings.plugins.reading.autonomousReading=$false;$null=Api '/api/settings' @{settings=$settings}
@@ -111,4 +113,6 @@ try{
  $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)) 'effects finish or cancel before plugin shutdown'
  @{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json)
  Write-Output "Autonomous crafting passed: $checks checks. Evidence: $root"
+}catch{
+ $testFailure=$_;try{@{activities=Api '/api/activities/status';widget=Snapshot widget;habitat=Snapshot habitat}|ConvertTo-Json -Depth 55|Set-Content -LiteralPath (Join-Path $root failure-state.json) -Encoding utf8}catch{};throw $testFailure
 }finally{if($service){$service.Refresh();if(!$service.HasExited){Stop-Process -Id $service.Id}};if($desktop){$desktop.Dispose()};if($provider){$provider.Refresh();if(!$provider.HasExited){Stop-Process -Id $provider.Id}}}

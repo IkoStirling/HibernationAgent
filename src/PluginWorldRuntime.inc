@@ -29,8 +29,9 @@
     }
     void appendWorldExperience(std::vector<RecordMutation>& changes,const Json& event,const std::string& source,std::int64_t now){
         if(event.value("plugin",std::string{})=="reading"){
-            const auto title=event.value("reference",Json::object()).value("title",std::string{});if(title.empty()||event.value("kind",std::string{})!="reading.observed")return;
-            appendObservedExperience(changes,event,source,"我看到了《"+excerpt(title,240)+"》导言中的一小段内容。",now);return;
+            const auto reference=event.value("reference",Json::object());const auto title=reference.value("title",std::string{});if(title.empty()||event.value("kind",std::string{})!="reading.observed")return;
+            const auto scope=reference.value("scope",std::string{});if(scope!="lead_excerpt"&&scope!="article_source_chunk")return;
+            appendObservedExperience(changes,event,source,"我看到了《"+excerpt(title,240)+"》"+(scope=="article_source_chunk"?"正文源文本":"导言")+"中的一小段内容。",now);return;
         }
         if(event.value("plugin",std::string{})=="atelier"){
             const auto title=event.value("piece",Json::object()).value("title",std::string{});if(title.empty())return;
