@@ -1,8 +1,8 @@
 {
   "id": "widget",
   "name": "桌面小角色",
-  "description": "透明桌面小恐龙，支持拖动、点击、游走和对白气泡。",
-  "version": "0.5.0",
+  "description": "透明桌面角色，支持自定义像素动画、拖动、点击、游走和对白气泡。",
+  "version": "0.6.0",
   "api_version": 2,
   "library": "Hibernation_Widget.dll",
   "capabilities": [
@@ -11,12 +11,16 @@
     "animation.state-machine"
   ],
   "settings_ui": [
+    {"key":"roamPauseMinSeconds","label":"游走后最短停留（秒）","type":"number","default":20,"min":2,"max":600,"step":1},
+    {"key":"roamPauseMaxSeconds","label":"游走后最长停留（秒）","type":"number","default":50,"min":2,"max":600,"step":1},
+    {"key":"roamStepPixels","label":"随机游走时的最大距离（像素）","type":"number","default":200,"min":40,"max":600,"step":10},
     {
       "key": "autonomousMode",
       "label": "自主控制：由角色批量选择空闲活动",
       "type": "toggle",
       "default": false
     },
+    {"key":"autonomyRefillSeconds","label":"空闲活动预备间隔（秒）","type":"number","default":60,"min":30,"max":600,"step":5},
     {
       "key": "autonomyIdleSeconds",
       "label": "交谈后空闲多久开始考虑活动（秒）",
@@ -25,6 +29,12 @@
       "min": 5,
       "max": 600,
       "step": 5
+    },
+    {
+      "label": "跟随 Windows 的减少动态效果设置",
+      "key": "respectSystemMotion",
+      "type": "toggle",
+      "default": true
     },
     {
       "label": "动画来源",
@@ -59,5 +69,5 @@
       "min": 16
     }
   ],
-  "settings_note": "自主模式采用有限命令队列，最多六项，执行时再寻找实际物件；新输入、拖动、暂停会清空旧计划。需要桌面小物或安静节律插件才能进食或休息。开启后替代插件原有的随机接近和自动休息。"
+  "settings_note": "自主模式由模型批量安排移动、姿态、停留、进食和休息，最多六项；到达后才进入下一项。模型移动不受随机游走距离上限约束，执行时再寻找实际物件；新输入、拖动、暂停会清空旧计划。需要桌面小物或安静节律插件才能进食或休息。开启后替代插件原有的随机接近和自动休息。"
 }

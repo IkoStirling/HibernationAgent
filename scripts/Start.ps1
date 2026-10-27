@@ -3,6 +3,17 @@ $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Security
 if(!(Test-Path -LiteralPath $ConfigPath)){Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../config/example.json') -Destination $ConfigPath}
 $ConfigPath=[IO.Path]::GetFullPath($ConfigPath);$config=Get-Content -LiteralPath $ConfigPath -Raw|ConvertFrom-Json
+# A long-lived launcher can predate credentials saved to the Windows user
+# environment. Refresh only explicitly configured credential names, and only
+# when absent from this process. Never print or persist their values.
+$credentialNames=@($config.profiles|ForEach-Object credentialEnvironment)+@($config.plugins.PSObject.Properties|ForEach-Object {$_.Value.credentialEnvironment})
+if($config.plugins.napcat.enabled){$credentialNames+=@($(if($config.plugins.napcat.apiTokenEnvironment){$config.plugins.napcat.apiTokenEnvironment}else{'HIBERNATION_NAPCAT_API_TOKEN'}),$(if($config.plugins.napcat.eventSecretEnvironment){$config.plugins.napcat.eventSecretEnvironment}else{'HIBERNATION_NAPCAT_EVENT_SECRET'}))}
+foreach($credentialName in @($credentialNames|Where-Object {$_-and$_-match'^[A-Za-z_][A-Za-z0-9_]*$'}|Select-Object -Unique)){
+ if([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($credentialName,'Process'))){
+  $credentialValue=[Environment]::GetEnvironmentVariable($credentialName,'User');if([string]::IsNullOrEmpty($credentialValue)){$credentialValue=[Environment]::GetEnvironmentVariable($credentialName,'Machine')}
+  if(![string]::IsNullOrEmpty($credentialValue)){[Environment]::SetEnvironmentVariable($credentialName,$credentialValue,'Process')}
+ }
+}
 $dataRoot=if([IO.Path]::IsPathRooted($config.dataRoot)){$config.dataRoot}else{[IO.Path]::GetFullPath((Join-Path (Split-Path $ConfigPath) $config.dataRoot))}
 $runtime=Join-Path $dataRoot 'runtime';New-Item -ItemType Directory -Path $runtime -Force|Out-Null
 $readyPath=Join-Path $runtime 'ready.json';$tokenPath=Join-Path $runtime '.ipc-token.dpapi';$executable=Join-Path $BuildRoot 'hibernation-agent.exe';$token=$null;$ready=$null

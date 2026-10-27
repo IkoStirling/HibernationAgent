@@ -1,0 +1,11 @@
+{
+  "id":"pocket", "name":"口袋里的九盏灯", "icon":"✦",
+  "description":"角色可自己选择的小谜题，保留真实棋盘与尝试进度。没有额外窗口，也不要求用户陪玩。",
+  "version":"0.1.0", "api_version":2, "library":"Hibernation_Pocket.dll",
+  "dependencies":[], "capabilities":["play.lanterns","play.continuity"],
+  "settings_ui":[
+    {"key":"scrambleSteps","label":"新一局的打乱步数","type":"number","default":4,"min":2,"max":8,"step":1},
+    {"key":"maximumMoves","label":"每局最多尝试步数","type":"number","default":24,"min":12,"max":64,"step":1}
+  ],
+  "settings_note":"灯的布局和胜负由程序维护。角色可以继续、试错、放下或不玩；不自动主动发言，不改变关系数值。"
+}

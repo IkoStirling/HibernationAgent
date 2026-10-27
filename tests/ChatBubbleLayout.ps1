@@ -12,8 +12,10 @@ try{
  $main=$desktop.Find('HibernationConversationV2');$viewport=[ChatWindowTest]::GetDlgItem($main,1203);[ChatWindowTest]::UseWindowCoordinates($main)
  $text=('中文长段落：把每一个尚未解决的问题留在这里，末尾的文字也必须完整显示。'*12)+"`n`n第二段`r`n"+('视频路径 D:\Aliyat\materials\video\test1.mp4，标点、空行与英文混排。'*8)+"`n`n最后一段：星星和🌙都在。"
  $null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$text};Wait-For {!(Api '/api/chat').busy} 'reply';Wait-For {@([BubbleLayoutProbe]::Inspect($viewport,$service.Id)|Where-Object Length -gt 700).Count-eq1} 'full user message'
+ $expected=(Api '/api/chat').messages[-1].text.Replace("`r",'').Replace("`n",'');Wait-For {@([BubbleLayoutProbe]::Inspect($viewport,$service.Id)|Where-Object {([ChatWindowTest]::Text($_.Window)).Replace("`r",'').Replace("`n",'')-eq$expected}).Count-eq1} 'full assistant presentation before static geometry checks'
  foreach($width in @(700,480,950,620)){
   [BubbleLayoutProbe]::Resize($main,$service.Id,$width,820);Start-Sleep -Milliseconds 250;$rows=[BubbleLayoutProbe]::Inspect($viewport,$service.Id);$script:samples+=@($rows|ForEach-Object {@{windowWidth=$width;textLength=$_.Length;width=$_.Width;height=$_.Height;lastY=$_.LastY;lines=$_.Lines}})
+  if(@($rows|Where-Object {$_.LastY-lt0-or$_.LastY+20-gt$_.Height}).Count){$rows|Select-Object Length,Height,Width,LastY,Lines|ConvertTo-Json|Set-Content (Join-Path $root failed-geometry.json)}
   Check (@($rows|Where-Object {$_.LastY-lt0-or$_.LastY+20-gt$_.Height}).Count-eq0) "all paragraphs fit their native text area at width $width"
   $long=@($rows|Where-Object Length -gt 700)[0];Check ($long.Width-gt($width-200)-and$long.Lines-gt10-and$long.Height-lt($long.Lines*36+20)) "long bubble expands without excessive empty height at width $width"
  }

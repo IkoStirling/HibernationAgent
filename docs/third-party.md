@@ -2,7 +2,24 @@
 
 **Date:**2026-10-25
 
+## 随仓库与构建复制的 Windows x64 工具（2026-10-27）
+
+- [MinGit 2.56.0.windows.4](https://github.com/git-for-windows/git/releases/tag/v2.56.0.windows.4)：
+  官方 `MinGit-2.56.0.4-64-bit.zip` 的完整文件集，未裁剪依赖或许可文本。
+  Git 为 GPLv2，附带组件各自许可见 `tools/runtime/windows-x64/git/LICENSE.txt` 及发行目录内许可。
+  对应 [Git 源码](https://github.com/git-for-windows/git/tree/v2.56.0.windows.4)、
+  [构建与组件来源](https://github.com/git-for-windows/build-extra)。不附带 Git GUI / Git Bash 用户界面。
+- [7-Zip 26.05](https://github.com/ip7z/7zip/releases/tag/26.05)：从官方 Windows x64 安装包提取
+  `7z.exe`、`7z.dll`、License、readme 和 History，无需安装，不附带文件管理器或系统右键扩展。
+  LGPL 及 unRAR 限制等完整条款见 `tools/runtime/windows-x64/7zip/License.txt`；
+  [对应源码](https://github.com/ip7z/7zip/tree/26.05)。
+- 两个下载包的 SHA256 均与官方 GitHub Release 的 asset digest 一致；原始下载在忽略的
+  `out/tool-downloads/`，正式跟踪提取文件及 `tools/runtime/manifest.json` 的来源与逐文件摘要。
+  使用 Git 分发的是原始发行字节，未进行换行转换或二进制修改；副本同样携带许可。
+  完整产品再分发时还须满足下文 FFmpeg 等其他依赖的要求。
+
 - 桌面小恐龙为本项目代码绘制的原创像素图与简单程序动画，没有复制网络精灵图。
+- Asterlan 像素序列帧由用户提供并导入，状态映射与素材更新方式见 [像素序列](pixel-sequences.md)；与内置代码形象分别管理。
 - 语音默认 Windows 自带 SAPI 语音。本机测试识别到 Microsoft Huihui Desktop；
   并非 AquesTalk 或原版ゆっくり音色，不附带第三方受限音库。
 - [SAPI SpVoice](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ms723602(v=vs.85))

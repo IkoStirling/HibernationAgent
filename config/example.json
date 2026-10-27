@@ -10,11 +10,16 @@
   "port": 0,
   "credentialEnvironment": "HIBERNATION_SESSION_KEY",
   "contextBytes": 24000,
+  "contextControl": {
+    "enabled": true,
+    "preset": "balanced"
+  },
   "recentMessageCount": 12,
   "maxMemoriesInContext": 16,
   "solitudeIntervalMs": 900000,
   "idleBeforeSolitudeMs": 120000,
-  "maxStartsPerHour": 60,
+  "reflectOnActivities": false,
+  "maxStartsPerHour": 600,
   "profiles": [
     {
       "id": "mock",
@@ -54,6 +59,12 @@
   ],
   "maxToolRounds": 6,
   "plugins": {
+    "mentor": {"enabled":true,"allowExecution":true,"backend":"chatgpt","codexExecutable":"","model":"","useSystemProxy":true,"proxyOrigin":"","maxRequestsPerHour":12,"cooldownSeconds":60,"timeoutSeconds":35},
+    "pocket": {"enabled":false,"scrambleSteps":4,"maximumMoves":24},
+    "atelier": {
+      "enabled": false,
+      "maximumPieces": 48
+    },
     "habitat": {
       "enabled": false,
       "autoSpawn": true,
@@ -67,6 +78,7 @@
       "wakeOnAction": false,
       "reducedMotion": false
     },
+    "reading": {"enabled": false,"language": "zh","maxRequestsPerHour": 60,"useSystemProxy": true,"autonomousReading": false},
     "television": {
       "enabled": false,
       "volume": 65,
@@ -84,6 +96,16 @@
       "enabled": false,
       "refreshMinutes": 30,
       "city": ""
+    },
+    "deepseek-pricing": {
+      "enabled": false,
+      "mode": "auto",
+      "peakMaxToolRounds": 3,
+      "peakMaxRewrites": 1,
+      "deferPrefetch": true,
+      "refreshMinutes": 360,
+      "maxAgeHours": 48,
+      "useSystemProxy": false
     },
     "rhythm": {
       "enabled": false,
@@ -126,6 +148,7 @@
   },
   "review": {
     "enabled": false,
+    "retainConversationFocus": false,
     "profileId": "",
     "maxRewrites": 2
   }

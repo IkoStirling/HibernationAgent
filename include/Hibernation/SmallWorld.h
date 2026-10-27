@@ -52,14 +52,23 @@ public:
         if(!queued())return false;const auto item=object(pending_.at("id"));if(item.is_null()){cancel("object_missing");return false;}
         pending_["phase"]="walking";events_.push_back({{"kind","habitat.navigate"},{"id",item.at("id")},{"token",pending_.at("token")},{"x",item.at("x")},{"y",item.at("y")}});return true;
     }
+    std::string requestArrangement(const std::string& id,double x,double y,const std::string& token){
+        if(!std::isfinite(x)||!std::isfinite(y)||x<0||x>1||y<0||y>1)return "world_destination_invalid";
+        const auto item=object(id);if(item.is_object()&&drops::fading(item,clock_))return "world_object_fading";
+        const auto error=request(id,"look",token);if(!error.empty())return error;
+        pending_["action"]="arrange";pending_["destination"]={{"x",x},{"y",y}};return {};
+    }
     bool arrive(const std::string& token,double x,double y){
         if(!std::isfinite(x)||!std::isfinite(y)||!walking()||pending_.at("token")!=token)return false;
         const auto item=object(pending_.at("id"));if(item.is_null()||distance(item,x,y)>.025)return false;
         pending_["phase"]="acting";const auto action=pending_.at("action").get<std::string>();pending_["complete_at"]=clock_+(action=="eat"?1.6:action=="plant"?2.2:.8);
+        if(action=="arrange"){pending_["origin"]={{"x",item.at("x")},{"y",item.at("y")}};pending_["started_at"]=clock_;pending_["complete_at"]=clock_+2.0;}
         events_.push_back({{"kind","habitat.action_started"},{"action",action},{"token",token},{"item",item}});return true;
     }
     void cancel(const std::string& reason){
-        if(!pending())return;events_.push_back({{"kind","habitat.action_cancelled"},{"token",pending_.at("token")},{"id",pending_.at("id")},{"reason",reason}});pending_=nullptr;
+        if(!pending())return;Json event={{"kind","habitat.action_cancelled"},{"token",pending_.at("token")},{"id",pending_.at("id")},{"reason",reason}};
+        if(pending_.at("action")=="arrange"&&acting()){event["item"]=object(pending_.at("id"));event["partial_change"]=true;}
+        events_.push_back(std::move(event));pending_=nullptr;
     }
     void tick(double elapsed,bool active,double actorX,double actorY,bool actorAvailable){
         if(!active||!std::isfinite(elapsed))return;const double dt=std::clamp(elapsed,0.0,.25);clock_+=dt;
@@ -73,9 +82,15 @@ public:
         if(!actorAvailable){cancel("character_unavailable");return;}
         if(clock_>=pending_.at("deadline").get<double>()){cancel("action_timeout");return;}
         if(!acting())return;
-        auto item=object(pending_.at("id"));if(item.is_null()||distance(item,actorX,actorY)>.03){cancel("character_moved");return;}
+        auto item=object(pending_.at("id"));const auto action=pending_.at("action").get<std::string>();
+        const auto anchor=action=="arrange"?pending_.at("origin"):item;
+        if(item.is_null()||distance(anchor,actorX,actorY)>.03){cancel("character_moved");return;}
+        if(action=="arrange"){
+            const double progress=std::clamp((clock_-pending_.at("started_at").get<double>())/2.0,0.0,1.0),eased=progress*progress*(3-2*progress);
+            for(auto& value:objects_)if(value.at("id")==item.at("id")){for(const auto* axis:{"x","y"}){const double from=pending_.at("origin").at(axis),to=pending_.at("destination").at(axis);value[axis]=from+(to-from)*eased;}item=value;break;}
+        }
         if(clock_<pending_.at("complete_at").get<double>())return;
-        const auto action=pending_.at("action").get<std::string>(),token=pending_.at("token").get<std::string>();const auto previousItem=item;
+        const auto token=pending_.at("token").get<std::string>();const auto previousItem=item;
         if(action=="eat"){
             targetAppetite_=std::max(0.0,targetAppetite_-item.at("rules").at("nutrition").get<double>()/100.0);targetComfort_=std::min(.85,targetComfort_+item.at("rules").at("comfort").get<double>());
             for(auto it=objects_.begin();it!=objects_.end();++it)if(it->at("id")==item.at("id")){objects_.erase(it);break;}
@@ -83,7 +98,7 @@ public:
             for(auto& value:objects_)if(value.at("id")==item.at("id")){value["kind"]="sprout";value["born"]=clock_;value["expires"]=clock_+43200.0;value["growth"]=0;value["observed_growth"]=0;value["rules"]=drops::rules("sprout",value.at("rules").at("quality"));value["definition"]["name"]=drops::name("sprout");item=value;break;}
             targetComfort_=std::min(.85,targetComfort_+.01);
         }else{targetComfort_=std::min(.85,targetComfort_+.005);for(auto& value:objects_)if(value.at("id")==item.at("id")){value["observed_growth"]=value.at("growth");item=value;break;}}
-        const std::string kind=action=="eat"?"habitat.consumed":action=="plant"?"habitat.planted":"habitat.inspected";
+        const std::string kind=action=="eat"?"habitat.consumed":action=="plant"?"habitat.planted":action=="arrange"?"habitat.arranged":"habitat.inspected";
         emit(kind,item,token);if(action=="plant")events_.back()["previous_item"]=previousItem;lastActions_.push_back({{"kind",kind},{"item",item},{"at",clock_}});while(lastActions_.size()>4)lastActions_.erase(0);pending_=nullptr;
     }
     Json observe()const{

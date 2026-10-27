@@ -1,0 +1,13 @@
+{
+  "id": "atelier",
+  "name": "个人创作角",
+  "description": "角色可以留下短笺、故事和观察作品，之后读取、续写或暂时搁置。作品是草稿，内部记忆仍单独加密保存。",
+  "version": "0.3.0",
+  "api_version": 2,
+  "library": "Hibernation_Atelier.dll",
+  "dependencies": [],
+  "capabilities": ["creative.drafts", "creative.continuity"],
+  "settings_ui": [
+    {"key":"maximumPieces","label":"最多保留的作品数","type":"number","default":48,"min":4,"max":128}
+  ]
+}

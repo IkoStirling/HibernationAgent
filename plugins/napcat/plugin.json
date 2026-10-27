@@ -1,0 +1,179 @@
+{
+  "id": "napcat",
+  "name": "QQ · NapCat",
+  "icon": "QQ",
+  "description": "与桌面共用同一角色；QQ 档案分目录加密保存，默认记忆互通、号主可使用桌面工具。支持接收图片/表情包、连续消息合并及将本次截图发回当前会话，支持手动离线，余额不足时静默并保留管理诊断。",
+  "version": "0.5.2",
+  "api_version": 2,
+  "library": "Hibernation_Napcat.dll",
+  "capabilities": [
+    "channel.qq",
+    "channel.shared-memory",
+    "channel.desktop-tools",
+    "channel.configurable-security"
+  ],
+  "settings_ui": [
+    {
+      "key": "selfUserId",
+      "label": "机器人登录的 QQ 号（字符串）",
+      "type": "text",
+      "default": ""
+    },
+    {
+      "key": "ownerUserId",
+      "label": "号主本人的 QQ 号（与机器人不同）",
+      "type": "text",
+      "default": ""
+    },
+    {
+      "key": "stricterSecurity",
+      "label": "更严密的安全性",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "key": "isolateMemory",
+      "label": "隔离 QQ 与桌面及其他 QQ 会话的记忆",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "key": "allowDesktopControl",
+      "label": "允许从 QQ 使用桌面操作与插件",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "controlTrust",
+      "label": "允许操作电脑的发言人",
+      "type": "select",
+      "default": "owner",
+      "options": [
+        [
+          "owner",
+          "仅号主（默认）"
+        ],
+        [
+          "allowed",
+          "所有获准聊天的人"
+        ],
+        [
+          "none",
+          "无人"
+        ]
+      ]
+    },
+    {
+      "key": "reviewReplies",
+      "label": "审核 QQ 回复与工具调用",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "apiOrigin",
+      "label": "NapCat HTTP Server 地址",
+      "type": "text",
+      "default": "http://127.0.0.1:3000"
+    },
+    {
+      "key": "callbackPort",
+      "label": "本机 HTTP 上报端口",
+      "type": "number",
+      "default": 18890,
+      "min": 1024,
+      "max": 65535,
+      "step": 1
+    },
+    {
+      "key": "apiTokenEnvironment",
+      "label": "HTTP Server token 的环境变量名",
+      "type": "text",
+      "default": "HIBERNATION_NAPCAT_API_TOKEN"
+    },
+    {
+      "key": "eventSecretEnvironment",
+      "label": "HTTP Client token 的环境变量名（验签）",
+      "type": "text",
+      "default": "HIBERNATION_NAPCAT_EVENT_SECRET"
+    },
+    {
+      "key": "allowedUsers",
+      "label": "其他允许私聊的 QQ 号，逗号分隔",
+      "type": "text",
+      "default": ""
+    },
+    {
+      "key": "allowedGroups",
+      "label": "允许的群号，逗号分隔",
+      "type": "text",
+      "default": ""
+    },
+    {
+      "key": "groupMentionOnly",
+      "label": "群聊仅被 @ 时回应",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "replyAtSender",
+      "label": "群聊回复时 @ 原发言人",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "cooldownSeconds",
+      "label": "同一发言人处理间隔（秒，后续消息保留排队）",
+      "type": "number",
+      "default": 5,
+      "min": 1,
+      "max": 300,
+      "step": 1
+    },
+    {
+      "key": "mergeWindowMs",
+      "label": "连续消息合并窗口（毫秒，0 为关闭）",
+      "type": "number",
+      "default": 1500,
+      "min": 0,
+      "max": 5000,
+      "step": 100
+    },
+    {
+      "key": "queueLimit",
+      "label": "最大待处理消息数",
+      "type": "number",
+      "default": 32,
+      "min": 1,
+      "max": 64,
+      "step": 1
+    },
+    {
+      "key": "maxMessageAgeSeconds",
+      "label": "消息过期时间（秒）",
+      "type": "number",
+      "default": 1800,
+      "min": 30,
+      "max": 86400,
+      "step": 30
+    },
+    {
+      "key": "maxReplyCharacters",
+      "label": "QQ 回复最多字符数",
+      "type": "number",
+      "default": 1500,
+      "min": 64,
+      "max": 4000,
+      "step": 10
+    }
+  ],
+  "settings_note": "默认记忆互通，原文仍按私聊/群成员分目录加密存放；号主可使用桌面已开放的工具，其他人默认只能聊天。更严密的安全性将强制隔离记忆、关闭 QQ 电脑操作并开启审核；关闭后恢复各项独立选择。群白名单与验签始终生效，电脑目录、应用白名单和屏幕观察开关沿用桌面设置。token 只放环境变量。",
+  "settings_preset": {
+    "key": "stricterSecurity",
+    "values": {
+      "isolateMemory": true,
+      "allowDesktopControl": false,
+      "controlTrust": "owner",
+      "reviewReplies": true
+    }
+  }
+}

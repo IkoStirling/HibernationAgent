@@ -1,0 +1,996 @@
+{
+  "version": 1,
+  "id": "asterlan-pixel",
+  "canvas": [
+    168,
+    168
+  ],
+  "anchor": [
+    84,
+    144
+  ],
+  "hitbox": [
+    18,
+    18,
+    156,
+    146
+  ],
+  "palette": "original",
+  "states": {
+    "idle": [
+      {
+        "id": "quiet-idle",
+        "loop": [
+          {
+            "image": "frames/idle/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/008.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/009.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/010.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/011.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/012.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/013.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/014.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/015.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/016.png",
+            "ms": 166
+          }
+        ]
+      }
+    ],
+    "breathing": [
+      {
+        "id": "tired-breathing",
+        "loop": [
+          {
+            "image": "frames/breathing/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/breathing/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/breathing/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/breathing/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/breathing/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/breathing/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/breathing/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/breathing/south/007.png",
+            "ms": 166
+          }
+        ]
+      }
+    ],
+    "blink": [
+      {
+        "id": "blink",
+        "loop": [
+          {
+            "image": "frames/eyes-blind/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/eyes-blind/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/eyes-blind/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/eyes-blind/south/008.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/009.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/010.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/eyes-blind/south/011.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/012.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/013.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/eyes-blind/south/014.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/015.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/eyes-blind/south/016.png",
+            "ms": 166
+          }
+        ]
+      }
+    ],
+    "walk": [
+      {
+        "id": "right-walk",
+        "start": [
+          {
+            "image": "frames/trun/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/trun/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/trun/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/trun/south/008.png",
+            "ms": 167
+          }
+        ],
+        "loop": [
+          {
+            "image": "frames/walking/east/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/walking/east/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/walking/east/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/walking/east/008.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/009.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/010.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/walking/east/011.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/012.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/013.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/walking/east/014.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/015.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walking/east/016.png",
+            "ms": 166
+          }
+        ],
+        "end": [
+          {
+            "image": "frames/trun/south/008.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/trun/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/trun/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/trun/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/trun/south/000.png",
+            "ms": 167
+          }
+        ]
+      }
+    ],
+    "dragged": [
+      {
+        "id": "suspended",
+        "loop": [
+          {
+            "image": "frames/drag-hold/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/008.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/009.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/010.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/011.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/012.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/013.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/014.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/015.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/016.png",
+            "ms": 166
+          }
+        ]
+      }
+    ],
+    "dragged_side": [
+      {
+        "id": "side-pickup",
+        "start": [
+          {
+            "image": "frames/trun/south/008.png",
+            "ms": 55
+          },
+          {
+            "image": "frames/trun/south/007.png",
+            "ms": 55
+          },
+          {
+            "image": "frames/trun/south/006.png",
+            "ms": 55
+          },
+          {
+            "image": "frames/trun/south/005.png",
+            "ms": 55
+          },
+          {
+            "image": "frames/trun/south/004.png",
+            "ms": 55
+          },
+          {
+            "image": "frames/trun/south/003.png",
+            "ms": 55
+          },
+          {
+            "image": "frames/trun/south/002.png",
+            "ms": 55
+          },
+          {
+            "image": "frames/trun/south/001.png",
+            "ms": 55
+          },
+          {
+            "image": "frames/trun/south/000.png",
+            "ms": 55
+          }
+        ],
+        "loop": [
+          {
+            "image": "frames/drag-hold/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/008.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/009.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/010.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/011.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/012.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/013.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-hold/south/014.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/015.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-hold/south/016.png",
+            "ms": 166
+          }
+        ]
+      }
+    ],
+    "landing": [
+      {
+        "id": "soft-landing",
+        "start": [
+          {
+            "image": "frames/drag-drop/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-drop/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-drop/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-drop/south/008.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-drop/south/009.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-drop/south/010.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-drop/south/011.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-drop/south/012.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-drop/south/013.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/drag-drop/south/014.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-drop/south/015.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/drag-drop/south/016.png",
+            "ms": 166
+          }
+        ],
+        "loop": [
+          {
+            "image": "poses/standing/south.png",
+            "ms": 200
+          }
+        ]
+      }
+    ],
+    "resting": [
+      {
+        "id": "lying-sleep",
+        "start": [
+          {
+            "image": "frames/on-sleep/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/on-sleep/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/on-sleep/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/on-sleep/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/on-sleep/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/on-sleep/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/on-sleep/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/on-sleep/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/on-sleep/south/008.png",
+            "ms": 167
+          }
+        ],
+        "loop": [
+          {
+            "image": "poses/sleeping/south.png",
+            "ms": 1200
+          }
+        ],
+        "end": [
+          {
+            "image": "frames/walk-up/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walk-up/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/walk-up/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walk-up/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walk-up/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/walk-up/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walk-up/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/walk-up/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/walk-up/south/008.png",
+            "ms": 167
+          }
+        ]
+      }
+    ],
+    "listening": [
+      {
+        "id": "quiet-attention",
+        "loop": [
+          {
+            "image": "frames/idle/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/008.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/009.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/010.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/011.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/012.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/013.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/014.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/015.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/016.png",
+            "ms": 166
+          }
+        ]
+      }
+    ],
+    "eating": [
+      {
+        "id": "holding-food",
+        "loop": [
+          {
+            "image": "frames/idle/south/000.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/001.png",
+            "ms": 166,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/002.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/003.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/004.png",
+            "ms": 166,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/005.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/006.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/007.png",
+            "ms": 166,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/008.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/009.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/010.png",
+            "ms": 166,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/011.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/012.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/013.png",
+            "ms": 166,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/014.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/015.png",
+            "ms": 167,
+            "hand": [
+              85,
+              104
+            ]
+          },
+          {
+            "image": "frames/idle/south/016.png",
+            "ms": 166,
+            "hand": [
+              85,
+              104
+            ]
+          }
+        ]
+      }
+    ],
+    "curious": [
+      {
+        "id": "quiet-observation",
+        "loop": [
+          {
+            "image": "frames/idle/south/000.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/001.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/002.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/003.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/004.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/005.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/006.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/007.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/008.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/009.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/010.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/011.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/012.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/013.png",
+            "ms": 166
+          },
+          {
+            "image": "frames/idle/south/014.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/015.png",
+            "ms": 167
+          },
+          {
+            "image": "frames/idle/south/016.png",
+            "ms": 166
+          }
+        ]
+      }
+    ]
+  },
+  "fallbacks": {
+    "receiving": "listening",
+    "preparing": "listening",
+    "thinking": "preparing",
+    "speaking": "idle"
+  }
+}

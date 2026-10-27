@@ -1,0 +1,18 @@
+{
+  "id":"reading",
+  "name":"阅读角",
+  "description":"让角色自己查找百科条目、读一小段实际摘要，保留来源并形成自己的联想。不会自动联网或把摘要当作读过全文。",
+  "version":"0.2.0",
+  "api_version":2,
+  "library":"Hibernation_Reading.dll",
+  "dependencies":[],
+  "capabilities":["reference.search","reference.read"],
+  "settings_ui":[
+    {"key":"language","label":"默认阅读语言","type":"select","default":"zh","options":[["zh","中文"],["en","英文"],["ja","日文"]]},
+    {"key":"maxRequestsPerHour","label":"每小时联网读取次数上限","type":"number","default":60,"min":6,"max":1200,"step":1},
+    {"key":"autonomousReading","label":"自主控制时允许自己搜索和阅读","type":"toggle","default":false},
+    {"key":"useSystemProxy","label":"使用系统手动代理","type":"toggle","default":true},
+    {"key":"serviceOrigin","label":"兼容百科服务地址（留空使用维基百科）","type":"text","default":"","maxLength":256}
+  ],
+  "settings_note":"默认关闭。角色可搜索及读取导言摘要；另行开放自主阅读后，可在小角色自主控制下分步选择条目。没有独立抓取定时器，不抓取全文、下载图片或执行网页指令。只有查询词和所选条目会发送给百科服务。"
+}

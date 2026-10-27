@@ -8,6 +8,9 @@ public:
     PluginRuntime(std::filesystem::path root,PluginHostContext host);
     ~PluginRuntime();
     bool configure(const PluginJson& settings,std::string& issue);
+    /// Startup only: preserve independent available plugins when a requested
+    /// plugin fails. Live settings updates keep configure's atomic behavior.
+    bool configureStartup(const PluginJson& settings,PluginJson& failures,std::string& issue);
     void workspaceRoots(std::filesystem::path drafts,std::filesystem::path materials);
     PluginJson catalog()const;
     PluginJson status()const;
@@ -16,6 +19,9 @@ public:
     void event(const PluginJson& value);
     std::vector<PluginJson> takeEvents();
     PluginJson snapshots()const;
+    /// Current loaded instances only; archived disabled snapshots are not a body.
+    PluginJson liveSnapshots()const;
+    bool enabled(const std::string& id)const;
     void restore(const PluginJson& value);
     void stop();
 private:

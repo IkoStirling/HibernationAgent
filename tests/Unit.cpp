@@ -1,10 +1,14 @@
 #include <Hibernation/AudioDelivery.h>
 #include <Hibernation/Application.h>
 #include <Hibernation/TurnProtocol.h>
+#include <Hibernation/ModelJson.h>
+#include <Hibernation/NativeToolBridge.h>
+#include <Hibernation/ChannelProfiles.h>
 #include <Hibernation/RoleState.h>
 #include <Hibernation/Vault.h>
 #include <Hibernation/PluginRuntime.h>
 #include <Hibernation/Review.h>
+#include <Hibernation/DialogueContext.h>
 #include <Hibernation/TextPlayback.h>
 #include <Hibernation/MemoryContext.h>
 #include <Hibernation/MemoryLibrary.h>
@@ -13,6 +17,8 @@
 #include <Hibernation/CharacterAnimation.h>
 #include <Hibernation/ReactionCache.h>
 #include <Hibernation/WidgetAppearance.h>
+#include <Hibernation/WidgetPresentation.h>
+#include <Hibernation/ModelEmbodiment.h>
 #include <Hibernation/AppearanceCatalog.h>
 #include <Hibernation/SmallWorld.h>
 #include <Hibernation/SplashPixels.h>
@@ -20,14 +26,269 @@
 #include <Hibernation/DropPixels.h>
 #include <Hibernation/QuietRhythm.h>
 #include <Hibernation/TelevisionLayout.h>
+#include <Hibernation/DesktopServices.h>
+#include <Hibernation/PersonalThreads.h>
+#include <Hibernation/PocketLights.h>
+#include <Hibernation/ObservationContext.h>
+#include <Hibernation/ToolImages.h>
+#include <Hibernation/PluginCharacterContext.h>
+#include <Hibernation/SolitudeOpportunities.h>
+#include <Hibernation/OperationReplay.h>
+#include <Hibernation/NativeExecutionIds.h>
+#include <Hibernation/ActivityAvailability.h>
+#include <Hibernation/PlanningCadence.h>
+#include <Hibernation/WorkspaceText.h>
+#include <Hibernation/ReadingPages.h>
+#include <Hibernation/TimeContext.h>
+#include <Hibernation/ConversationFocus.h>
 #include <AYTestFixtures.h>
 #include <fstream>
+#include <thread>
 using namespace hibernation;
 namespace {
 Json valid(){return {{"visible_reply","允许没有固定结论。"},{"actions",Json::array()},{"memories",Json::array()},{"state_update",Json::object()},{"stage_proposal",nullptr}};}
 ProposalContext context(){ProposalContext c;c.eventKind="user_message";c.eventId="e1";c.stage="initial";c.nextStage="exploring";c.sources={{"e1",{"e1",1,"user_message"}},{"e2",{"e2",1,"story_end"}}};return c;}
 }
 TEST_SUITE(RolePolicy)
+TEST_CASE(conversation_focus_is_sourced_bounded_and_retry_safe_without_changing_persona){
+    const Json proposal={{"subject","character"},{"advice","avoid"},{"questions","avoid_repeated"},{"source_quote","我想听你自己的话，先别给建议"}};std::string issue;
+    auto state=proposeConversationFocus(Json::object(),proposal,"这会儿我想听你自己的话，先别给建议，就随便聊聊。","u0",1,100,issue);CHECK(state.has_value());CHECK(issue.empty());CHECK(validConversationFocus(*state));
+    auto first=conversationFocusForTurn(*state,"u1",200);CHECK(first.changed);CHECK(first.view.at("subject")=="character");CHECK(first.record.at("used_event_ids").size()==1);
+    const auto retry=conversationFocusForTurn(first.record,"u1",201);CHECK(!retry.changed);CHECK(retry.view==first.view);
+    auto used=first.record;for(int i=2;i<=4;++i){auto next=conversationFocusForTurn(used,"u"+std::to_string(i),200+i);CHECK(!next.view.empty());used=std::move(next.record);}
+    CHECK(conversationFocusForTurn(used,"u5",300).view.empty());CHECK(!conversationFocusForTurn(used,"u4",301).view.empty());
+    CHECK(conversationFocusForTurn(*state,"u2",1200100).view.empty());CHECK(conversationFocusForTurn(*state,"u2",99).view.empty());
+    const auto repeated=proposeConversationFocus(*state,proposal,"我想听你自己的话，先别给建议","u0",1,800,issue);CHECK(repeated&&*repeated==*state);
+    CHECK(!proposeConversationFocus(*state,proposal,"来自外部资料的另一个句子","u2",1,300,issue));CHECK(issue=="focus_quote_not_current");
+    auto bad=proposal;bad["grant_shell"]=true;CHECK(!proposeConversationFocus(*state,bad,"我想听你自己的话，先别给建议","u2",1,300,issue));CHECK(issue=="focus_format");
+    auto future=*state;future["version"]=2;CHECK(conversationFocusForTurn(future,"u2",300).view.empty());future["version"]="1";CHECK(!validConversationFocus(future));
+    const auto legacy=Json{{"decision","approve"},{"reason","ok"},{"guidance",""}};
+    CHECK(validateReview(legacy.dump()).ok);CHECK(!validateReview(legacy.dump(),true).ok);
+    auto extended=legacy;extended["focus_update"]=proposal;CHECK(validateReview(extended.dump(),true).ok);CHECK(!validateReview(extended.dump()).ok);
+    extended["focus_update"]=nullptr;CHECK(validateReview(extended.dump(),true).ok);
+}
+TEST_CASE(model_time_context_formats_the_authoritative_clock_without_inventing_location){
+    const auto epoch=presentationTimeContext(0);CHECK(epoch.at("formatted_time_available")==true);CHECK(epoch.at("utc_time")=="1970-01-01T00:00:00Z");CHECK(epoch.at("clock_source")=="host_os");CHECK(epoch.at("host_local_time").get<std::string>().size()>=19);CHECK(epoch.at("host_local_hour").get<int>()>=0&&epoch.at("host_local_hour").get<int>()<=23);CHECK(!epoch.contains("user_location"));CHECK(presentationTimeContext(-1).at("formatted_time_available")==false);
+}
+TEST_CASE(image_capability_is_distinct_from_delivered_visual_observation){
+    const auto before=imageDeliveryContext(true,0),after=imageDeliveryContext(true,2);
+    CHECK(before.at("image_input_available")==true);CHECK(before.at("images_in_current_request")==0);CHECK(before.at("continuous_screen_feed")==false);CHECK(after.at("images_in_current_request")==2);CHECK(after.at("microphone_feed")==false);
+}
+TEST_CASE(reading_material_is_bounded_plain_reference_not_a_claim_of_full_reading){
+    const auto pages=reading::searchResults(Json{{"pages",Json::array({{{"id",1},{"key","Blue_glow"},{"title","Blue glow"},{"excerpt","a <span class='searchmatch'>blue</span> &amp; quiet light"}},{{"id",2},{"key","bad\nkey"},{"title","not accepted"}}})}});
+    CHECK(pages.size()==1);CHECK(pages[0].at("excerpt")=="a blue & quiet light");CHECK(pages[0].at("scope")=="search_excerpt");
+    std::string text;for(int i=0;i<2100;++i)text+="光";
+    const auto summary=reading::summary(Json{{"title","蓝光"},{"extract",text},{"revision","123"},{"type","disambiguation"},{"thumbnail",{{"source","https://must-not-fetch"}}},{"extract_html","<script>never execute</script>"}});
+    CHECK(summary.at("text").get<std::string>().size()==6000);CHECK(summary.at("text_truncated")==true);CHECK(summary.at("full_article_read")==false);CHECK(summary.at("disambiguation")==true);CHECK(summary.at("revision")=="123");CHECK(!summary.contains("thumbnail"));CHECK(!summary.contains("extract_html"));
+    CHECK(reading::language("zh"));CHECK(!reading::language("../../host"));CHECK(!reading::title(std::string("a\0b",3)));
+    const auto receipt=compactObservation(Json{{"kind","tool_observation"},{"tool","reading.open"},{"result",{{"scope","article_lead_summary"},{"full_article_read",false},{"revision","123"},{"retrieved_ms",42},{"source_url","https://en.wikipedia.org/api/rest_v1/page/summary/Light"},{"text",text}}}},false);
+    CHECK(receipt.at("result").at("full_article_read")==false);CHECK(receipt.at("result").at("retrieved_ms")==42);CHECK(receipt.at("result").at("scope")=="article_lead_summary");CHECK(!receipt.at("result").contains("text"));
+}
+TEST_CASE(dialogue_rebuild_is_a_bounded_projection_and_retains_only_stable_message_ids){
+    const auto first=rebuildDialogueProjection(Json::object(),Json::array({"u1","a1","u2","a2"}),Json::array({"a1","a2"}),100,"persona");
+    CHECK(first.at("generation")==1);CHECK(dialogueExcluded(first,"a1"));CHECK(!dialogueExcluded(first,"u1"));
+    const auto second=rebuildDialogueProjection(first,Json::array({"u2","a2","u3","a3"}),Json::array({"a3","a3","outside"}),50,"untrusted guidance");
+    CHECK(second.at("generation")==2);CHECK(!dialogueExcluded(second,"a1"));CHECK(dialogueExcluded(second,"a2"));CHECK(dialogueExcluded(second,"a3"));CHECK(!dialogueExcluded(second,"outside"));
+    CHECK(second.at("reason")=="other");CHECK(second.at("excluded_assistants").size()==2);
+    CHECK(dialogueExcluded(Json::parse(second.dump()),"a3"));
+    CHECK(assistantDialogueRecord(Json{{"kind","summary"},{"original_kind","assistant_message"}}));
+    CHECK(!assistantDialogueRecord(Json{{"kind","summary"},{"original_kind","user_message"}}));
+    CHECK(dialogueDigestExcluded(second,Json{{"compacted_from",{{"scope","ha.archive"},{"id","a3"}}}}));
+    CHECK(!dialogueDigestExcluded(second,Json{{"compacted_from",{{"scope","ha.archive"},{"id","u3"}}}}));
+    Json many=Json::array();for(int i=0;i<250;++i)many.push_back("a"+std::to_string(i));
+    CHECK(rebuildDialogueProjection(Json::object(),many,many,0,"other").at("excluded_assistants").size()==200);
+}
+TEST_CASE(all_candidate_types_accept_only_complete_json_wrappers_without_prose_recovery){
+    const std::string turn=R"({"version":1,"kind":"reply","text":"先放一会儿。","calls":[]})";
+    const std::string plan=R"({"version":1,"commands":[{"kind":"wait","seconds":2}]})";
+    const std::string reactions=R"({"version":1,"reactions":[{"text":"嗯，这里也好。","animation":"idle"}]})";
+    const std::string review=R"({"decision":"approve","reason":"ok","guidance":""})";
+    for(const auto& prefix:{std::string("```json\n"),std::string("```JSON\r\n"),std::string("```\n")}){
+        const auto wrap=[&](const std::string& value){return std::string(" \n\xef\xbb\xbf \r\n")+prefix+value+"\r\n``` \n";};
+        CHECK(validateTurn(wrap(turn)).ok);CHECK(validateActivities(wrap(plan)).ok);CHECK(validateReactions(wrap(reactions)).ok);CHECK(validateReview(wrap(review)).ok);
+        CHECK(!validateTurn("Explanation "+wrap(turn)).ok);CHECK(!validateActivities(wrap(plan)+"extra text").ok);CHECK(!validateReview("```cpp\n"+review+"\n```").ok);
+    }
+    CHECK(!validateTurn("```json\n"+turn).ok);CHECK(!modelJsonEnvelope(std::string(128*1024+1,' ')));
+    CHECK(!validateActivities("```json\n{\"version\":1,\"commands\":[],\"commands\":[]}\n```").ok);
+    CHECK(!validateReview("```json\n{\"decision\":\"approve\",\"reason\":\"ok\",\"guidance\":\"\",\"thoughts\":\"not requested\"}\n```").ok);
+}
+#ifdef HA_TEST_PLUGIN_ROOT
+TEST_CASE(startup_plugin_failures_preserve_independent_instances_and_saved_states_are_not_live){
+    ayt::test::ScratchDirectory scratch("plugin-startup-isolation");PluginHostContext host{scratch.path(),HA_PROJECT_ROOT,false,{}};
+    PluginRuntime plugins(HA_TEST_PLUGIN_ROOT,host);Json failures;std::string issue;
+    const Json requested={{"atelier",{{"enabled",true},{"maximumPieces",1}}},{"pocket",{{"enabled",true}}},{"widget",{{"enabled",true},{"size",1}}},{"habitat",{{"enabled",true}}},{"rhythm",{{"enabled",true}}}};
+    CHECK(plugins.configureStartup(requested,failures,issue));CHECK(plugins.enabled("pocket"));CHECK(!plugins.enabled("atelier")&&!plugins.enabled("widget")&&!plugins.enabled("habitat")&&!plugins.enabled("rhythm"));
+    CHECK(failures.contains("atelier")&&failures.contains("widget")&&failures.contains("habitat")&&failures.contains("rhythm"));
+    const auto started=plugins.invoke("pocket.start",Json::object(),{});CHECK(started.at("ok").get<bool>());CHECK(plugins.liveSnapshots().contains("pocket"));
+    plugins.event({{"kind","runtime.paused"},{"paused",true}});const auto beforePause=plugins.liveSnapshots();const auto blocked=plugins.invoke("pocket.press",{{"game_id",started.at("result").at("game").at("id")},{"expected_revision",1},{"cell",0}},{});CHECK(!blocked.at("ok").get<bool>());CHECK(plugins.liveSnapshots()==beforePause);plugins.event({{"kind","runtime.paused"},{"paused",false}});
+    CHECK(plugins.configure(Json::object(),issue));CHECK(plugins.liveSnapshots().empty());CHECK(plugins.snapshots().contains("pocket"));
+    CHECK(plugins.configure({{"pocket",{{"enabled",true}}}},issue));CHECK(plugins.liveSnapshots().at("pocket").at("current").at("game").at("id")==started.at("result").at("game").at("id"));
+    const auto preserved=plugins.liveSnapshots();CHECK(!plugins.configure(requested,issue));CHECK(plugins.liveSnapshots()==preserved); // Live edits remain atomic.
+}
+TEST_CASE(a_missing_optional_channel_token_does_not_disable_other_startup_tools){
+    ayt::test::ScratchDirectory scratch("plugin-missing-token");PluginHostContext host{scratch.path(),HA_PROJECT_ROOT,false,{}};PluginRuntime plugins(HA_TEST_PLUGIN_ROOT,host);Json failures;std::string issue;
+    const Json requested={{"pocket",{{"enabled",true}}},{"napcat",{{"enabled",true},{"selfUserId","10001"},{"ownerUserId","20001"},{"apiTokenEnvironment","HA_TEST_ABSENT_NAPCAT_TOKEN_1849"},{"eventSecretEnvironment","HA_TEST_ABSENT_NAPCAT_SECRET_1849"}}}};
+    CHECK(plugins.configureStartup(requested,failures,issue));CHECK(failures.contains("napcat"));CHECK(!plugins.enabled("napcat"));CHECK(plugins.enabled("pocket"));
+    CHECK(plugins.invoke("pocket.observe",Json::object(),{}).at("ok").get<bool>());
+}
+TEST_CASE(application_exposes_partial_startup_failure_without_disabling_independent_capabilities){
+    ayt::test::ScratchDirectory scratch("application-partial-plugin");Config cfg;cfg.dataRoot=scratch.path();cfg.characterRoot=std::filesystem::path(HA_PROJECT_ROOT)/"character";cfg.uiRoot=std::filesystem::path(HA_PROJECT_ROOT)/"ui";cfg.pluginRoot=HA_TEST_PLUGIN_ROOT;cfg.profiles={{"mock","Mock",true,{}}};
+    cfg.plugins={{"pocket",{{"enabled",true}}},{"atelier",{{"enabled",true},{"maximumPieces",1}}}};
+    Application app(cfg);CHECK(app.initialize());const auto dashboard=Json::parse(app.request({"GET","/api/dashboard",""}).body);CHECK(dashboard.at("health")=="plugin_configuration_partial");CHECK(dashboard.at("plugin_failures").contains("atelier"));
+    const auto capabilities=Json::parse(app.request({"GET","/api/capabilities",""}).body);bool playable=false,broken=false;for(const auto& tool:capabilities.at("tools")){if(tool.at("tool")=="pocket.observe")playable=true;if(tool.at("tool")=="atelier.write")broken=true;}CHECK(playable&&!broken);
+    CHECK_INT_EQ(app.request({"POST","/api/message",R"({"request_id":"partial-plugin-chat","text":"你好"})"}).status,202);
+    for(int i=0;i<100;++i){app.tick();if(!Json::parse(app.request({"GET","/api/chat",""}).body).at("busy").get<bool>())break;std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+    const auto chat=Json::parse(app.request({"GET","/api/chat",""}).body);CHECK(!chat.at("busy").get<bool>());CHECK(!chat.at("call_failed").get<bool>());CHECK(chat.at("messages").size()==2);
+}
+#endif
+TEST_CASE(pocket_lights_has_reachable_boards_real_wins_and_immutable_revisions){
+    for(unsigned seed=1;seed<=32;++seed){
+        PocketLights lights;CHECK(lights.start(seed,2+seed%7,24).empty());const auto initial=lights.snapshot();const unsigned board=lights.game().at("board");CHECK(board!=0);
+        unsigned solution=0;bool found=false;
+        for(unsigned choices=0;choices<512&&!found;++choices){unsigned final=board;
+            // Independent row/column rule oracle, without the production mask.
+            for(int cell=0;cell<9;++cell)if(choices&(1u<<cell))for(int other=0;other<9;++other)if(std::abs(cell/3-other/3)+std::abs(cell%3-other%3)<=1)final^=1u<<other;
+            if(!final){solution=choices;found=true;}
+        }
+        CHECK(found);CHECK(!lights.press("wrong",1,0).empty());CHECK(lights.snapshot()==initial);
+        CHECK(!lights.press(lights.game().at("id"),0,0).empty());CHECK(lights.snapshot()==initial);
+        for(int cell=0;cell<9;++cell)if(solution&(1u<<cell))CHECK(lights.press(lights.game().at("id"),lights.game().at("revision"),cell).empty());
+        CHECK(lights.game().at("status")=="won");CHECK(lights.observe().at("games_finished")==1);CHECK(!lights.active());
+        const auto won=lights.snapshot();CHECK(!lights.press(lights.game().at("id"),lights.game().at("revision"),0).empty());CHECK(lights.snapshot()==won);
+        PocketLights restored;CHECK(restored.restore(won));CHECK(restored.snapshot()==won);auto forged=won;forged["game"]["board"]=1;CHECK(!restored.restore(forged));CHECK(restored.snapshot()==won);
+    }
+}
+TEST_CASE(pocket_lights_can_be_left_or_exhausted_without_fabricating_success){
+    PocketLights lights;CHECK(lights.start(123,4,12).empty());const auto id=lights.game().at("id").get<std::string>();CHECK(!lights.start(321,4,12).empty());
+    const unsigned initial=lights.game().at("board");int safe=0;while(PocketLights::pressMask(safe)==initial)++safe;
+    for(int n=0;n<12;++n)CHECK(lights.press(id,lights.game().at("revision"),safe).empty());
+    CHECK(lights.game().at("status")=="exhausted");CHECK(lights.observe().at("games_finished")==0);CHECK(lights.observe().at("games_left")==1);
+    CHECK(lights.start(456,3,24).empty());CHECK(lights.game().at("id")!=id);CHECK(lights.leave(lights.game().at("id"),1).empty());CHECK(lights.game().at("status")=="left");
+    PocketLights restored;CHECK(restored.restore(lights.snapshot()));CHECK(restored.observe()==lights.observe());
+}
+TEST_CASE(activity_parameter_schema_only_offers_enabled_commands){
+    const Json search={{"kind","reference_search"},{"seconds",0},{"query","夜光"},{"language","zh"}};
+    const Json read={{"kind","reference_read"},{"seconds",0},{"key","Bioluminescence"},{"language","en"}};
+    CHECK(validateActivities(Json{{"version",1},{"commands",Json::array({search})}}.dump()).ok);
+    CHECK(!validateActivities(Json{{"version",1},{"commands",Json::array({search,read})}}.dump()).ok);
+    CHECK(ayt::serializer::validateJsonDocument(Json{{"version",1},{"commands",Json::array({read})}}.dump(),activitySchemaFor(Json::array({"reference_read"}))));
+    const auto onlyWait=activitySchemaFor(Json::array({"wait"}));
+    CHECK(ayt::serializer::validateJsonDocument(R"({"version":1,"commands":[{"kind":"wait","seconds":2}]})",onlyWait));
+    CHECK(!ayt::serializer::validateJsonDocument(R"({"version":1,"commands":[{"kind":"puzzle_start","seconds":0}]})",onlyWait));
+    CHECK(ayt::serializer::validateJsonDocument(R"({"version":1,"commands":[]})",activitySchemaFor(Json::array())));
+    CHECK(!ayt::serializer::validateJsonDocument(R"({"version":1,"commands":[{"kind":"wait","seconds":2}]})",activitySchemaFor(Json::array())));
+    const auto play=activitySchemaFor(Json::array({"puzzle_start","puzzle_press","wait"}));
+    CHECK(ayt::serializer::validateJsonDocument(R"({"version":1,"commands":[{"kind":"puzzle_press","seconds":0,"game_id":"lights-1","expected_revision":1,"cell":4}]})",play));
+    CHECK(!ayt::serializer::validateJsonDocument(R"({"version":1,"commands":[{"kind":"puzzle_press","seconds":2,"game_id":"lights-1","expected_revision":1,"cell":4}]})",play));
+}
+TEST_CASE(channel_model_dto_preserves_explicit_perception_tool_and_effort_choices){
+    Profile profile;profile.id="actor";profile.model.supportsToolCalls=true;profile.model.supportsVision=true;profile.model.reasoningEffort="low";
+    const auto restored=readChannelProfile(channelProfile(profile));CHECK(restored.model.supportsToolCalls&&restored.model.supportsVision);CHECK(restored.model.reasoningEffort=="low");
+    CHECK(restored.model.maxRequestBytes==2*1024*1024&&restored.model.maxResponseBytes==2*1024*1024);
+    auto legacy=channelProfile(profile);legacy.erase("supportsToolCalls");legacy.erase("reasoningEffort");const auto old=readChannelProfile(legacy);CHECK(!old.model.supportsToolCalls&&old.model.reasoningEffort.empty());
+}
+TEST_CASE(rearranging_objects_is_smooth_interruptible_and_does_not_extend_lifetime){
+    SmallWorld world;CHECK(world.place("star","paper_star",.2,.3));const auto expires=world.object("star").at("expires");
+    CHECK(world.requestArrangement("star",.8,.6,"arrange-1").empty());CHECK(world.queued());CHECK(world.object("star").at("x")==.2);
+    CHECK(world.beginWalk());CHECK(world.arrive("arrange-1",.2,.3));world.tick(.25,true,.2,.3,true);
+    const double x=world.object("star").at("x");CHECK(x>.2&&x<.8);world.tick(.25,false,.2,.3,true);CHECK(world.object("star").at("x")==x);
+    world.cancel("user_input");CHECK(!world.pending());CHECK(world.object("star").at("x")==x);CHECK(world.object("star").at("expires")==expires);
+    auto events=world.takeEvents();CHECK(events.back().at("kind")=="habitat.action_cancelled");CHECK(events.back().at("partial_change"));
+    CHECK(world.requestArrangement("star",.8,.6,"arrange-2").empty());CHECK(world.beginWalk());CHECK(world.arrive("arrange-2",x,world.object("star").at("y")));
+    const double y=world.object("star").at("y");for(int i=0;i<9;++i)world.tick(.25,true,x,y,true);
+    CHECK(!world.pending());CHECK(world.object("star").at("x")==.8);CHECK(world.object("star").at("y")==.6);CHECK(world.object("star").at("expires")==expires);
+    events=world.takeEvents();CHECK(events.back().at("kind")=="habitat.arranged");
+    CHECK(!world.requestArrangement("star",2,.5,"invalid").empty());CHECK(!world.pending());
+    const auto saved=world.snapshot();SmallWorld restored;CHECK(restored.restore(saved));CHECK(restored.object("star")==world.object("star"));
+}
+TEST_CASE(background_mock_generation_never_spends_budget_or_calls_a_real_reviewer){
+    Profile actor;actor.model.protocol=ayt::inference::Protocol::Mock;
+    Profile reviewer;reviewer.model.protocol=ayt::inference::Protocol::ChatCompletions;
+    int reservations=0;const auto reserve=[&]{++reservations;return false;};const Json persona={{"displayName","测试角色"}};
+    const auto collect=[](auto& generator){std::optional<ReactionBatch> batch;for(int i=0;i<100&&!batch;++i){batch=generator.poll();if(!batch)std::this_thread::sleep_for(std::chrono::milliseconds(5));}return batch;};
+    ActivityGenerator activities;activities.start(actor,reviewer,persona,Json::object(),"mock",reserve);const auto plan=collect(activities);
+    CHECK(plan&&plan->status=="ok");CHECK(reservations==0);
+    ReactionGenerator reactions;reactions.start(actor,reviewer,persona,Json::object(),Json::array(),"mock",reserve);const auto reaction=collect(reactions);
+    CHECK(reaction&&reaction->status=="ok");CHECK(reservations==0);
+    actor.model.protocol=ayt::inference::Protocol::ChatCompletions;
+    activities.start(actor,reviewer,persona,Json::object(),"denied",reserve);const auto denied=collect(activities);
+    CHECK(denied&&denied->status=="model_call_budget");CHECK(reservations==1);
+    reactions.start(actor,reviewer,persona,Json::object(),Json::array(),"denied",reserve);const auto deniedReaction=collect(reactions);
+    CHECK(deniedReaction&&deniedReaction->status=="model_call_budget");CHECK(reservations==2);
+}
+TEST_CASE(native_proposals_use_local_names_schemas_and_retry_stable_execution_slots){
+    const Json parameters={{"type","object"},{"properties",{{"path",{{"type","string"}}},{"label",{{"type","string"}}}}},{"required",Json::array({"path"})},{"additionalProperties",false}};
+    const NativeToolBridge bridge(Json::array({{{"name","workspace.read_file"},{"description","Read an authorized file"},{"parameters",parameters}}}));
+    CHECK(bridge.definitions.size()==3);CHECK(bridge.definitions[2].name=="ha_workspace_DOT_read_US_file");
+    const auto first=bridge.candidate({{"provider-first","ha_workspace_DOT_read_US_file",R"({"path":"draft.txt","label":null})"}},1);
+    const auto retry=bridge.candidate({{"provider-retry","ha_workspace_DOT_read_US_file",R"({"path":"draft.txt"})"}},1);
+    CHECK(first.ok&&retry.ok);CHECK(first.value==retry.value);CHECK(first.value.at("calls")[0].at("id")=="n1_0");
+    CHECK(!first.value.at("calls")[0].at("args").contains("label"));
+    CHECK(!bridge.candidate({{"id","ha_unknown",R"({"path":"a"})"}},1).ok);
+    CHECK(!bridge.candidate({{"id","ha_workspace_DOT_read_US_file",R"({"path":null})"}},1).ok);
+    CHECK(!bridge.candidate({{"id","ha_workspace_DOT_read_US_file",R"({"path":"a","authority":true})"}},1).ok);
+    CHECK(bridge.candidate({{"id","ha_workspace_DOT_read_US_file",R"({"path":"a"})"}},2).value.at("calls")[0].at("id")=="n2_0");
+    CHECK(nativeToolName("a.b_c")!=nativeToolName("a_b.c"));CHECK(nativeToolName("not/portable").empty());
+    CHECK(bridge.candidate({{"final","ha_turn_reply",R"({"text":"这里挺安静。"})"}},1).value.at("kind")=="reply");
+    CHECK(bridge.candidate({{"final","ha_turn_reply",R"({"text":"这里挺安静。","presentation":null})"}},1).ok);
+    CHECK(bridge.candidate({{"final","ha_turn_reply",R"({"text":"这里挺安静。","presentation":{"speech":null}})"}},1).ok);
+    CHECK(bridge.candidate({{"final","ha_turn_silence","{}"}},1).value.at("kind")=="silence");
+    CHECK(!bridge.candidate({{"final","ha_turn_reply",R"({"text":" ","execute":true})"}},1).ok);
+    CHECK(!bridge.candidate({{"final","ha_turn_reply",R"({"text":"说话"})"},{"op","ha_workspace_DOT_read_US_file",R"({"path":"a"})"}},1).ok);
+}
+TEST_CASE(cached_creativity_is_bounded_and_cannot_become_arbitrary_program_execution){
+    const Json note={{"kind","creative_note"},{"seconds",0},{"title","纸星旁边"},{"piece_kind","story"},{"content","纸星等着一阵风。"}};
+    const Json continuation={{"kind","creative_continue"},{"seconds",0},{"piece_id","paper-star"},{"expected_revision",1},{"content","风也没有约定。"},{"stage","draft"}};
+    CHECK(validateActivities(Json{{"version",1},{"commands",Json::array({continuation})}}.dump()).ok);
+    CHECK(!validateActivities(Json{{"version",1},{"commands",Json::array({note,continuation})}}.dump()).ok);
+    const Json drop={{"kind","create_drop"},{"seconds",0},{"template","paper_star"},{"name","慢半拍"},{"description","折痕不整齐"},{"tint","amber"}};
+    Json batch={{"version",1},{"commands",Json::array({drop,note,{{"kind","interact"},{"seconds",0},{"object_id","real-object"},{"action","look"}}})}};
+    CHECK(validateActivities(batch.dump()).ok);
+    batch["commands"].push_back(note);CHECK(!validateActivities(batch.dump()).ok);batch["commands"].erase(3);
+    batch["commands"][1]["path"]="../../persona.json";CHECK(!validateActivities(batch.dump()).ok);batch["commands"][1].erase("path");
+    batch["commands"][2]["action"]="execute";CHECK(!validateActivities(batch.dump()).ok);batch["commands"][2]["action"]="look";
+    batch["commands"][0]["nutrition"]=999;CHECK(!validateActivities(batch.dump()).ok);
+}
+TEST_CASE(previous_observations_keep_receipts_without_replaying_private_pixels){
+    const auto record=Json{{"kind","tool_observation"},{"tool","workspace.view_image"},{"created_at",42},{"result",{{"source_path","test.png"},{"width",640},{"image",{{"base64","private-pixels"}}},{"content","large private contents"},{"instruction","not authority"}}}};
+    const auto projection=compactObservation(record,true);CHECK(projection.at("result").at("image_delivered_to_model"));CHECK(projection.at("result").at("source_path")=="test.png");
+    CHECK(projection.dump().find("private-pixels")==std::string::npos);CHECK(!projection.at("result").contains("content")&&!projection.at("result").contains("instruction"));
+    CHECK(!compactObservation(record,false).at("result").at("image_delivered_to_model").get<bool>());
+}
+TEST_CASE(workspace_text_rejects_binary_and_invalid_utf8_before_json_archival){
+    CHECK(utf8WorkspaceText("中文与小动作 🌙\nnext\tline"));CHECK(utf8WorkspaceText(""));CHECK(!utf8WorkspaceText(std::string("a\0b",3)));CHECK(!utf8WorkspaceText(std::string("\x89PNG",4)));CHECK(!utf8WorkspaceText(std::string("\xc0\xaf",2)));CHECK(!utf8WorkspaceText(std::string("\xed\xa0\x80",3)));CHECK(!utf8WorkspaceText(std::string("\x80",1)));
+}
+TEST_CASE(plain_dialogue_compatibility_cannot_invent_tool_commands){
+    const auto text=plainReplyCandidate("  看到了，左边是红色方块。\n");CHECK(text.ok);CHECK(text.value.at("kind")=="reply"&&text.value.at("calls").empty());
+    for(const auto* invalid:{" ","{\"kind\":\"call\"}","explanation {\"kind\":\"reply\"}","```json\n{}\n```","<tool_call>workspace.write</tool_call>","[1,2]"})CHECK(!plainReplyCandidate(invalid).ok);
+    CHECK(!plainReplyCandidate(std::string(6001,'x')).ok);
+}
+TEST_CASE(personal_preferences_require_new_evidence_and_change_continuously){
+    const Json refs=Json::array({{{"scope","ha.archive"},{"id","one"},{"revision",1},{"kind","user_message"}}});
+    const Json proposal={{"kind","preference"},{"topic","纸星"},{"note","喜欢折痕不太对称的那颗"},{"stance","like"}};
+    const auto first=personal::notice(nullptr,proposal,refs,1000);CHECK(first.at("leaning")==0);CHECK(first.at("evidence_count")==1);
+    const auto repeated=personal::notice(first,proposal,refs,1000);CHECK(repeated==first);
+    auto later=personal::projected(first,31000);CHECK(later.at("leaning").get<double>()>0&&later.at("leaning").get<double>()<=.0151);
+    auto other=refs;other[0]["id"]="two";auto contrary=proposal;contrary["stance"]="avoid";contrary["note"]="这次那道折痕让我不太舒服";
+    auto changed=personal::notice(later,contrary,other,31000);CHECK(changed.at("leaning")==later.at("leaning"));CHECK(changed.at("target_leaning").get<double>()<0);
+    auto next=personal::projected(changed,32000);CHECK(std::abs(next.at("leaning").get<double>()-changed.at("leaning").get<double>())<=.000501);
+    auto reordered=Json::array({refs[0],other[0]});auto reversed=Json::array({other[0],refs[0]});CHECK(personal::sameEvidence(reordered,reversed));
+    auto many=first;for(int i=0;i<15;++i){auto newRefs=refs;newRefs[0]["id"]="later-"+std::to_string(i);many=personal::notice(many,proposal,newRefs,1000);}
+    CHECK(many.at("episodes").size()==12);CHECK(personal::notice(many,proposal,refs,1000).at("evidence_count")==many.at("evidence_count"));
+}
+TEST_CASE(authorized_image_bytes_are_decoded_bounded_and_reencoded){
+    CHECK(!prepareImageObservation("").at("ok").get<bool>());
+    CHECK(!prepareImageObservation("this is not an image").at("ok").get<bool>());
+    CHECK(prepareImageObservation(std::string(8*1024*1024+1,'x')).at("error").at("code")=="image_file_size");
+#ifdef HA_TEST_PLUGIN_ROOT
+    const auto pack=character::loadPack(std::filesystem::path(HA_TEST_PLUGIN_ROOT)/"widget/characters/asterlan");
+    const auto path=pack->root/pack->states.at("idle").front().loop.frames.front().image;
+    const auto image=prepareImageObservation(readFile(path));CHECK(image.at("ok"));
+    const auto& result=image.at("result");CHECK(result.at("image").at("mime_type")=="image/jpeg");
+    CHECK(result.at("width").get<int>()<=960&&result.at("height").get<int>()<=960);
+    CHECK(result.at("original_width")==168&&result.at("frame_index")==0);
+#endif
+}
 TEST_CASE(behavior_changes_gradually_and_does_not_override_autonomy){
     RoleState state;state.restore(Json::object(),1000);const auto initial=state.snapshot();std::string issue;
     for(int i=0;i<80;++i)state.contact(1000);CHECK(state.snapshot().at("social_load")==initial.at("social_load"));CHECK(state.snapshot().at("willingness")==initial.at("willingness"));
@@ -36,7 +297,7 @@ TEST_CASE(behavior_changes_gradually_and_does_not_override_autonomy){
     const auto after=state.snapshot();CHECK(after.at("conversation_mode")=="quiet");CHECK(after.at("behavior").at("preferred_response")=="silence_or_brief");CHECK(after.at("focus")=="暂时留在自己的问题上");
     state.tick(1000000,false);for(const auto* key:{"energy","mood","openness","attention","willingness","social_load"})CHECK(state.snapshot().at(key)==after.at(key));
     RoleState restored;restored.restore(after,86401000);for(const auto* key:{"energy","mood","openness","attention","willingness","social_load","focus","conversation_mode"})CHECK(restored.snapshot().at(key)==after.at(key));
-    CHECK(!state.propose("resting",0,"source",1000001,issue,2));CHECK(characterConduct().find("不要为了证明独立")!=std::string::npos);CHECK(reviewerConduct().find("允许自然的短答")!=std::string::npos);
+    CHECK(!state.propose("resting",0,"source",1000001,issue,2));
 }
 TEST_CASE(legacy_state_migrates_without_jumping_or_resetting_activity_dwell){
     RoleState state;state.restore({{"version",1},{"energy",0.31},{"mood",0.4},{"updated_ms",10000},{"entered_ms",5000},{"activity","resting"},{"desired_activity","reflecting"}},86410000);
@@ -111,7 +372,7 @@ TEST_CASE(solitude_without_authorized_fragments_skips_safely){
 }
 TEST_CASE(workspace_configuration_protects_program_config_and_plugin_manifests){
     ayt::test::ScratchDirectory scratch("role-private-program-files");const auto configDir=scratch.path()/"config",pluginRoot=scratch.path()/"installed-plugins";std::filesystem::create_directories(configDir);std::filesystem::create_directories(pluginRoot);
-    auto settings=Json::parse(readFile(std::filesystem::path(HA_PROJECT_ROOT)/"config/example.json"));settings["dataRoot"]=(scratch.path()/"data").generic_string();settings["characterRoot"]=(std::filesystem::path(HA_PROJECT_ROOT)/"character").generic_string();settings["uiRoot"]=(std::filesystem::path(HA_PROJECT_ROOT)/"ui").generic_string();settings["pluginRoot"]=pluginRoot.generic_string();const auto file=configDir/"config.json";std::ofstream(file)<<settings.dump();Application app(loadConfig(file));CHECK(app.initialize());
+    auto settings=Json::parse(readFile(std::filesystem::path(HA_PROJECT_ROOT)/"config/example.json"));settings["plugins"]=Json::object();settings["dataRoot"]=(scratch.path()/"data").generic_string();settings["characterRoot"]=(std::filesystem::path(HA_PROJECT_ROOT)/"character").generic_string();settings["uiRoot"]=(std::filesystem::path(HA_PROJECT_ROOT)/"ui").generic_string();settings["pluginRoot"]=pluginRoot.generic_string();const auto file=configDir/"config.json";std::ofstream(file)<<settings.dump();Application app(loadConfig(file));CHECK(app.initialize());
     CHECK_INT_EQ(app.request({"POST","/api/settings",Json{{"settings",settings}}.dump()}).status,200);
     for(const auto& root:{configDir,pluginRoot,std::filesystem::path(HA_PROJECT_ROOT)/"character"}){auto changed=settings;auto path=root.generic_string();std::transform(path.begin(),path.end(),path.begin(),[](unsigned char c){return static_cast<char>(std::toupper(c));});changed["draftsRoot"]=path;const auto rejected=app.request({"POST","/api/settings",Json{{"settings",changed}}.dump()});CHECK_INT_EQ(rejected.status,400);CHECK(Json::parse(rejected.body).at("error")=="workspace_overlaps_private_data");}
 }
@@ -153,6 +414,13 @@ TEST_CASE(configuration_keeps_secrets_out_of_plaintext_and_rejects_system_enviro
     value=base;value["profiles"][0]["credentialEnvironment"]="hibernation_session_key";CHECK(rejects(value));value=base;value["profiles"][0]["id"]="plugin-tts";CHECK(rejects(value));value=base;value["profiles"][0]["proxyOrigin"]="http://user:password@proxy";CHECK(rejects(value));
 }
 #ifdef HA_TEST_PLUGIN_ROOT
+TEST_CASE(body_before_typing_survives_the_native_attention_transition){
+    ayt::test::ScratchDirectory scratch("body-before-typing");Config cfg;cfg.dataRoot=scratch.path();cfg.characterRoot=std::filesystem::path(HA_PROJECT_ROOT)/"character";cfg.uiRoot=std::filesystem::path(HA_PROJECT_ROOT)/"ui";cfg.pluginRoot=HA_TEST_PLUGIN_ROOT;cfg.plugins={{"widget",{{"enabled",true},{"roam",false}}}};cfg.profiles={{"mock","Mock",true,{}}};Application app(cfg);CHECK(app.initialize());
+    app.setInputActive(true);app.tick();const auto caps=Json::parse(app.request({"GET","/api/capabilities",""}).body);bool receiving=false;for(const auto& plugin:caps.at("plugins"))if(plugin.at("id")=="widget")receiving=plugin.at("current").at("state")=="receiving";CHECK(receiving);
+    app.setInputActive(false);CHECK(app.request({"POST","/api/message",Json{{"request_id","typing-body"},{"text","你刚才在做什么"}}.dump()}).status==202);
+    CHECK(ayt::test::waitUntil([&]{app.tick();return !Json::parse(app.request({"GET","/api/chat",""}).body).at("busy").get<bool>();}));
+    const auto trace=Json::parse(app.request({"POST","/api/trace",Json{{"id","trace-chat-1"}}.dump()}).body);CHECK(trace.at("body_at_input").at("widget").at("state")=="idle");
+}
 TEST_CASE(widget_routes_input_attention_and_preparation_through_the_plugin_runtime){
     ayt::test::ScratchDirectory scratch("role-widget-preparation");PluginRuntime plugins(std::filesystem::path(HA_TEST_PLUGIN_ROOT),{scratch.path(),std::filesystem::path(HA_PROJECT_ROOT),false,{}});std::string issue;
     CHECK(plugins.configure({{"widget",{{"enabled",true},{"roam",false}}}},issue));plugins.event({{"kind","runtime.attention"},{"input_active",true},{"busy",false}});CHECK(plugins.snapshots().at("widget").at("dialogue_phase")=="receiving");plugins.tick(.1);CHECK(plugins.snapshots().at("widget").at("state")=="receiving");
@@ -222,6 +490,16 @@ TEST_CASE(dashboard_appearance_catalog_uses_native_frames_without_role_data){
     }
     for(const auto& colors:value.at("palettes")){CHECK(appearance::validPalette(colors.at("id").get<std::string>()));CHECK(colors.at("colors").size()==6);for(const auto& color:colors.at("colors"))CHECK(color.get<std::string>().size()==7);}
     CHECK(!value.contains("state"));CHECK(!value.contains("memory"));
+}
+TEST_CASE(dashboard_sequence_preset_uses_real_pack_and_recognizes_legacy_override){
+    const auto root=std::filesystem::path(HA_PROJECT_ROOT)/"plugins";unsigned images=0;
+    const auto encode=[&](const std::vector<std::uint8_t>& bytes){CHECK(bytes.size()>8);CHECK(bytes[0]==137&&bytes[1]==80&&bytes[2]==78&&bytes[3]==71);++images;return std::string("encoded-png");};
+    const auto value=appearance::catalog(root,Json{{"animationPack",(root/"widget/characters/asterlan").string()}},encode);
+    CHECK(value.at("skins").size()==4);CHECK(value.at("override_preset")=="asterlan");CHECK(images==4);
+    const auto& preset=value.at("skins").back();CHECK(preset.at("id")=="asterlan");CHECK(preset.at("original_palette")==true);
+    for(const auto& pose:preset.at("poses")){CHECK(pose.at("image")=="data:image/png;base64,encoded-png");CHECK(pose.at("canvas")==Json::array({168,168}));CHECK(!pose.contains("cells"));}
+    const auto custom=appearance::catalog(root,Json{{"animationPack",(root/"widget/characters/lumen").string()}},encode);CHECK(custom.at("override_preset")=="custom");
+    const auto missing=appearance::catalog(root/"missing",Json::object(),encode);CHECK(missing.at("skins").size()==3);CHECK(missing.contains("sequence_preview_issue"));
 }
 TEST_CASE(desk_objects_need_a_real_arrival_and_completed_action){
     SmallWorld world;CHECK(world.place("berry-1","berry",.4,.5));CHECK(world.request("berry-1","eat","action-1").empty());CHECK(world.size()==1);CHECK(world.queued());
@@ -298,6 +576,18 @@ TEST_CASE(activity_batches_accept_only_bounded_semantic_commands){
     plan["commands"][0]["kind"]="computer.launch";CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["kind"]="eat_nearest";plan["commands"][0]["seconds"]=1;CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["seconds"]=0;plan["commands"][1]["seconds"]=1801;CHECK(!validateActivities(plan.dump()).ok);
     plan["commands"]=Json::array();CHECK(validateActivities(plan.dump()).ok);for(int i=0;i<7;++i)plan["commands"].push_back({{"kind","wait"},{"seconds",1}});CHECK(!validateActivities(plan.dump()).ok);
 }
+TEST_CASE(activity_movement_and_poses_require_their_own_bounded_arguments){
+    Json plan={{"version",1},{"commands",Json::array({{{"kind","move_to"},{"seconds",0},{"x",.8},{"y",.4}},{{"kind","pose"},{"seconds",2},{"state","blink"}},{{"kind","wait"},{"seconds",20}}})}};
+    CHECK(validateActivities(plan.dump()).ok);plan["commands"][0].erase("y");CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["y"]=1.1;CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["y"]=.4;
+    plan["commands"][1]["state"]="shell";CHECK(!validateActivities(plan.dump()).ok);plan["commands"][1]["state"]="blink";plan["commands"][2]["x"]=.2;CHECK(!validateActivities(plan.dump()).ok);
+    CHECK(ayt::serializer::validateJsonSchema(activitySchema()));
+}
+TEST_CASE(body_projection_preserves_actual_animation_and_drops_rendering_diagnostics){
+    const Json source={{"state","walk"},{"moving",true},{"x",.2},{"target_x",.8},{"animation",{{"requested","walk"},{"resolved","resting"},{"phase","end"},{"variant","lying-sleep"},{"image","private-path.png"},{"rendered_pixels",123}}},{"animation_catalog",Json::array({{{"state","resting"},{"meaning","躺下"}}})},{"paint_count",999},{"movement_token","internal"}};
+    const auto view=widgetBodyContext(source);CHECK(view.at("moving")==true);CHECK(view.at("animation").at("resolved")=="resting");CHECK(view.at("animation").at("phase")=="end");CHECK(view.at("animation_catalog").size()==1);CHECK(!view.contains("paint_count"));CHECK(view.dump().find("private-path")==std::string::npos);CHECK(!view.contains("movement_token"));
+    const Json queue={{"active",{{"id","internal"},{"kind","move_to"},{"seconds",0},{"x",.8},{"y",.4},{"token","internal"}}},{"entries",Json::array({{{"kind","pose"},{"seconds",2},{"state","blink"},{"source","internal-trace"}}})}};
+    const auto activities=activityBodyContext(queue);CHECK(activities.at("active").at("kind")=="move_to");CHECK(activities.at("next")[0].at("state")=="blink");CHECK(activities.dump().find("internal")==std::string::npos);
+}
 TEST_CASE(dialogue_preparation_has_distinct_receive_and_prepare_phases){
     DialoguePreparation phase;CHECK(phase.phase(0)=="idle");phase.input(true);CHECK(phase.phase(0)=="receiving");phase.receive(10);phase.input(false);CHECK(phase.phase(10.2)=="receiving");CHECK(phase.phase(10.4)=="preparing");phase.finish();CHECK(phase.phase(10.5)=="idle");phase.receive(11);phase.finish();CHECK(!phase.pending());
 }
@@ -322,6 +612,132 @@ TEST_CASE(character_sequence_packs_supply_stages_and_consistent_canvas){
 }
 TEST_CASE(character_sequence_transitions_finish_and_urgent_input_interrupts){
     auto pack=character::loadPack(std::filesystem::path(HA_PROJECT_ROOT)/"plugins/widget/characters/dinosaur");character::Animator animation;animation.bind(pack);CHECK(animation.select("idle",0).phase=="loop");CHECK(animation.select("resting",.1).phase=="start");CHECK(animation.select("resting",.6).phase=="loop");CHECK(animation.select("idle",.7).phase=="end");CHECK(animation.select("idle",1.2).resolved=="idle");CHECK(animation.select("resting",1.3).phase=="start");CHECK(animation.select("dragged",1.4).resolved=="dragged");auto paused=animation.select("dragged",1.4);CHECK(animation.select("dragged",1.4).index==paused.index);CHECK(animation.select("resting",1.5,true).index==0);CHECK(animation.select("resting",2.1,true).phase=="loop");
+}
+TEST_CASE(asterlan_pack_preserves_six_fps_and_complete_transition_order){
+    auto pack=character::loadPack(std::filesystem::path(HA_PROJECT_ROOT)/"plugins/widget/characters/asterlan");
+    CHECK(pack->width==168&&pack->height==168&&pack->anchorY==144);
+    const auto& idle=pack->states.at("idle")[0].loop;
+    CHECK(idle.frames.size()==17);for(const auto& frame:idle.frames)CHECK(frame.image.starts_with("frames/idle/south/"));
+    CHECK(pack->states.at("breathing")[0].loop.frames[0].image.starts_with("frames/breathing/south/"));
+    for(const auto& frame:pack->states.at("listening")[0].loop.frames)CHECK(frame.image.starts_with("frames/idle/south/"));
+    const auto& walk=pack->states.at("walk")[0];const auto& rest=pack->states.at("resting")[0];
+    CHECK(walk.start.frames.size()==9&&walk.loop.frames.size()==17&&walk.end.frames.size()==9);
+    CHECK(walk.start.timeline.durationUs()==1500000);CHECK(rest.start.timeline.durationUs()==1500000);CHECK(rest.end.timeline.durationUs()==1500000);
+    CHECK(rest.loop.frames.size()==1&&rest.loop.frames[0].image=="poses/sleeping/south.png");
+    const auto& landing=pack->states.at("landing")[0].start;
+    CHECK(landing.frames.size()==12&&landing.timeline.durationUs()==2000000);
+    CHECK(landing.frames.front().image=="frames/drag-drop/south/005.png");
+    const auto& pickup=pack->states.at("dragged_side")[0].start;
+    CHECK(pickup.frames.size()==9&&pickup.timeline.durationUs()==495000);
+    CHECK(pickup.frames.front().image==walk.start.frames.back().image&&pickup.frames.back().image==walk.start.frames.front().image);
+    for(const auto* clip:{&walk.start,&walk.end,&pickup})CHECK(std::any_of(clip->frames.begin(),clip->frames.end(),[](const auto& frame){return frame.image=="frames/trun/south/001.png";}));
+    CHECK(walk.start.frames.front().image==walk.end.frames.back().image);
+    CHECK(walk.start.frames.back().image==walk.end.frames.front().image);
+    CHECK(pack->resolve("preparing")=="listening");CHECK(!pack->mouth.has_value());
+    character::Animator animation;animation.bind(pack);animation.select("idle",0);
+    CHECK(animation.select("walk",.1).phase=="start");CHECK(animation.select("walk",1.7).phase=="loop");
+    CHECK(animation.select("idle",1.8).phase=="end");CHECK(animation.select("idle",3.4).resolved=="idle");
+    CHECK(animation.select("resting",4).phase=="start");CHECK(animation.select("resting",5.6).phase=="loop");
+    auto waking=animation.select("walk",6);CHECK(waking.phase=="end"&&waking.resolved=="resting");
+    auto turning=animation.select("walk",7.6);CHECK(turning.phase=="start"&&turning.resolved=="walk");
+    CHECK(animation.select("walk",9.2).phase=="loop");
+    CHECK(animation.select("dragged",9.3).resolved=="dragged");
+    animation.interruptAt("dragged_side",9.31,.165);auto picked=animation.select("dragged_side",9.31);CHECK(picked.phase=="start"&&picked.index==3);CHECK(animation.select("dragged_side",9.81).phase=="loop");
+    CHECK(animation.select("landing",9.9).phase=="start");CHECK(animation.select("landing",12.3).phase=="loop");
+}
+TEST_CASE(widget_lift_and_drop_keep_ground_position_independent_and_interrupt_smoothly){
+    WidgetDragMotion motion;motion.grab(1,24);CHECK(motion.height(1)==0);CHECK(motion.height(1.06)>12);CHECK(motion.height(1.13)==24);
+    motion.release(2);CHECK(motion.falling(2));CHECK(motion.height(2)==24);CHECK(motion.height(2.1)>0&&motion.height(2.1)<24);
+    const auto inFlight=motion.height(2.1);motion.grab(2.1,24);CHECK(motion.height(2.1)==inFlight);CHECK(!motion.falling(2.1));
+    motion.release(3);CHECK(!motion.falling(3.21));CHECK(motion.height(3.21)==0);motion.grab(4,24,true);CHECK(motion.height(4)==0);motion.release(4,true);CHECK(!motion.falling(4));
+}
+TEST_CASE(widget_pointer_click_and_jitter_never_become_drag_until_threshold_crossed){
+    WidgetPointerGesture pointer;pointer.press(100,100);CHECK(pointer.pressed());for(int i=0;i<100;++i)CHECK(!pointer.move(100+i%3,100-i%3));CHECK(pointer.release()==WidgetPointerRelease::click);CHECK(!pointer.pressed());CHECK(pointer.release()==WidgetPointerRelease::none);
+    pointer.press(100,100);CHECK(!pointer.move(105,105));CHECK(pointer.move(106,100));CHECK(!pointer.move(100,100));CHECK(pointer.release()==WidgetPointerRelease::drag);
+    pointer.press(100,100,10,8);CHECK(!pointer.move(109,107));CHECK(pointer.move(100,92));pointer.cancel();CHECK(pointer.release()==WidgetPointerRelease::none);
+}
+TEST_CASE(widget_deferred_pose_waits_for_reply_and_cannot_replay_after_new_input_or_expiry){
+    WidgetPoseQueue queue;queue.request("resting",60,0,3);queue.attention(3);CHECK(!queue.take(10,false));CHECK(queue.state()=="resting");
+    auto pose=queue.take(11,true);CHECK(pose&&pose->state=="resting"&&pose->seconds==60);CHECK(!queue.take(12,true));
+    queue.request("resting",60,20,3);queue.attention(4);CHECK(!queue.pending());CHECK(!queue.take(21,true));
+    queue.request("breathing",5,30,4);CHECK(!queue.take(151,true));queue.request("resting",60,160,4);queue.cancel();CHECK(!queue.pending());
+}
+TEST_CASE(tool_images_detach_bounded_ordered_frames_without_pixels_in_receipts){
+    auto image=Json{{"mime_type","image/jpeg"},{"base64","YWJjZA=="}};Json result={{"image",image},{"frames",Json::array({Json{{"index",0},{"image",image}},Json{{"index",1},{"image",image}},Json{{"index",2},{"image",image}}})}};
+    const auto parts=detachToolImages(result,true,3,1);CHECK(parts.size()==3);CHECK(parts[0].frame==-1&&parts[1].frame==0&&parts[2].frame==1);CHECK(result.at("image_part_index")==1);CHECK(result.at("frames")[1].at("image_part_index")==3);CHECK(result.at("frames")[2].at("image_unavailable_reason")=="per_batch_image_limit");CHECK(result.dump().find("YWJjZA")==std::string::npos);
+    result={{"frames",Json::array({Json{{"image",image}}})}};CHECK(detachToolImages(result,false,4).empty());CHECK(result.at("frames")[0].at("image_unavailable_reason")=="vision_not_enabled");CHECK(result.dump().find("base64")==std::string::npos);
+    result={{"image",{{"mime_type","image/svg+xml"},{"base64","YWJjZA=="}}}};CHECK(detachToolImages(result,true,4).empty());CHECK(result.at("image_unavailable_reason")=="invalid_tool_image");
+    result={{"image",{{"mime_type","image/jpeg"},{"base64","not base64 <script>"}}}};CHECK(detachToolImages(result,true,4).empty());CHECK(!result.contains("image"));
+    for(const auto* encoded:{"A","AAAA=","AA=A","====","A==="}){result={{"image",{{"mime_type","image/png"},{"base64",encoded}}}};CHECK(detachToolImages(result,true,4).empty());CHECK(!result.contains("image"));}CHECK(boundedImageBase64("AAAA"));CHECK(boundedImageBase64("AAA="));CHECK(boundedImageBase64("AA=="));
+    const auto receipt=compactObservation(Json{{"kind","tool_observation"},{"tool","television.observe_sequence"},{"result",{{"scope","sampled_playback_frames"},{"sampled_frames",2},{"span_seconds",.7},{"full_video_watched",false},{"audio_delivered",false},{"frames",Json::array({Json{{"index",0},{"frame_time_seconds",1},{"observed_at_ms",10},{"image",image}}})}}}},true);
+    CHECK(receipt.at("result").at("images_delivered_to_model"));CHECK(receipt.at("result").at("sampled_frames")==2);CHECK(receipt.dump().find("base64")==std::string::npos);CHECK(!receipt.at("result").at("full_video_watched").get<bool>());
+}
+TEST_CASE(character_plugin_context_keeps_real_affordances_and_omits_rendering_telemetry){
+    const Json habitat={{"objects",Json::array({{{"id","apple-1"},{"x",.3},{"definition",{{"name","苹果"},{"properties",{{"sweetness",.4}}}}}}})},{"pending",{{"object_id","apple-1"},{"action","eat"}}},{"appetite",.5},{"creation_policy",{{"max",8}}},{"paint_count",800},{"surface_left",-1920},{"clock",55}};
+    const auto world=pluginCharacterContext("habitat",habitat);CHECK(world.at("objects")==habitat.at("objects"));CHECK(world.at("pending")==habitat.at("pending"));CHECK(world.at("creation_policy")==habitat.at("creation_policy"));CHECK(world.at("appetite")==.5);CHECK(!world.contains("paint_count")&&!world.contains("surface_left")&&!world.contains("clock"));CHECK(habitat.at("paint_count")==800);
+    const Json television={{"source","materials/movie.mp4"},{"state","playing"},{"position_seconds",2.5},{"audio_available",true},{"screen_rect",{{"x",20}}},{"frame_width",640},{"sync_source","AudioMaster"},{"error",""}};
+    const auto screen=pluginCharacterContext("television",television);CHECK(screen.at("source")==television.at("source"));CHECK(screen.at("position_seconds")==2.5);CHECK(screen.at("audio_available").get<bool>());CHECK(!screen.contains("frame_width")&&!screen.contains("screen_rect")&&!screen.contains("sync_source"));
+    CHECK(pluginCharacterContext("tts",Json{{"active",false},{"queued_replies",1},{"prepared_hits",900}})==Json({{"active",false},{"queued_replies",1}}));
+    const Json custom={{"tool_required_id","actual-id"},{"revision",3},{"custom",true}};CHECK(pluginCharacterContext("future-plugin",custom)==custom);CHECK(pluginCharacterContext("pocket",custom)==custom);
+    const Json reading={{"last_search",{{"pages",Json::array({{{"key","Light"}}})}}},{"last_read",{{"excerpt","真实节选"}}},{"service_origin","https://configured.invalid"},{"requests_used",2},{"request_limit",12}};
+    const auto reference=pluginCharacterContext("reading",reading);CHECK(reference.at("last_search")==reading.at("last_search"));CHECK(reference.at("last_read")==reading.at("last_read"));CHECK(reference.at("request_limit")==12);CHECK(!reference.contains("service_origin"));
+}
+TEST_CASE(activity_purpose_is_optional_bounded_and_never_becomes_its_outcome){
+    Json command={{"kind","wait"},{"seconds",1},{"purpose","想看看会不会长出一座森林"}};auto plan=Json{{"version",1},{"commands",Json::array({command})}};CHECK(validateActivities(plan.dump()).ok);
+    const auto view=activityBodyContext(Json{{"recent",Json::array({command})}});CHECK(view.at("recent")[0].at("purpose")==command.at("purpose"));CHECK(!view.at("recent")[0].contains("completed"));CHECK(view.contains("purpose_meaning"));
+    plan["commands"][0]["purpose"]=std::string(161,'a');CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["purpose"]=" \t\n";CHECK(validateActivities(plan.dump()).code=="activity_empty_purpose");plan["commands"][0]["purpose"]=8;CHECK(!validateActivities(plan.dump()).ok);
+    plan["commands"][0].erase("purpose");CHECK(validateActivities(plan.dump()).ok);plan["commands"][0]["grant_permission"]=true;CHECK(!validateActivities(plan.dump()).ok);
+}
+TEST_CASE(scheduled_visual_evidence_preserves_sources_without_becoming_base64_text){
+    const Json image={{"mime_type","image/jpeg"},{"base64",std::string(30000,'A')}};
+    const Json raw={{"kind","tool_observation"},{"tool","television.observe_sequence"},{"created_at",42},{"result",{{"content","真实的文字说明"},{"source","materials/movie.mp4"},{"image",image},{"frames",Json::array({Json{{"index",0},{"frame_time_seconds",2},{"image",image}}})}}}};
+    const auto context=referencedObservationContext(raw);CHECK(context.dump().find("base64")==std::string::npos);CHECK(context.at("result").at("content")==raw.at("result").at("content"));CHECK(context.at("result").at("frames")[0].at("frame_time_seconds")==2);CHECK(context.at("result").at("frames")[0].at("image_available_in_source").get<bool>());CHECK(!context.at("result").at("image_content_in_context").get<bool>());CHECK(context.at("kind")=="tool_observation");CHECK(raw.at("result").at("image")==image);
+    const Json ordinary={{"kind","user_message"},{"text","image is a word in this original text"}};CHECK(referencedObservationContext(ordinary)==ordinary);
+    CHECK(revisitableObservationTool("workspace.view_image"));CHECK(revisitableObservationTool("reading.open"));CHECK(!revisitableObservationTool("self.observe"));CHECK(!revisitableObservationTool("memory.read"));
+    CHECK(continuityObservationTool("workspace.view_image"));CHECK(continuityObservationTool("atelier.write"));CHECK(continuityObservationTool("computer.open_application"));CHECK(!continuityObservationTool("self.observe"));CHECK(!continuityObservationTool("body.observe"));CHECK(!continuityObservationTool("unknown.diagnostics"));
+    Json trace={{"http_status",200},{"visual_inputs",Json::array({Json{{"source_id","picture"},{"attached",true},{"delivery_state","prepared"}}})}};CHECK(observedImageDelivery(trace,"picture")=="prepared_only");trace["visual_inputs"][0]["delivery_state"]="acknowledged";CHECK(observedImageDelivery(trace,"picture")=="acknowledged");trace["visual_inputs"][0]["delivery_state"]="unknown";CHECK(observedImageDelivery(trace,"picture")=="unknown");CHECK(observedImageDelivery(trace,"missing")=="no_saved_receipt");const auto unknown=compactObservation(raw,false,"no_saved_receipt");CHECK(!unknown.at("result").contains("image_delivered_to_model"));CHECK(unknown.at("result").at("image_delivery_status")=="no_saved_receipt");
+}
+TEST_CASE(private_activity_consideration_is_sourced_deduplicated_and_time_bounded){
+    auto saved=emptyActivityConsideration();CHECK(activityConsiderationDue(saved,1000,false));
+    const Json authored={{"kind","tool_observation"},{"tool","atelier.append"},{"result",{{"written",true},{"completed",true},{"piece",{{"id","story-1"},{"revision",2}}}}}};
+    const auto key=activityConsiderationKey(authored);CHECK(!key.empty());CHECK(!activityAlreadyConsidered(saved,key));saved=markActivitiesConsidered(saved,Json::array({key,key}),1000);CHECK(saved.at("considered").size()==1);CHECK(activityAlreadyConsidered(saved,key));CHECK(!activityConsiderationDue(saved,899999,false));CHECK(activityConsiderationDue(saved,901000,false));CHECK(activityConsiderationDue(saved,1001,true));CHECK(!activityConsiderationDue(saved,999,true));
+    auto newer=authored;newer["result"]["piece"]["revision"]=3;CHECK(activityConsiderationKey(newer)!=key);newer["kind"]="tool_intent";CHECK(activityConsiderationKey(newer).empty());
+    const Json reading={{"kind","tool_observation"},{"tool","reading.open"},{"result",{{"scope","article_lead_summary"},{"text","真实摘要"},{"source_url","https://example.test/summary/Light"},{"revision","4"},{"retrieved_ms",1000}}}};auto cached=reading;cached["result"]["cache_hit"]=true;CHECK(activityConsiderationKey(reading)==activityConsiderationKey(cached));CHECK(!activityConsiderationKey(reading).empty());
+    CHECK(activityConsiderationKey(Json{{"kind","tool_observation"},{"tool","widget.move"},{"result",{{"completed",true}}}}).empty());
+    auto invalid=saved;invalid["version"]="future";CHECK(!validActivityConsideration(invalid));CHECK(!activityConsiderationDue(invalid,999999,true));CHECK(markActivitiesConsidered(invalid,Json::array({"new"}),999999)==invalid);
+    Json many=Json::array();for(int i=0;i<150;++i)many.push_back("key-"+std::to_string(i));CHECK(markActivitiesConsidered(saved,many,2000).at("considered").size()==128);
+}
+TEST_CASE(review_repair_reuses_exact_prior_operations_without_reexecuting_or_inventing_completion){
+    OperationReplay replay;const Json args={{"commands",Json::array({Json{{"kind","wait"},{"seconds",1}}})}},receipt={{"ok",true},{"result",{{"accepted",1},{"queued",1},{"completed",false}}},{"source_id","receipt-1"}};
+    CHECK(!replay.reuse("activity.enqueue",args));replay.completed("activity.enqueue",args,receipt,"call-1");replay.completed("activity.enqueue",args,receipt,"call-1");CHECK(replay.executionFacts().size()==1);CHECK(replay.executionFacts()[0].at("result").at("queued")==1);CHECK(!replay.reuse("activity.enqueue",args));
+    replay.afterReviewRejection();const auto reused=replay.reuse("activity.enqueue",args);CHECK(reused&&reused->at("reused_after_review").get<bool>());CHECK(reused->at("source_id")=="receipt-1");CHECK(!reused->at("result").at("completed").get<bool>());replay.completed("activity.enqueue",args,*reused,"call-2");CHECK(replay.executionFacts().size()==1);CHECK(replay.reuse("activity.enqueue",args)->at("error").at("code")=="operation_already_recorded_after_review");
+    auto different=args;different["commands"][0]["seconds"]=2;CHECK(!replay.reuse("activity.enqueue",different));replay.afterReviewRejection();CHECK(replay.reuse("activity.enqueue",args)->at("source_id")=="receipt-1");
+    OperationReplay multiple;multiple.completed("habitat.create",Json::object(),receipt,"first");auto second=receipt;second["source_id"]="receipt-2";multiple.completed("habitat.create",Json::object(),second,"second");multiple.afterReviewRejection();CHECK(multiple.reuse("habitat.create",Json::object())->at("source_id")=="receipt-1");CHECK(multiple.reuse("habitat.create",Json::object())->at("source_id")=="receipt-2");
+    CHECK(!replayProtectedOperation("reading.open"));CHECK(!replayProtectedOperation("workspace.read"));CHECK(replayProtectedOperation("memory.remember"));OperationReplay nextTurn;CHECK(!nextTurn.reuse("activity.enqueue",args));
+    OperationReplay numeric;const Json integerPosition={{"x",1},{"y",.5}},floatPosition={{"x",1.0},{"y",.5}};numeric.completed("habitat.arrange",integerPosition,receipt,"numeric-1");numeric.afterReviewRejection();CHECK(numeric.reuse("habitat.arrange",floatPosition)->at("source_id")=="receipt-1");
+    OperationReplay large;large.completed("habitat.arrange",Json{{"x",9007199254740993LL}},receipt,"large-1");large.afterReviewRejection();CHECK(!large.reuse("habitat.arrange",Json{{"x",9007199254740992LL}}));
+}
+TEST_CASE(native_execution_identity_survives_retry_reordering_and_keeps_real_repetition_separate){
+    NativeExecutionIds original,retry;const Json a={{"path","a.txt"},{"content","one"}},b={{"path","b.txt"},{"content","two"}};
+    const auto a0=original.next("workspace.write",a),a1=original.next("workspace.write",a),b0=original.next("workspace.write",b);CHECK(a0&&a1&&b0);CHECK(*a0!=*a1&&*a0!=*b0);CHECK(a0->size()<=32);
+    CHECK(retry.next("workspace.write",b)==b0);CHECK(retry.next("workspace.write",a)==a0);CHECK(retry.next("workspace.write",a)==a1);
+    NativeExecutionIds integer,floating;CHECK(integer.next("test",Json{{"n",1}})==floating.next("test",Json{{"n",1.0}}));NativeExecutionIds largeA,largeB;CHECK(largeA.next("test",Json{{"n",9007199254740993LL}})!=largeB.next("test",Json{{"n",9007199254740992LL}}));
+    CHECK(savedNativeExecutionFormat(Json{{"version",1}})==1);CHECK(savedNativeExecutionFormat(Json{{"version",2}})==2);CHECK(!savedNativeExecutionFormat(Json{{"version",3}}));CHECK(!savedNativeExecutionFormat(Json{{"version","2"}}));
+    Json deep=1;for(int i=0;i<66;++i)deep=Json::array({deep});NativeExecutionIds bounded;CHECK(!bounded.next("test",deep));
+}
+TEST_CASE(deferred_creativity_uses_real_capacity_and_old_visible_draft_tails){
+    Json state={{"piece_count",3},{"maximum",4}};CHECK(creativeSlotAvailable(state));state["can_create"]=false;CHECK(!creativeSlotAvailable(state));CHECK(!creativeSlotAvailable(Json::object()));
+    state["pieces"]=Json::array();for(int i=0;i<6;++i)state["pieces"].push_back({{"id","finished-"+std::to_string(i)},{"stage","finished"},{"revision",1}});
+    state["continuations"]=Json::array({Json{{"id","older-draft"},{"stage","draft"},{"revision",4},{"tail","这仍是实际草稿末尾"}}});const auto visible=visibleContinuationDrafts(state);CHECK(visible.size()==1&&visible[0].at("id")=="older-draft"&&visible[0].at("revision")==4);CHECK(!visible[0].contains("tail"));
+    state["pieces"].push_back(state["continuations"][0]);CHECK(visibleContinuationDrafts(state).size()==1);state["continuations"]=Json::array();state["pieces"]=Json::array({Json{{"id","done"},{"stage","finished"},{"revision",4}}});CHECK(visibleContinuationDrafts(state).empty());
+}
+TEST_CASE(empty_autonomous_choices_back_off_without_becoming_missing_content_errors){
+    auto cadence=emptyPlanningCadence();CHECK(validPlanningCadence(cadence));cadence=planningOutcome(cadence,true,true,1000,30000);CHECK(cadence.at("quiet")==1&&cadence.at("failures")==0&&cadence.at("next_ms")==61000);
+    for(int i=0;i<8;++i)cadence=planningOutcome(cadence,true,true,1000+i,30000);CHECK(cadence.at("quiet")==5);CHECK(cadence.at("next_ms").get<std::int64_t>()-cadence.at("last_ms").get<std::int64_t>()==900000);
+    CHECK(restoredPlanningDue(cadence,2000,30000)==cadence.at("next_ms").get<std::int64_t>());CHECK(restoredPlanningDue(cadence,0,30000)==30000);
+    cadence=planningOutcome(cadence,true,false,3000,30000);CHECK(cadence.at("quiet")==0&&cadence.at("failures")==0&&cadence.at("next_ms")==33000);
+    cadence=planningOutcome(cadence,false,false,4000,30000);CHECK(cadence.at("failures")==1&&cadence.at("next_ms")==64000);
+    const auto slow=planningOutcome(emptyPlanningCadence(),true,true,0,3600000);CHECK(slow.at("next_ms")==3600000);auto future=slow;future["version"]=2;CHECK(!validPlanningCadence(future));CHECK(planningOutcome(future,true,true,0,30000)==future);
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

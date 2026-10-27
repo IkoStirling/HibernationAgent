@@ -1,0 +1,25 @@
+{
+  "napcat": {
+    "enabled": false,
+    "selfUserId": "替换为机器人登录QQ号",
+    "ownerUserId": "替换为你本人的QQ号",
+    "apiOrigin": "http://127.0.0.1:3000",
+    "callbackPort": 18890,
+    "apiTokenEnvironment": "HIBERNATION_NAPCAT_API_TOKEN",
+    "eventSecretEnvironment": "HIBERNATION_NAPCAT_EVENT_SECRET",
+    "allowedUsers": "",
+    "allowedGroups": "",
+    "groupMentionOnly": true,
+    "replyAtSender": true,
+    "queueLimit": 32,
+    "cooldownSeconds": 5,
+    "mergeWindowMs": 1500,
+    "maxMessageAgeSeconds": 1800,
+    "maxReplyCharacters": 1500,
+    "stricterSecurity": false,
+    "isolateMemory": false,
+    "allowDesktopControl": true,
+    "controlTrust": "owner",
+    "reviewReplies": true
+  }
+}

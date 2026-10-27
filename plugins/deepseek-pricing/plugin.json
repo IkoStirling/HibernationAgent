@@ -1,0 +1,16 @@
+{
+  "id":"deepseek-pricing","name":"DeepSeek 峰谷价格","icon":"◷","version":"0.1.0","api_version":2,
+  "library":"Hibernation_DeepSeekPricing.dll","dependencies":[],"capabilities":["runtime.pricing-policy"],
+  "description":"自动获取 DeepSeek 官方价格与峰谷时段，峰时减少审核重试与工具轮数，谷时恢复原设置。无需 API key，不调用模型。",
+  "settings_ui":[
+    {"key":"mode","label":"价格策略模式","type":"select","default":"auto","options":[["auto","自动：峰时节省，谷时恢复"],["force-economy","手动：始终节省"],["force-normal","手动：恢复原策略"],["off","关闭价格调节"]]},
+    {"key":"peakMaxToolRounds","label":"高峰每轮最多操作阶段","type":"number","default":3,"min":2,"max":6,"step":1},
+    {"key":"peakMaxRewrites","label":"高峰最多审核改写次数","type":"number","default":1,"min":0,"max":2,"step":1},
+    {"key":"deferPrefetch","label":"高峰暂缓新的空闲活动和鼠标反应预生成","type":"toggle","default":true},
+    {"key":"refreshMinutes","label":"官方价格刷新间隔（分钟）","type":"number","default":360,"min":15,"max":1440,"step":1},
+    {"key":"maxAgeHours","label":"缓存最多有效小时","type":"number","default":48,"min":1,"max":168,"step":1},
+    {"key":"useSystemProxy","label":"抓取价格时使用系统代理（国内通常无需）","type":"toggle","default":false},
+    {"key":"proxyOrigin","label":"价格抓取专用 HTTP 代理（可留空）","type":"text","default":"","maxLength":256}
+  ],
+  "settings_note":"仅作用于官方 api.deepseek.com 连接。高峰保留最终对白和写入操作审核，减少只读审核、重试和多轮调用；不改变权限、原始记忆或状态。谷时/停用后恢复你的原设置，不恢复成固定默认值。工作日及节假日按北京时间，当前包含官方2026年节假日表；后续年份未更新时会显示未知而不猜测。获取失败可暂用有效缓存，过期或页面规则无法识别时停止自动调节。单次交谈固定策略，下一轮才切换。"
+}

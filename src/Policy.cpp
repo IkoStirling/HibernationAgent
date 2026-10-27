@@ -1,4 +1,5 @@
 #include <Hibernation/Application.h>
+#include <Hibernation/ContextControl.h>
 #include <AYSerializer/JsonSchema.h>
 #include <algorithm>
 #include <cctype>
@@ -73,10 +74,10 @@ Config loadConfig(const std::filesystem::path& path) {
     const auto text=readFile(path,64*1024);
     if(!ayt::serializer::validateJsonDocument(text,"{}")) throw std::runtime_error("config_json");
     const auto j=Json::parse(text);
-    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer","frontend"};
+    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","reflectOnActivities","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer","frontend","contextControl"};
     for(auto it=j.begin();it!=j.end();++it) if(!allowed.contains(it.key())) throw std::runtime_error("config_unknown_field");
     if(j.at("schemaVersion")!=1) throw std::runtime_error("config_version");
-    Config c;c.frontend=j.value("frontend",c.frontend);if(!c.frontend.is_object())throw std::runtime_error("frontend_config");for(auto it=c.frontend.begin();it!=c.frontend.end();++it)if((it.key()!="startupAnimation"&&it.key()!="reducedMotion")||!it.value().is_boolean())throw std::runtime_error("frontend_config");const auto base=std::filesystem::absolute(path).parent_path();
+    Config c;c.contextControl=j.value("contextControl",Json::object());ContextControl::read(c.contextControl);c.frontend=j.value("frontend",c.frontend);if(!c.frontend.is_object())throw std::runtime_error("frontend_config");for(auto it=c.frontend.begin();it!=c.frontend.end();++it)if((it.key()!="startupAnimation"&&it.key()!="reducedMotion")||!it.value().is_boolean())throw std::runtime_error("frontend_config");const auto base=std::filesystem::absolute(path).parent_path();
     auto integer=[](const Json& object,const char* key,std::int64_t fallback,std::int64_t minimum,std::int64_t maximum){
         auto it=object.find(key);if(it==object.end())return fallback;if(!it->is_number_integer())throw std::runtime_error("config_integer");
         if(it->is_number_unsigned()&&it->get<std::uint64_t>()>static_cast<std::uint64_t>(maximum))throw std::runtime_error("config_range");
@@ -106,11 +107,11 @@ Config loadConfig(const std::filesystem::path& path) {
     auto sameEnvironment=[](std::string a,std::string b){for(auto* s:{&a,&b})std::transform(s->begin(),s->end(),s->begin(),[](unsigned char x){return static_cast<char>(std::toupper(x));});return a==b;};
     for(const auto& plugin:c.plugins)if(sameEnvironment(plugin.value("credentialEnvironment",std::string{}),c.credentialEnvironment))throw std::runtime_error("credential_environment_collision");
     c.contextBytes=static_cast<std::size_t>(integer(j,"contextBytes",24000,4096,128*1024));c.recentMessageCount=static_cast<std::size_t>(integer(j,"recentMessageCount",12,0,32));c.maxMemoriesInContext=static_cast<std::size_t>(integer(j,"maxMemoriesInContext",16,0,64));
-    c.solitudeIntervalMs=integer(j,"solitudeIntervalMs",900000,1000,7*86400000LL);c.idleBeforeSolitudeMs=integer(j,"idleBeforeSolitudeMs",120000,0,86400000);c.maxStartsPerHour=static_cast<int>(integer(j,"maxStartsPerHour",60,1,1000));
+    c.reflectOnActivities=j.value("reflectOnActivities",false);c.solitudeIntervalMs=integer(j,"solitudeIntervalMs",900000,1000,7*86400000LL);c.idleBeforeSolitudeMs=integer(j,"idleBeforeSolitudeMs",120000,0,86400000);c.maxStartsPerHour=static_cast<int>(integer(j,"maxStartsPerHour",600,1,1000));
     if(c.port<0||c.port>65535||c.contextBytes<4096||c.contextBytes>128*1024||c.recentMessageCount>32||c.maxMemoriesInContext>64||c.solitudeIntervalMs<1000||c.solitudeIntervalMs>7*86400000LL||c.idleBeforeSolitudeMs<0||c.idleBeforeSolitudeMs>86400000||c.maxStartsPerHour<1||c.maxStartsPerHour>1000) throw std::runtime_error("config_limit");
     std::set<std::string> profileIds;
     for(const auto& p:j.at("profiles")) {
-        const std::set<std::string> fields={"id","label","protocol","enabled","origin","basePath","model","credentialEnvironment","supportsJsonSchema","supportsStreaming","supportsVision","legacyMaxTokens","timeoutMs","maxOutputTokens","proxyOrigin","useSystemProxy"};
+        const std::set<std::string> fields={"id","label","protocol","enabled","origin","basePath","model","credentialEnvironment","supportsJsonSchema","supportsJsonObject","supportsStreaming","supportsVision","supportsToolCalls","reasoningEffort","legacyMaxTokens","timeoutMs","maxOutputTokens","proxyOrigin","useSystemProxy"};
         for(auto it=p.begin();it!=p.end();++it) if(!fields.contains(it.key())) throw std::runtime_error("profile_unknown_field");
         Profile profile;profile.id=p.at("id").get<std::string>();profile.label=p.at("label").get<std::string>();profile.enabled=p.value("enabled",true);
         if(profile.id.empty()||profile.id=="plugin-tts"||profile.id.size()>64||!std::all_of(profile.id.begin(),profile.id.end(),[](unsigned char x){return std::isalnum(x)||x=='-'||x=='_';})||!profileIds.insert(profile.id).second||profile.label.size()>256) throw std::runtime_error("profile_id");
@@ -122,18 +123,19 @@ Config loadConfig(const std::filesystem::path& path) {
         profile.model.origin=p.value("origin","");profile.model.basePath=p.value("basePath","/v1");profile.model.model=p.value("model","");profile.model.credentialEnvironment=p.value("credentialEnvironment","");
         if(!environmentName(profile.model.credentialEnvironment))throw std::runtime_error("credential_environment");
         if(sameEnvironment(profile.model.credentialEnvironment,c.credentialEnvironment))throw std::runtime_error("credential_environment_collision");
-        profile.model.supportsJsonSchema=p.value("supportsJsonSchema",false);profile.model.supportsStreaming=p.value("supportsStreaming",true);profile.model.legacyMaxTokens=p.value("legacyMaxTokens",false);
+        profile.model.supportsJsonSchema=p.value("supportsJsonSchema",false);profile.model.supportsJsonObject=p.value("supportsJsonObject",false);profile.model.supportsStreaming=p.value("supportsStreaming",true);profile.model.legacyMaxTokens=p.value("legacyMaxTokens",false);
         profile.model.supportsVision=p.value("supportsVision",false);
+        profile.model.supportsToolCalls=p.value("supportsToolCalls",false);profile.model.reasoningEffort=p.value("reasoningEffort",std::string{});if(!std::set<std::string>{"","none","minimal","low","medium","high","xhigh","max"}.contains(profile.model.reasoningEffort))throw std::runtime_error("profile_reasoning_effort");
         profile.model.proxyOrigin=p.value("proxyOrigin",std::string{});profile.model.useSystemProxy=p.value("useSystemProxy",true);
         if(!profile.model.proxyOrigin.empty()&&(!profile.model.proxyOrigin.starts_with("http://")||!ayt::net::http::validOrigin(profile.model.proxyOrigin)))throw std::runtime_error("profile_proxy");
         const auto timeout=integer(p,"timeoutMs",30000,100,120000);profile.maxOutputTokens=static_cast<std::uint32_t>(integer(p,"maxOutputTokens",2048,1,8192));
         if(timeout<100||timeout>120000||!profile.maxOutputTokens||profile.maxOutputTokens>8192) throw std::runtime_error("profile_limit");
-        profile.model.timeout=std::chrono::milliseconds(timeout);profile.model.maxRequestBytes=512*1024;profile.model.maxResponseBytes=256*1024;c.profiles.push_back(std::move(profile));
+        profile.model.timeout=std::chrono::milliseconds(timeout);profile.model.maxRequestBytes=profile.model.supportsVision?2*1024*1024:512*1024;profile.model.maxResponseBytes=2*1024*1024;c.profiles.push_back(std::move(profile));
     }
     if(c.profiles.empty()||c.profiles.size()>16||!std::any_of(c.profiles.begin(),c.profiles.end(),[](const auto& p){return p.enabled&&p.model.protocol==ayt::inference::Protocol::Mock;})) throw std::runtime_error("mock_required");
     const auto review=j.value("review",Json::object());if(!review.is_object())throw std::runtime_error("review_config");
-    for(auto it=review.begin();it!=review.end();++it)if(it.key()!="enabled"&&it.key()!="profileId"&&it.key()!="maxRewrites")throw std::runtime_error("review_field");
-    c.reviewEnabled=review.value("enabled",false);c.reviewProfileId=review.value("profileId",std::string{});c.maxReviewRewrites=static_cast<std::size_t>(integer(review,"maxRewrites",2,0,3));
+    for(auto it=review.begin();it!=review.end();++it)if(it.key()!="enabled"&&it.key()!="profileId"&&it.key()!="maxRewrites"&&it.key()!="retainConversationFocus")throw std::runtime_error("review_field");
+    c.reviewEnabled=review.value("enabled",false);c.retainConversationFocus=review.value("retainConversationFocus",false);c.reviewProfileId=review.value("profileId",std::string{});c.maxReviewRewrites=static_cast<std::size_t>(integer(review,"maxRewrites",2,0,3));
     if(c.reviewEnabled&&std::none_of(c.profiles.begin(),c.profiles.end(),[&](const auto& p){return p.id==c.reviewProfileId&&p.enabled&&p.model.protocol!=ayt::inference::Protocol::Mock;}))throw std::runtime_error("review_profile");
     return c;
 }

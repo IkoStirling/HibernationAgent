@@ -1,23 +1,23 @@
 {
-  "testedEngineRootCommit": "daa861bec20a20110917295e1b7f2c76e8083558",
+  "testedEngineRootCommit": "9470dde282e3126c49fe0c228aa41239c1dbfdc2",
   "engineRelativePath": "../AliyatEngine",
   "modules": {
     "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",
     "AYFoundation/AYSerializer": "c839aa10e419a47330ffcaa7020afff556de566b",
     "AYFoundation/AYStorage": "462af90c9f2bb8446c01b8ae04511d4d77cf34b1",
     "AYFoundation/AYTask": "1ab1e4bbfb38a4ac5e12ef52fd09ecb4fca58549",
-    "AYRuntime/AYInference": "7077ac9fbf4bd19c8625c90e58c49a6d5535ed44",
-    "AYRuntime/AYNetwork": "c5205d0234c67b150571596d8d90649e11d1f8f4",
-    "AYRuntime/AYApplication": "b31a6a8c87c9972307998752fe0c83a1a61b54fb",
+    "AYRuntime/AYInference": "8339cf6dd0b33259e5eb8274095362c873d51760",
+    "AYRuntime/AYNetwork": "a731b7e1bea6b8be99349a238ab8489c7405b87c",
+    "AYRuntime/AYApplication": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
     "AYRuntime/AYEventSystem": "d7296137684e2d6f8c9b859dcd317b8b72629e3f",
     "AYFoundation/AYCrypto": "1ba2f3918a5892a1d9ccc2fdab2ce1fe7dddfdbd",
     "AYRuntime/AYPlugin": "cef4c819d200480e0079225aaca9392356059de1",
     "AYRuntime/AYVideo": "2184c0e248dcc736a9304214b451dd6581bc0aae",
-    "AYRuntime/AYAudio": "5a5831271a42357010a0163b91d07c72b3505547",
+    "AYRuntime/AYAudio": "b71d0b311f23828864cce06f502f6d70b9796c37",
     "AYRuntime/AYCore": "4fe6b582a8edbc6855aeba59188487c69bca6ab5",
     "AYFoundation/AYMath": "ee4580b114ae719b3416204661607411cba7a107",
     "AYFoundation/AYTime": "7e7108d0fe31d43ce87cba011d7fd228bfad0306",
-    "AYFoundation/AYPlatform": "2f838792e9acf34cbf35a2b390f855c3ec514065",
+    "AYFoundation/AYPlatform": "c7d7a75e003978e1c7e2cf2ee3ed9182f27fd191",
     "AYFoundation/AYLog": "d4c717cd8afd2ed8ac92a3a6c1300810144b4f7a"
   },
   "recordStorageFormats": {
@@ -25,8 +25,9 @@
     "protected": 2,
     "payloadSchema": 1
   },
-  "applicationServicesCommit": "6d34206ce9a7fe86da59a5856ff1e22aa01af81c",
+  "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "BB3745D68634FD6122930EAE3AD6DA92CB9F62EA8B05BFE04C4904CE59197899",
-  "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility"
+  "validatedExecutableSha256": "3F3F7ECF49AEAC56FFD3FAC4BD07045D1E4BA053E86D1268C4508B353D357079",
+  "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
+  "applicationVersion": "0.7.0"
 }

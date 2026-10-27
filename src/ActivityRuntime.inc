@@ -1,48 +1,175 @@
     ActivityGenerator activityGenerator;mutable std::recursive_mutex activityMutex;
-    std::int64_t nextActivityFill=0,nextActivityTick=0;bool activityInitialized=false,activityModeNotified=false,activityLastMode=false,activitySuspended=false;
-    std::int64_t nextActivityMaintenance=0;
+    std::future<Json> activityEffect;std::shared_ptr<std::atomic<bool>> activityEffectCancelled;
+    std::string activityEffectId,activityEffectTool;
+    std::int64_t nextActivityFill=0,nextActivityTick=0,nextActivityMaintenance=0;
+    bool activityInitialized=false,activityModeNotified=false,activityLastMode=false,activitySuspended=false;
     std::string activityError;
-    bool autonomousMode()const{return cfg.desktopEnabled&&plugins&&cfg.plugins.value("widget",Json::object()).value("enabled",false)&&cfg.plugins.value("widget",Json::object()).value("autonomousMode",false);}
+    std::int64_t activityPlanningBase()const{return static_cast<std::int64_t>(cfg.plugins.value("widget",Json::object()).value("autonomyRefillSeconds",60.0)*1000);}
+    void planningResult(bool success,bool empty,std::int64_t now){
+        auto before=get("ha.autonomy","cadence",emptyPlanningCadence());if(!validPlanningCadence(before.value)){nextActivityFill=now+activityPlanningBase();return;}
+        const auto value=planningOutcome(before.value,success,empty,now,activityPlanningBase());nextActivityFill=value.at("next_ms");commit({mutation("ha.autonomy","cadence",before,value,"activity-planning")},"activity-planning");
+    }
+    void planningStimulus(std::int64_t now,bool user){
+        auto before=get("ha.autonomy","cadence",emptyPlanningCadence());if(!validPlanningCadence(before.value))return;
+        if(before.value.at("quiet")==0&&before.value.at("failures")==0)return;
+        auto value=emptyPlanningCadence();value["last_ms"]=now;nextActivityFill=std::max(now,std::min(nextActivityFill,now+(user?30000:activityPlanningBase())));value["next_ms"]=nextActivityFill;commit({mutation("ha.autonomy","cadence",before,value,"activity-stimulus")},"activity-stimulus");
+    }
+    bool autonomousMode()const{return cfg.desktopEnabled&&plugins&&plugins->enabled("widget")&&cfg.plugins.value("widget",Json::object()).value("enabled",false)&&cfg.plugins.value("widget",Json::object()).value("autonomousMode",false);}
     Json activityQueue()const{return get("ha.autonomy","queue",{{"version",1},{"entries",Json::array()},{"active",nullptr},{"recent",Json::array()}}).value;}
-    void stopActivities(){std::lock_guard lock(activityMutex);activityGenerator.stop();}
+    void stopActivities(){std::lock_guard lock(activityMutex);activityGenerator.stop();if(activityEffectCancelled)activityEffectCancelled->store(true);if(activityEffect.valid())activityEffect.wait();collectActivityEffect(serviceNowMs());}
     void saveActivities(const Json& value){auto before=get("ha.autonomy","queue");commit({mutation("ha.autonomy","queue",before,value,"autonomy")},"autonomy");}
-    Json activityStatus()const{
-        std::lock_guard lock(activityMutex);const auto value=activityQueue();return {{"enabled",autonomousMode()},{"queued",value.at("entries").size()},{"active",value.at("active")},{"generating",activityGenerator.running()},{"last_error",activityError},{"recent",value.at("recent")}};}
-    void finishActivity(Json& plan,const std::string& status){if(plan.at("active").is_null())return;auto result=plan.at("active");result["status"]=status;result["ended_ms"]=serviceNowMs();plan["recent"].push_back(result);while(plan["recent"].size()>8)plan["recent"].erase(0);plan["active"]=nullptr;}
+    Json activityStatus()const{std::lock_guard lock(activityMutex);const auto value=activityQueue();return {{"enabled",autonomousMode()},{"queued",value.at("entries").size()},{"active",value.at("active")},{"generating",activityGenerator.running()},{"last_error",activityError},{"recent",value.at("recent")},{"planning_cadence",get("ha.autonomy","cadence",emptyPlanningCadence()).value},{"next_planning_ms",nextActivityFill},{"reusable_count",activityLibrary().value("items",Json::array()).size()},{"economy_local_fallback",activityEconomyFallback}};}
+    void finishActivity(Json& plan,const std::string& status){if(plan.at("active").is_null())return;auto result=plan.at("active");result["status"]=status;result["ended_ms"]=serviceNowMs();if(status=="completed")rememberActivity(result);plan["recent"].push_back(result);while(plan["recent"].size()>8)plan["recent"].erase(0);plan["active"]=nullptr;}
     void cancelActivities(const std::string& reason){
-        std::lock_guard lock(activityMutex);activityGenerator.cancel();nextActivityFill=serviceNowMs()+30000;auto plan=activityQueue();if(plan.at("active").is_null()&&plan.at("entries").empty())return;finishActivity(plan,reason);plan["entries"]=Json::array();saveActivities(plan);if(plugins)plugins->event({{"kind","runtime.activity_cancel"},{"reason",reason}});}
+        std::lock_guard lock(activityMutex);activityGenerator.cancel();if(activityEffectCancelled)activityEffectCancelled->store(true);nextActivityFill=(reason=="character_hidden"||reason=="paused"||reason=="mode_disabled")?std::max(nextActivityFill,serviceNowMs()+30000):serviceNowMs()+30000;if(reason=="new_input"||reason=="input_active"||reason=="pointer_interaction"||reason=="configuration_changed")planningStimulus(serviceNowMs(),true);auto plan=activityQueue();if(plan.at("active").is_null()&&plan.at("entries").empty())return;finishActivity(plan,reason);plan["entries"]=Json::array();saveActivities(plan);if(plugins)plugins->event({{"kind","runtime.activity_cancel"},{"reason",reason}});
+    }
+    Json activityCommands(const Json& snapshots,bool background=false)const{
+        std::set<std::string> tools;for(const auto& item:plugins->catalog())tools.insert(item.at("name").get<std::string>());
+        Json commands=Json::array({"wait"});const auto widget=snapshots.value("widget",Json::object());
+        if(tools.contains("widget.move")&&(!background||widget.value("roaming",false)))commands.push_back("move_to");
+        if(tools.contains("widget.animate"))commands.push_back("pose");
+        if(tools.contains("habitat.act")){commands.push_back("eat_nearest");commands.push_back("look_nearest");commands.push_back("interact");}
+        if(tools.contains("habitat.arrange"))commands.push_back("arrange");
+        if(tools.contains("habitat.create"))commands.push_back("create_drop");
+        const auto atelier=snapshots.value("atelier",Json::object());
+        if(tools.contains("atelier.write")&&creativeSlotAvailable(atelier))commands.push_back("creative_note");
+        if(tools.contains("atelier.append")&&!visibleContinuationDrafts(atelier).empty())commands.push_back("creative_continue");
+        const auto reading=snapshots.value("reading",Json::object());
+        if(reading.value("autonomous_allowed",false)){if(tools.contains("reading.search"))commands.push_back("reference_search");if(tools.contains("reading.open")&&!reading.value("last_search",Json::object()).value("pages",Json::array()).empty())commands.push_back("reference_read");}
+        if(tools.contains("pocket.start"))commands.push_back("puzzle_start");
+        const auto game=snapshots.value("pocket",Json::object()).value("current",Json::object()).value("game",Json(nullptr));
+        if(tools.contains("pocket.press")&&game.is_object()&&game.value("status",std::string{})=="active")commands.push_back("puzzle_press");
+        if(tools.contains("rhythm.rest"))commands.push_back("rest");return commands;
+    }
     Json enqueueActivities(const Json& commands,const std::string& source){
         std::lock_guard lock(activityMutex);
-        if(!autonomousMode())return toolFailure("autonomous_mode_disabled");if(get("ha.control","current").value.at("paused")==true)return toolFailure("runtime_paused");auto checked=validateActivities(Json{{"version",1},{"commands",commands}}.dump());if(!checked.ok)return toolFailure(checked.code.c_str());auto plan=activityQueue();if(plan.at("entries").size()+commands.size()+(plan.at("active").is_null()?0:1)>6)return toolFailure("activity_queue_full");
-        std::set<std::string> available;for(const auto& tool:plugins->catalog())available.insert(tool.at("name").get<std::string>());for(const auto& item:commands){const auto kind=item.at("kind").get<std::string>();if((kind=="rest"&&!available.contains("rhythm.rest"))||((kind=="eat_nearest"||kind=="look_nearest")&&!available.contains("habitat.act")))return toolFailure("activity_dependency_missing");}
-        for(auto item:commands){item["id"]=id("activity");item["expires_ms"]=serviceNowMs()+600000;item["source"]=source;plan["entries"].push_back(std::move(item));}saveActivities(plan);return toolSuccess({{"accepted",commands.size()},{"completed",false},{"queued",plan.at("entries").size()}});
+        if(!autonomousMode())return toolFailure("autonomous_mode_disabled");if(get("ha.control","current").value.at("paused")==true)return toolFailure("runtime_paused");
+        auto checked=validateActivities(Json{{"version",1},{"commands",commands}}.dump());if(!checked.ok)return toolFailure(checked.code.c_str());
+        auto plan=activityQueue();if(plan.at("entries").size()+commands.size()+(plan.at("active").is_null()?0:1)>6)return toolFailure("activity_queue_full");
+        const auto snapshots=plugins->liveSnapshots();const auto available=activityCommands(snapshots,source.starts_with("activity-generation")||source.starts_with("peak-reuse:"));const auto widget=snapshots.value("widget",Json::object());
+        for(const auto& command:commands){const auto kind=command.at("kind").get<std::string>();if(std::find(available.begin(),available.end(),kind)==available.end())return toolFailure("activity_dependency_missing");
+            if(kind=="reference_read"){
+                const auto search=snapshots.value("reading",Json::object()).value("last_search",Json::object());const auto pages=search.value("pages",Json::array());
+                if(search.value("language",std::string{})!=command.at("language").get<std::string>()||std::none_of(pages.begin(),pages.end(),[&](const auto& page){return page.at("key")==command.at("key");}))return toolFailure("activity_reference_not_observed");
+            }
+            if(kind=="creative_continue"){
+                const auto pieces=visibleContinuationDrafts(snapshots.value("atelier",Json::object()));
+                const auto found=std::find_if(pieces.begin(),pieces.end(),[&](const auto& item){return item.at("id")==command.at("piece_id");});
+                if(found==pieces.end()||found->at("stage")!="draft")return toolFailure("activity_piece_unavailable");
+                if(found->at("revision")!=command.at("expected_revision"))return toolFailure("activity_piece_revision");
+            }
+            if(kind=="puzzle_press"){
+                const auto game=snapshots.value("pocket",Json::object()).value("current",Json::object()).value("game",Json(nullptr));
+                if(!game.is_object()||game.value("status",std::string{})!="active"||game.at("id")!=command.at("game_id"))return toolFailure("activity_game_changed");
+                const auto revision=command.at("expected_revision").get<std::int64_t>(),current=game.at("revision").get<std::int64_t>();if(revision<current||revision>current+6)return toolFailure("activity_game_revision");
+            }
+            if(kind=="pose"){const auto poses=widget.value("animation_catalog",Json::array());if(std::none_of(poses.begin(),poses.end(),[&](const auto& pose){return pose.at("state")==command.at("state");}))return toolFailure("activity_pose_unavailable");if(command.at("state")=="breathing"&&life.snapshot().value("energy",1.0)>.4)return toolFailure("activity_not_fatigued");}
+            if(kind=="interact"||kind=="arrange"){const auto objects=snapshots.value("habitat",Json::object()).value("objects",Json::array());if(std::none_of(objects.begin(),objects.end(),[&](const auto& item){return item.at("id")==command.at("object_id");}))return toolFailure("activity_target_unavailable");}
+        }
+        for(auto item:commands){item["id"]=id("activity");item["expires_ms"]=serviceNowMs()+600000;item["source"]=source;plan["entries"].push_back(std::move(item));}saveActivities(plan);
+        return toolSuccess({{"accepted",commands.size()},{"completed",false},{"queued",plan.at("entries").size()}});
     }
     std::string activityKey()const{const auto& actor=profile(get("ha.settings","model").value.at("id"));return Json::array({actor.id,actor.model.model,persona.at("version"),cfg.reviewEnabled,cfg.reviewProfileId,cfg.plugins,pluginAttentionEpoch}).dump();}
     void activityEvent(const Json& event){
-        std::lock_guard lock(activityMutex);if(!autonomousMode())return;const auto kind=event.value("kind",std::string{});if(kind=="widget.interacted"){cancelActivities("pointer_interaction");return;}if(kind!="habitat.consumed"&&kind!="habitat.inspected"&&kind!="rhythm.rest_finished"&&kind!="habitat.action_cancelled"&&kind!="rhythm.rest_cancelled"&&kind!="rhythm.rest_interrupted")return;auto plan=activityQueue();auto& active=plan["active"];if(active.is_null())return;const auto token=active.value("token",std::string{});if(token.empty()||event.value("token",std::string{})!=token)return;
-        if(kind=="habitat.consumed"||kind=="habitat.inspected"||kind=="rhythm.rest_finished")finishActivity(plan,"completed");else if(kind=="habitat.action_cancelled"||kind=="rhythm.rest_cancelled"||kind=="rhythm.rest_interrupted")finishActivity(plan,"interrupted");else return;saveActivities(plan);nextActivityTick=serviceNowMs()+1000;
+        std::lock_guard lock(activityMutex);if(!autonomousMode())return;const auto kind=event.value("kind",std::string{});
+        if(kind=="habitat.appeared")planningStimulus(serviceNowMs(),false);
+        if(kind=="widget.interacted"){cancelActivities("pointer_interaction");return;}
+        const bool completed=kind=="habitat.consumed"||kind=="habitat.inspected"||kind=="habitat.arranged"||kind=="habitat.planted"||kind=="rhythm.rest_finished"||kind=="widget.move_finished";
+        const bool interrupted=kind=="habitat.action_cancelled"||kind=="rhythm.rest_cancelled"||kind=="rhythm.rest_interrupted"||kind=="widget.move_cancelled";
+        if(!completed&&!interrupted)return;auto plan=activityQueue();const auto& active=plan.at("active");if(active.is_null())return;
+        const auto token=active.value("token",std::string{});if(token.empty()||event.value("token",std::string{})!=token)return;
+        finishActivity(plan,completed?"completed":"interrupted");saveActivities(plan);nextActivityTick=serviceNowMs()+500;
+    }
+    void prefetchActivities(std::int64_t now,const Json& snapshots,const Json& plan){
+        const auto last=get("ha.state","current").value.value("lastUserInteractionMs",std::int64_t(0));const double idle=cfg.plugins.value("widget",Json::object()).value("autonomyIdleSeconds",30.0);
+        const auto actor=profile(get("ha.settings","model").value.at("id"));const bool deferred=callsFor(actor).deferPrefetch;
+        if(activityWasDeferred&&!deferred)nextActivityFill=now;activityWasDeferred=deferred;
+        if(activityGenerator.running()||now-last<idle*1000||reactionGenerator.running()||plan.at("entries").size()>1)return;
+        // The disk queue has its own cooldown; a failed/quiet model planner's
+        // backoff must never postpone local peak-time reuse.
+        if(deferred){if(plan.at("active").is_null()&&plan.at("entries").empty())reusePeakActivity(now,snapshots);return;}
+        if(now<nextActivityFill)return;std::optional<Profile> reviewer;if(cfg.reviewEnabled)reviewer=profile(cfg.reviewProfileId);
+        const auto interval=static_cast<std::int64_t>(cfg.plugins.value("widget",Json::object()).value("autonomyRefillSeconds",60.0)*1000);
+        nextActivityFill=now+interval;
+        Json summaries=Json::array();const auto memories=memoryRows();const auto policy=visibility();for(auto it=memories.rbegin();it!=memories.rend()&&summaries.size()<4;++it){const auto memory=Json::parse(it->payload);if(!policy.memories.contains(it->id)&&policy.allows(memory))summaries.push_back(libraryPage(memory,0,600));}
+        auto environment=snapshots;environment.erase("widget");
+        for(auto it=environment.begin();it!=environment.end();++it)it.value()=pluginCharacterContext(it.key(),it.value());
+        Json time={{"now_ms",now}};time.update(presentationTimeContext(now));
+        activityGenerator.start(actor,reviewer,persona,{{"time_context",time},{"state",life.snapshot()},{"self",personalContext()},{"body",bodyState()},{"surfaces",environment},{"available_commands",activityCommands(snapshots,true)},{"queue_slots",6-plan.at("entries").size()-(plan.at("active").is_null()?0:1)},{"memories",summaries},{"recent_activities",plan.at("recent")}},activityKey(),[this]{return consumeModelBudget(1,true);},[this](const Profile& p,int status){providerResult(p,status);});
+    }
+    void collectActivityEffect(std::int64_t now){
+        // Finite local effects use one separate worker, keeping disk I/O out of
+        // the desktop pump. Cancellation stops future work, not committed past.
+        if(activityEffect.valid()&&activityEffect.wait_for(std::chrono::milliseconds(0))==std::future_status::ready){
+            Json receipt;try{receipt=activityEffect.get();}catch(...){receipt=toolFailure("activity_effect_failed");}
+            ProposalContext evidence;evidence.eventKind="solitude";receipt=observedTool(activityEffectTool,std::move(receipt),evidence,activityEffectId);
+            auto plan=activityQueue();const auto status=receipt.value("ok",false)?std::string("completed"):receipt.value("error",Json::object()).value("code",std::string("failed"));
+            if(plan.at("active").is_object()&&plan.at("active").value("id",std::string{})==activityEffectId){plan["active"]["source_id"]=receipt.value("source_id",std::string{});finishActivity(plan,status);}
+            else for(auto& recent:plan["recent"])if(recent.value("id",std::string{})==activityEffectId){recent["effect_outcome"]=status;recent["source_id"]=receipt.value("source_id",std::string{});}
+            saveActivities(plan);activityEffectId.clear();activityEffectTool.clear();activityEffectCancelled.reset();nextActivityTick=now+500;
+        }
     }
     void activitiesTick(std::int64_t now){
-        std::lock_guard lock(activityMutex);
-        const bool mode=autonomousMode();if(!activityModeNotified||mode!=activityLastMode){activityModeNotified=true;activityLastMode=mode;if(plugins)plugins->event({{"kind","runtime.autonomy"},{"enabled",mode}});}
-        if(!activityInitialized){activityInitialized=true;cancelActivities("application_restarted");nextActivityFill=now+30000;}
+        std::lock_guard lock(activityMutex);const bool mode=autonomousMode();collectActivityEffect(now);
+        if(!activityModeNotified||mode!=activityLastMode){activityModeNotified=true;activityLastMode=mode;if(plugins)plugins->event({{"kind","runtime.autonomy"},{"enabled",mode}});}
+        if(!activityInitialized){activityInitialized=true;cancelActivities("application_restarted");nextActivityFill=std::max(now+30000,restoredPlanningDue(get("ha.autonomy","cadence",emptyPlanningCadence()).value,now,activityPlanningBase()));}
         if(now<nextActivityMaintenance)return;nextActivityMaintenance=now+100;
-        if(auto batch=activityGenerator.poll()){activityError=batch->status=="ok"||batch->status=="cancelled"?"":batch->status;const auto key=id("activity-generation");commit({{"ha.activity-generations",key,0,1,Json{{"status",batch->status},{"proposal",batch->proposal},{"review",batch->review},{"created_at",now}}.dump(),"autonomy"}},key);if(batch->status=="ok"&&mode&&!runtimePaused&&!inputActive&&batch->key==activityKey()&&activityQueue().at("entries").empty())enqueueActivities(batch->entries,key);nextActivityFill=now+120000;}
-        if(!mode||runtimePaused){if(!activitySuspended)cancelActivities(mode?"paused":"mode_disabled");activitySuspended=true;return;}activitySuspended=false;
-        if(inputActive||busy()){activityGenerator.cancel();return;}if(now<nextActivityTick)return;nextActivityTick=now+100;
-        const auto snapshots=plugins->snapshots();const auto widget=snapshots.value("widget",Json::object());if(!widget.value("visible",false)){cancelActivities("character_hidden");return;}if(widget.value("bubble_in_progress",false)||widget.value("waiting_speech_count",0)>0)return;
-        auto plan=activityQueue();if(!plan.at("active").is_null()){const auto active=plan.at("active");if(active.at("kind")=="wait"&&now>=active.at("until_ms").get<std::int64_t>()){finishActivity(plan,"completed");saveActivities(plan);nextActivityTick=now+1000;}else if(now>=active.at("deadline_ms").get<std::int64_t>()){finishActivity(plan,"timed_out");saveActivities(plan);plugins->event({{"kind","runtime.activity_cancel"},{"reason","timed_out"}});}return;}
-        bool expired=false;for(auto it=plan["entries"].begin();it!=plan["entries"].end();)if(it->at("expires_ms").get<std::int64_t>()<=now){it=plan["entries"].erase(it);expired=true;}else ++it;if(expired)saveActivities(plan);
-        if(!plan.at("entries").empty()){
-            auto command=plan["entries"].front();plan["entries"].erase(0);command["started_ms"]=now;command["deadline_ms"]=now+static_cast<std::int64_t>(command.at("seconds").get<double>()*1000)+125000;plan["active"]=command;saveActivities(plan); // consume before dispatch, never replay after crash
-            const auto kind=command.at("kind").get<std::string>();Json receipt;
-            if(kind=="wait"){plan["active"]["until_ms"]=now+static_cast<std::int64_t>(command.at("seconds").get<double>()*1000);saveActivities(plan);return;}
-            if(kind=="rest")receipt=plugins->invoke("rhythm.rest",{{"seconds",command.at("seconds")}},{});
-            else {const auto world=snapshots.value("habitat",Json::object());std::string target;double best=1e10;for(const auto& item:world.value("objects",Json::array())){const auto itemKind=item.value("kind",std::string{});if(kind=="eat_nearest"&&!drops::edible(itemKind))continue;const double distance=std::hypot(item.at("x").get<double>()-widget.value("x",0.0),item.at("y").get<double>()-widget.value("y",0.0));if(distance<best){best=distance;target=item.at("id");}}if(target.empty())receipt=toolFailure("no_matching_object");else{receipt=plugins->invoke("habitat.act",{{"id",target},{"action",kind=="eat_nearest"?"eat":"look"}},{});if(receipt.value("ok",false)){const auto current=plugins->snapshots().value("habitat",Json::object()).value("pending",Json(nullptr));if(current.is_object())receipt["result"]["token"]=current.at("token");}}}
-            if(receipt.value("ok",false)&&receipt.at("result").contains("token"))plan["active"]["token"]=receipt.at("result").at("token");else finishActivity(plan,receipt.value("ok",false)?"unconfirmed":receipt.at("error").value("code",std::string("failed")));saveActivities(plan);nextActivityTick=now+1000;return;
+        if(auto batch=activityGenerator.poll()){
+            activityError=batch->status=="ok"||batch->status=="cancelled"?"":batch->status;const auto key=id("activity-generation");
+            commit({{"ha.activity-generations",key,0,1,Json{{"status",batch->status},{"proposal",batch->proposal},{"review",batch->review},{"usage",batch->usage},{"created_at",now}}.dump(),"autonomy"}},key);
+            if(mode&&!runtimePaused&&!inputActive&&batch->key==activityKey()){
+                if(batch->status=="ok"){const auto receipt=enqueueActivities(batch->entries,key);if(!receipt.value("ok",false))activityError=receipt.at("error").at("code");planningResult(receipt.value("ok",false),batch->entries.empty(),now);}
+                else if(batch->status!="cancelled")planningResult(false,false,now);
+            }
         }
-        const auto last=get("ha.state","current").value.value("lastUserInteractionMs",std::int64_t(0));const double idle=cfg.plugins.value("widget",Json::object()).value("autonomyIdleSeconds",30.0);if(activityGenerator.running()||now<nextActivityFill||now-last<idle*1000||reactionGenerator.running())return;
-        const auto actor=profile(get("ha.settings","model").value.at("id"));std::optional<Profile> reviewer;if(cfg.reviewEnabled)reviewer=profile(cfg.reviewProfileId);if(!consumeModelBudget(reviewer?2:1)){activityError="model_call_budget";nextActivityFill=now+120000;return;}
-        Json summaries=Json::array();const auto memories=memoryRows();const auto policy=memoryVisibility(memories,get("ha.access","current").value.at("hidden"));for(auto it=memories.rbegin();it!=memories.rend()&&summaries.size()<4;++it){const auto memory=Json::parse(it->payload);if(!policy.memories.contains(it->id)&&policy.allows(memory))summaries.push_back(libraryPage(memory,0,600));}
-        activityGenerator.start(actor,reviewer,persona,{{"state",life.snapshot()},{"surfaces",snapshots},{"memories",summaries},{"available_tools",plugins->catalog()},{"recent_activities",plan.at("recent")}},activityKey());nextActivityFill=now+120000;
+        if(!mode||runtimePaused){if(!activitySuspended)cancelActivities(mode?"paused":"mode_disabled");notifyEconomyFallback(false);activitySuspended=true;return;}
+        if(activitySuspended){nextActivityFill=now;nextActivityTick=now;activitySuspended=false;}
+        initializeActivityReuse();
+        if(inputActive||busy()){activityGenerator.cancel();return;}if(activityEffect.valid())return;if(now<nextActivityTick)return;nextActivityTick=now+100;
+        const auto snapshots=plugins->liveSnapshots();const auto widget=snapshots.value("widget",Json::object());
+        if(!widget.value("visible",false)){cancelActivities("character_hidden");return;}
+        if(widget.value("bubble_in_progress",false)||widget.value("waiting_speech_count",0)>0)return;
+        auto plan=activityQueue();prefetchActivities(now,snapshots,plan);plan=activityQueue();
+        const bool economy=callsFor(profile(get("ha.settings","model").value.at("id"))).deferPrefetch;
+        notifyEconomyFallback(economy&&plan.at("active").is_null()&&plan.at("entries").empty());
+        if(!plan.at("active").is_null()){
+            const auto active=plan.at("active");const auto kind=active.at("kind").get<std::string>();
+            if(kind=="pose"){
+                const auto expected=active.at("state").get<std::string>();auto resolved=expected;for(const auto& pose:widget.value("animation_catalog",Json::array()))if(pose.at("state")==expected)resolved=pose.value("resolved",expected);
+                const auto animation=widget.value("animation",Json::object());const bool shown=widget.value("state",std::string{})==expected&&(animation.value("backend",std::string{})=="procedural"||(animation.value("resolved",std::string{})==resolved&&animation.value("phase",std::string{})=="loop"));
+                if(!active.contains("until_ms")&&shown){plan["active"]["until_ms"]=now+static_cast<std::int64_t>(active.at("seconds").get<double>()*1000);saveActivities(plan);return;}
+                if(active.contains("until_ms")&&(now>=active.at("until_ms").get<std::int64_t>()||(!shown&&now+100>=active.at("until_ms").get<std::int64_t>()))){finishActivity(plan,"completed");saveActivities(plan);nextActivityTick=now+500;return;}
+                if(widget.value("state",std::string{})!=expected&&widget.value("pending_pose",std::string{}).empty()){finishActivity(plan,"interrupted");saveActivities(plan);return;}
+            }
+            if(kind=="wait"&&now>=active.at("until_ms").get<std::int64_t>()){finishActivity(plan,"completed");saveActivities(plan);nextActivityTick=now+500;}
+            else if(now>=active.at("deadline_ms").get<std::int64_t>()){finishActivity(plan,"timed_out");saveActivities(plan);plugins->event({{"kind","runtime.activity_cancel"},{"reason","timed_out"}});}return;
+        }
+        bool expired=false;for(auto it=plan["entries"].begin();it!=plan["entries"].end();)if(it->at("expires_ms").get<std::int64_t>()<=now){it=plan["entries"].erase(it);expired=true;}else ++it;if(expired)saveActivities(plan);
+        if(plan.at("entries").empty())return;
+        auto command=plan["entries"].front();plan["entries"].erase(0);command["from_state"]=widget.value("state",std::string("idle"));command["started_ms"]=now;command["deadline_ms"]=now+static_cast<std::int64_t>(command.at("seconds").get<double>()*1000)+125000;plan["active"]=command;saveActivities(plan);
+        const auto kind=command.at("kind").get<std::string>();Json receipt;
+        if(kind=="create_drop"||kind=="creative_note"||kind=="creative_continue"||kind=="reference_search"||kind=="reference_read"||kind=="puzzle_start"||kind=="puzzle_press"){
+            activityEffectId=command.at("id");activityEffectCancelled=std::make_shared<std::atomic<bool>>(false);const auto cancel=activityEffectCancelled;
+            Json args;if(kind=="create_drop"){activityEffectTool="habitat.create";args={{"kind",command.at("template")},{"definition",{{"name",command.at("name")},{"description",command.at("description")},{"tint",command.at("tint")}}}};}
+            else if(kind=="puzzle_start"){activityEffectTool="pocket.start";args=Json::object();}
+            else if(kind=="puzzle_press"){activityEffectTool="pocket.press";args={{"game_id",command.at("game_id")},{"expected_revision",command.at("expected_revision")},{"cell",command.at("cell")}};}
+            else if(kind=="creative_continue"){activityEffectTool="atelier.append";args={{"id",command.at("piece_id")},{"expected_revision",command.at("expected_revision")},{"content",command.at("content")},{"stage",command.at("stage")}};}
+            else if(kind=="reference_search"){activityEffectTool="reading.search";args={{"query",command.at("query")},{"language",command.at("language")}};}
+            else if(kind=="reference_read"){activityEffectTool="reading.open";args={{"key",command.at("key")},{"language",command.at("language")}};}
+            else {activityEffectTool="atelier.write";args={{"id",id("piece")},{"expected_revision",0},{"title",command.at("title")},{"kind",command.at("piece_kind")},{"stage","draft"},{"content",command.at("content")}};}
+            const auto tool=activityEffectTool;auto* runtime=plugins.get();activityEffect=std::async(std::launch::async,[runtime,tool,args=std::move(args),cancel]{return runtime->invoke(tool,args,[cancel]{return cancel->load();});});return;
+        }
+        if(kind=="wait"){plan["active"]["until_ms"]=now+static_cast<std::int64_t>(command.at("seconds").get<double>()*1000);saveActivities(plan);return;}
+        if(kind=="move_to")receipt=plugins->invoke("widget.move",{{"x",command.at("x")},{"y",command.at("y")}},{});
+        else if(kind=="pose"){receipt=plugins->invoke("widget.animate",{{"state",command.at("state")},{"seconds",command.at("seconds")}},{});}
+        else if(kind=="rest")receipt=plugins->invoke("rhythm.rest",{{"seconds",command.at("seconds")}},{});
+        else if(kind=="arrange")receipt=plugins->invoke("habitat.arrange",{{"id",command.at("object_id")},{"x",command.at("x")},{"y",command.at("y")}},{});
+        else if(kind=="interact")receipt=plugins->invoke("habitat.act",{{"id",command.at("object_id")},{"action",command.at("action")}},{});
+        else {const auto world=snapshots.value("habitat",Json::object());std::string target;double best=1e10;
+            for(const auto& item:world.value("objects",Json::array())){if(kind=="eat_nearest"&&!drops::edible(item.value("kind",std::string{})))continue;const double distance=std::hypot(item.at("x").get<double>()-widget.value("x",0.0),item.at("y").get<double>()-widget.value("y",0.0));if(distance<best){best=distance;target=item.at("id");}}
+            if(target.empty())receipt=toolFailure("no_matching_object");else{receipt=plugins->invoke("habitat.act",{{"id",target},{"action",kind=="eat_nearest"?"eat":"look"}},{});if(receipt.value("ok",false)){const auto pending=plugins->liveSnapshots().value("habitat",Json::object()).value("pending",Json(nullptr));if(pending.is_object())receipt["result"]["token"]=pending.at("token");}}
+        }
+        if((kind=="interact"||kind=="arrange")&&receipt.value("ok",false)){const auto pending=plugins->liveSnapshots().value("habitat",Json::object()).value("pending",Json(nullptr));if(pending.is_object())receipt["result"]["token"]=pending.at("token");}
+        if(receipt.value("ok",false)&&receipt.at("result").contains("token"))plan["active"]["token"]=receipt.at("result").at("token");else if(kind!="pose"||!receipt.value("ok",false))finishActivity(plan,receipt.value("ok",false)?"unconfirmed":receipt.at("error").value("code",std::string("failed")));
+        saveActivities(plan);nextActivityTick=now+100;
     }

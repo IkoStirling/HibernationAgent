@@ -1,0 +1,2022 @@
+{
+  "format": "pixellab-import-1",
+  "canvas": [
+    168,
+    168
+  ],
+  "ground": 144,
+  "fps": 6.0,
+  "sources": [
+    {
+      "archive": "Asterlan-Idle.zip",
+      "sha256": "ba6072ff72f9b5f5bc499be0d260eff10d79b39bbbe5b408ba07749f5e9ced6c",
+      "export_version": "3.1"
+    },
+    {
+      "archive": "Asterlan-lay-down.zip",
+      "sha256": "73804f30591fcf37f6a2dedfe9e8215f7041d6586f5d1fa6da366564abc232cf",
+      "export_version": "3.1"
+    }
+  ],
+  "notes": [
+    "Export contains no frame timing; default 6 FPS is confirmed by the user's PixelLab editor screenshot.",
+    "Whole-pixel translation and transparent padding only; no scaling or repainting.",
+    "Sleep loop is the supplied static lying pose. Mouth visemes and dedicated eating motion are not supplied.",
+    "Standing-to-sleep and wake-up are grounded; source PNGs remain in the original ZIPs.",
+    "Return-to-front uses the supplied turn frames in reverse.",
+    "Landing starts at source drag-drop frame 005, omitting five standing anticipation frames after the physical drop; all source frames are retained.",
+    "Side pickup reuses reverse turn frames at 55 ms while the desktop lifts the sprite; a dedicated pickup sequence is not yet supplied.",
+    "All supplied turn frames are used. The previous temporary exclusion of frame 001 was removed after the source was repaired."
+  ],
+  "frames": [
+    {
+      "image": "poses/standing/south.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/rotations/south.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        20
+      ]
+    },
+    {
+      "image": "poses/standing/south-east.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/rotations/south-east.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        20
+      ]
+    },
+    {
+      "image": "poses/standing/east.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/rotations/east.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        20
+      ]
+    },
+    {
+      "image": "poses/standing/north-east.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/rotations/north-east.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        20
+      ]
+    },
+    {
+      "image": "poses/standing/north.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/rotations/north.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        20
+      ]
+    },
+    {
+      "image": "poses/standing/north-west.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/rotations/north-west.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        20
+      ]
+    },
+    {
+      "image": "poses/standing/west.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/rotations/west.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        20
+      ]
+    },
+    {
+      "image": "poses/standing/south-west.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/rotations/south-west.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        20
+      ]
+    },
+    {
+      "image": "poses/sleeping/south.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/rotations/south.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        36
+      ]
+    },
+    {
+      "image": "poses/sleeping/south-east.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/rotations/south-east.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        34
+      ]
+    },
+    {
+      "image": "poses/sleeping/east.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/rotations/east.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        39
+      ]
+    },
+    {
+      "image": "poses/sleeping/north-east.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/rotations/north-east.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        39
+      ]
+    },
+    {
+      "image": "poses/sleeping/north.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/rotations/north.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        34
+      ]
+    },
+    {
+      "image": "poses/sleeping/north-west.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/rotations/north-west.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        38
+      ]
+    },
+    {
+      "image": "poses/sleeping/west.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/rotations/west.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        37
+      ]
+    },
+    {
+      "image": "poses/sleeping/south-west.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/rotations/south-west.png",
+      "source_size": [
+        128,
+        128
+      ],
+      "offset": [
+        20,
+        33
+      ]
+    },
+    {
+      "image": "frames/breathing/south/000.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/breathing/south/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/breathing/south/001.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/breathing/south/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/breathing/south/002.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/breathing/south/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/breathing/south/003.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/breathing/south/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/breathing/south/004.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/breathing/south/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/breathing/south/005.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/breathing/south/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/breathing/south/006.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/breathing/south/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/breathing/south/007.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/breathing/south/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/000.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/001.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/002.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/003.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/004.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/005.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/006.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/007.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/008.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_008.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/009.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_009.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/010.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_010.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/011.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_011.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/012.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_012.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/013.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_013.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/014.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_014.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/015.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_015.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/eyes-blind/south/016.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/eyes-blind/south/frame_016.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/trun/south/000.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/trun/south/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/trun/south/001.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/trun/south/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/trun/south/002.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/trun/south/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/trun/south/003.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/trun/south/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/trun/south/004.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/trun/south/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/trun/south/005.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/trun/south/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/trun/south/006.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/trun/south/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/trun/south/007.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/trun/south/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/trun/south/008.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/trun/south/frame_008.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/000.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/001.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/002.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/003.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/004.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/005.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/006.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/007.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/008.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_008.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/009.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_009.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/010.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_010.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/011.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_011.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/012.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_012.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/013.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_013.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/014.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_014.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/015.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_015.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/east/016.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/east/frame_016.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/000.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/001.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/002.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/003.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/004.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/005.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/006.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/007.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/008.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_008.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/009.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_009.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/010.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_010.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/011.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_011.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/012.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_012.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/013.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_013.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/014.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_014.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/015.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_015.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/walking/south/016.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/walking/south/frame_016.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/000.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/001.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/002.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/003.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/004.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/005.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/006.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/007.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/008.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_008.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/009.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_009.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/010.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_010.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/011.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_011.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/012.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_012.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/013.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_013.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/014.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_014.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/015.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_015.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/idle/south/016.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/idle/south/frame_016.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/000.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/001.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/002.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/003.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/004.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/005.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/006.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/007.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/008.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_008.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/009.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_009.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/010.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_010.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/011.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_011.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/012.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_012.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/013.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_013.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/014.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_014.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/015.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_015.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-hold/south/016.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-hold/south/frame_016.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/000.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/001.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/002.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/003.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/004.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/005.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/006.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/007.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/008.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_008.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/009.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_009.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/010.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_010.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/011.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_011.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/012.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_012.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/013.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_013.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/014.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_014.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/015.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_015.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/drag-drop/south/016.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/drag-drop/south/frame_016.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "image": "frames/on-sleep/south/000.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/on-sleep/south/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        3,
+        3
+      ]
+    },
+    {
+      "image": "frames/on-sleep/south/001.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/on-sleep/south/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        3,
+        3
+      ]
+    },
+    {
+      "image": "frames/on-sleep/south/002.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/on-sleep/south/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        2,
+        7
+      ]
+    },
+    {
+      "image": "frames/on-sleep/south/003.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/on-sleep/south/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        2,
+        13
+      ]
+    },
+    {
+      "image": "frames/on-sleep/south/004.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/on-sleep/south/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        2,
+        13
+      ]
+    },
+    {
+      "image": "frames/on-sleep/south/005.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/on-sleep/south/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        1,
+        13
+      ]
+    },
+    {
+      "image": "frames/on-sleep/south/006.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/on-sleep/south/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        1,
+        13
+      ]
+    },
+    {
+      "image": "frames/on-sleep/south/007.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/on-sleep/south/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        16
+      ]
+    },
+    {
+      "image": "frames/on-sleep/south/008.png",
+      "archive": "Asterlan-Idle.zip",
+      "source": "Idle/animations/on-sleep/south/frame_008.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        16
+      ]
+    },
+    {
+      "image": "frames/walk-up/south/000.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/animations/walk-up/south/frame_000.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        3,
+        25
+      ]
+    },
+    {
+      "image": "frames/walk-up/south/001.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/animations/walk-up/south/frame_001.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        3,
+        25
+      ]
+    },
+    {
+      "image": "frames/walk-up/south/002.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/animations/walk-up/south/frame_002.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        2,
+        24
+      ]
+    },
+    {
+      "image": "frames/walk-up/south/003.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/animations/walk-up/south/frame_003.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        2,
+        25
+      ]
+    },
+    {
+      "image": "frames/walk-up/south/004.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/animations/walk-up/south/frame_004.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        2,
+        25
+      ]
+    },
+    {
+      "image": "frames/walk-up/south/005.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/animations/walk-up/south/frame_005.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        1,
+        24
+      ]
+    },
+    {
+      "image": "frames/walk-up/south/006.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/animations/walk-up/south/frame_006.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        1,
+        25
+      ]
+    },
+    {
+      "image": "frames/walk-up/south/007.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/animations/walk-up/south/frame_007.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        28
+      ]
+    },
+    {
+      "image": "frames/walk-up/south/008.png",
+      "archive": "Asterlan-lay-down.zip",
+      "source": "lay-down/animations/walk-up/south/frame_008.png",
+      "source_size": [
+        168,
+        168
+      ],
+      "offset": [
+        0,
+        26
+      ]
+    }
+  ]
+}

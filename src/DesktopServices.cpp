@@ -17,7 +17,7 @@ bool contains(const std::filesystem::path& base,const std::filesystem::path& pat
 std::string hostOf(const std::string& url){if(url.size()>4096||url.find_first_of("\r\n")!=std::string::npos||url.find('\0')!=std::string::npos)return {};const auto begin=url.starts_with("https://")?8:url.starts_with("http://")?7:0;if(!begin)return {};auto host=url.substr(begin,url.find_first_of("/?#",begin)-begin);if(host.find('@')!=std::string::npos)return {};if(const auto colon=host.find(':');colon!=std::string::npos)host.resize(colon);std::transform(host.begin(),host.end(),host.begin(),[](unsigned char c){return char(std::tolower(c));});return host;}
 }
 struct DesktopServices::Impl {
-    const Config& cfg;DWORD owner=GetCurrentThreadId();ayt::io::Workspace files;Json roots=Json::array();
+    const Config& cfg;DWORD owner=GetCurrentThreadId();ayt::io::Workspace files;Json roots=Json::array();std::function<Json()> widgetGeometry;
     struct Command {std::string operation;Json args;std::promise<Json> result;std::atomic<bool> cancelled=false,answered=false;std::chrono::steady_clock::time_point deadline=std::chrono::steady_clock::now()+std::chrono::seconds(12);void complete(Json value){if(!answered.exchange(true))result.set_value(std::move(value));}};
     std::mutex mutex;std::deque<std::shared_ptr<Command>> queue;bool stopped=false;
 #ifdef HA_HAS_WEBVIEW
@@ -66,7 +66,7 @@ struct DesktopServices::Impl {
         return toolFailure("webview_unavailable");
     }
 };
-DesktopServices::DesktopServices(const Config& cfg):impl_(std::make_unique<Impl>(cfg)){}
+DesktopServices::DesktopServices(const Config& cfg,std::function<Json()> widgetGeometry):impl_(std::make_unique<Impl>(cfg)){impl_->widgetGeometry=std::move(widgetGeometry);}
 DesktopServices::~DesktopServices(){stop();}
 bool DesktopServices::configure(std::string& error){auto& a=*impl_;std::vector<ayt::io::WorkspaceMount> mounts;Json roots=Json::array();for(const auto& entry:Json::array({{{"id","drafts"},{"path",pathText(a.cfg.draftsRoot.empty()?a.cfg.dataRoot/"drafts":a.cfg.draftsRoot)}},{{"id","materials"},{"path",pathText(a.cfg.materialsRoot.empty()?a.cfg.dataRoot/"materials":a.cfg.materialsRoot)}}})){mounts.push_back({entry.at("id"),std::filesystem::u8path(entry.at("path").get<std::string>()),true,false});roots.push_back(entry);}
     for(const auto& root:a.cfg.computer.value("readRoots",Json::array())){const auto path=std::filesystem::u8path(root.at("path").get<std::string>());for(const auto& protectedRoot:{a.cfg.dataRoot/"archive",a.cfg.dataRoot/"runtime",a.cfg.characterRoot,a.cfg.uiRoot,a.cfg.projectRoot})if(contains(path,protectedRoot)||contains(protectedRoot,path)){error="computer_root_overlaps_private_data";return false;}mounts.push_back({root.at("id"),path,true,false});roots.push_back(root);}
@@ -79,8 +79,25 @@ Json DesktopServices::invoke(const std::string& name,const Json& args,const std:
         if(it->contains("builtin")){wchar_t system[32768]{};GetSystemDirectoryW(system,32768);const auto builtin=it->at("builtin").get<std::string>();executable=std::filesystem::path(system)/(builtin=="notepad"?L"notepad.exe":L"calc.exe");}else executable=std::filesystem::u8path(it->at("path").get<std::string>());
         const auto result=ayt::platform::launchDesktopApplication(executable);if(!result.launched)return toolFailure(result.error.c_str());return toolSuccess({{"launched",true},{"id",args.at("id")},{"process_id",result.processId},{"note","仅确认启动请求成功，不等于已读到程序内容。"}});
     }
-    if(name=="computer.screenshot"){if(!a.cfg.desktopEnabled)return toolFailure("desktop_required");const auto target=args.value("target",std::string("application"));HWND window=nullptr;if(target=="screen"){if(!a.cfg.computer.value("allowScreenCapture",false))return toolFailure("screen_capture_not_enabled");}else{window=conversationWindow();if(!window)return toolFailure("application_window_not_visible");}
-        const auto image=ayt::platform::captureDesktopImage(reinterpret_cast<std::uintptr_t>(window),960,540);if(!image)return toolFailure(image.error.c_str());auto encoded=encodeJpegBase64(image.bgra,image.width,image.height);if(encoded.empty())return toolFailure("capture_encoding_failed");return toolSuccess({{"target",target},{"width",image.width},{"height",image.height},{"image",{{"mime_type","image/jpeg"},{"base64",encoded}}},{"note","仅为本次实际屏幕快照，不提供键盘输入、任意点击或文件修改权限。"}});
+    if(name=="computer.screenshot"){if(!a.cfg.desktopEnabled)return toolFailure("desktop_required");const auto target=args.value("target",std::string("application"));HWND window=nullptr;Json geometry=Json::object(),requestedRegion=args.value("region",Json());
+        if(target=="screen"||target=="widget"){
+            if(!a.cfg.computer.value("allowScreenCapture",false))return toolFailure("screen_capture_not_enabled");
+            if(target=="widget"){
+                if(args.contains("region"))return toolFailure("widget_capture_region_is_program_managed");
+                geometry=a.widgetGeometry?a.widgetGeometry():Json::object();if(!geometry.value("available",false)||!geometry.contains("capture_region"))return toolFailure("widget_not_visible_or_unavailable");
+                requestedRegion=geometry.at("capture_region");
+            }
+        }else{if(target!="application")return toolFailure("invalid_capture_target");window=conversationWindow();if(!window)return toolFailure("application_window_not_visible");}
+        ayt::platform::DesktopCaptureRegion region;
+        if(!requestedRegion.is_null()){
+            const auto& r=requestedRegion;if(!r.is_object()||r.size()!=4)return toolFailure("invalid_capture_region");
+            for(const auto* key:{"x","y","width","height"})if(!r.contains(key)||!r.at(key).is_number())return toolFailure("invalid_capture_region");
+            region={r.at("x").get<double>(),r.at("y").get<double>(),r.at("width").get<double>(),r.at("height").get<double>()};
+        }
+        const auto image=ayt::platform::captureDesktopRegion(reinterpret_cast<std::uintptr_t>(window),region,960,540);if(!image)return toolFailure(image.error.c_str());auto encoded=encodeJpegBase64(image.bgra,image.width,image.height);if(encoded.empty())return toolFailure("capture_encoding_failed");
+        Json output={{"target",target},{"width",image.width},{"height",image.height},{"region",{{"x",region.x},{"y",region.y},{"width",region.width},{"height",region.height}}},{"coordinate_space","normalized_full_target_top_left"},{"region_reference",window?"application_client":"virtual_desktop"},{"image",{{"mime_type","image/jpeg"},{"base64",encoded}}},{"note","从本次实际目标区域直接截图后缩小，不是裁切旧预览。不提供键盘输入、任意点击或文件修改权限。"}};
+        if(!window)output["screen_bounds"]={{"x",GetSystemMetrics(SM_XVIRTUALSCREEN)},{"y",GetSystemMetrics(SM_YVIRTUALSCREEN)},{"width",GetSystemMetrics(SM_CXVIRTUALSCREEN)},{"height",GetSystemMetrics(SM_CYVIRTUALSCREEN)}};
+        if(target=="widget")output["widget_geometry"]=geometry;return toolSuccess(output);
     }return toolFailure("tool_not_available");
 }
 Json DesktopServices::browser(const std::string& operation,const Json& args,const std::function<bool()>& cancelled){auto& a=*impl_;if(!a.cfg.desktopEnabled)return toolFailure("desktop_required");auto command=std::make_shared<Impl::Command>();command->operation=operation;command->args=args;

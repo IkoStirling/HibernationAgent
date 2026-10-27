@@ -42,9 +42,12 @@ struct InstanceLock {
 };
 }
 int launch(int argc,char** argv) {
-    std::filesystem::path configFile,readyFile;bool desktop=false;
-    for(int i=1;i<argc;++i){const std::string option=argv[i];if(option=="--config"&&i+1<argc)configFile=std::filesystem::u8path(argv[++i]);else if(option=="--ready-file"&&i+1<argc)readyFile=std::filesystem::u8path(argv[++i]);else if(option=="--desktop")desktop=true;else {std::cerr<<"usage: hibernation-agent --config <path> --ready-file <path> [--desktop]\n";return 2;}}
-    if(configFile.empty()||readyFile.empty())return 2;
+    std::filesystem::path configFile,readyFile;bool desktop=false,checkConfig=false;
+    for(int i=1;i<argc;++i){const std::string option=argv[i];if(option=="--config"&&i+1<argc)configFile=std::filesystem::u8path(argv[++i]);else if(option=="--ready-file"&&i+1<argc)readyFile=std::filesystem::u8path(argv[++i]);else if(option=="--desktop")desktop=true;else if(option=="--check-config")checkConfig=true;else {std::cerr<<"usage: hibernation-agent --config <path> [--check-config | --ready-file <path> [--desktop]]\n";return 2;}}
+    if(configFile.empty()||(!checkConfig&&readyFile.empty()))return 2;
+    // A deployment preflight must not open archives, create the workspace, load
+    // plugins, read stored keys, or connect a second mailbox to an external chat.
+    if(checkConfig){try{(void)loadConfig(configFile);std::cout<<"Configuration valid (syntax and policy only).\n";return 0;}catch(...){std::cerr<<"configuration_validation_failed\n";return 3;}}
 #ifdef _WIN32
     // Establish one physical coordinate space before plugins create layered
     // surfaces; DPI virtualization otherwise disagrees with color-key hit tests.
@@ -66,8 +69,8 @@ int launch(int argc,char** argv) {
         std::mutex mutex;std::deque<std::shared_ptr<Command>> mailbox;std::atomic<bool> accepting=true;
         LocalService service;LocalServiceOptions options;options.credentialEnvironment=app.config().credentialEnvironment;options.port=app.config().port;
         options.maxMessageBytes=2*1024*1024;options.allowSameOriginBrowser=true;
-        for(const auto& item:std::vector<std::tuple<std::string,std::string,std::string>>{{"/","text/html; charset=utf-8","index.html"},{"/ui/app.js","application/javascript; charset=utf-8","app.js"},{"/ui/plugin-forms.js","application/javascript; charset=utf-8","plugin-forms.js"},{"/ui/style.css","text/css; charset=utf-8","style.css"},{"/ui/icon.svg","image/svg+xml","icon.svg"}})
-            options.publicAssets.push_back({std::get<0>(item),std::get<1>(item),readFile(app.config().uiRoot/std::get<2>(item),512*1024)});
+        for(const auto& item:std::vector<std::tuple<std::string,std::string,std::string>>{{"/","text/html; charset=utf-8","index.html"},{"/ui/app.js","application/javascript; charset=utf-8","app.js"},{"/ui/pricing-settings.js","application/javascript; charset=utf-8","pricing-settings.js"},{"/ui/plugin-forms.js","application/javascript; charset=utf-8","plugin-forms.js"},{"/ui/style.css","text/css; charset=utf-8","style.css"},{"/ui/icon.svg","image/svg+xml","icon.svg"},{"/ui/chat.html","text/html; charset=utf-8","chat.html"},{"/ui/chat.js","application/javascript; charset=utf-8","chat.js"},{"/ui/chat.css","text/css; charset=utf-8","chat.css"}})
+            options.publicAssets.push_back({std::get<0>(item),std::get<1>(item),readFile(app.config().uiRoot/std::get<2>(item),512*1024),std::get<0>(item)=="/ui/chat.html"});
         if(!service.start(options,[&](const LocalRequest& request)->LocalReply {
             if(!accepting)return {503,"{\"error\":\"stopping\"}"};
             auto command=std::make_shared<Command>();command->request=request;auto future=command->answer.get_future();

@@ -1,4 +1,5 @@
 #include <Hibernation/TurnProtocol.h>
+#include <Hibernation/ModelJson.h>
 #include <AYSerializer/JsonSchema.h>
 #include <set>
 #include <algorithm>
@@ -31,12 +32,7 @@ nlohmann::json normalizeToolArguments(nlohmann::json args,const nlohmann::json& 
     else if(args.is_array()&&schema.contains("items"))for(auto& child:args)child=normalizeToolArguments(std::move(child),schema.at("items"));return args;
 }
 TurnValidation validateTurn(std::string_view text){
-    if(text.size()>128*1024)return {false,"response_too_large",{}};
-    auto trim=[](std::string_view& s){while(!s.empty()&&(s.front()==' '||s.front()=='\n'||s.front()=='\r'||s.front()=='\t'))s.remove_prefix(1);while(!s.empty()&&(s.back()==' '||s.back()=='\n'||s.back()=='\r'||s.back()=='\t'))s.remove_suffix(1);};trim(text);
-    // Deterministic wrapper normalization only; never guess missing braces,
-    // coerce types, or execute an arbitrary substring of prose.
-    if(text.starts_with("\xef\xbb\xbf"))text.remove_prefix(3);
-    if(text.starts_with("```json\n")&&text.ends_with("```")){text.remove_prefix(8);text.remove_suffix(3);trim(text);}
+    if(text.size()>128*1024)return {false,"response_too_large",{}};const auto envelope=modelJsonEnvelope(text);if(!envelope)return {false,"invalid_turn_schema",{}};text=*envelope;
     if(!ayt::serializer::validateJsonDocument(text,turnSchema()))return {false,"invalid_turn_schema",{}};
     auto value=nlohmann::json::parse(text);const auto kind=value.at("kind").get<std::string>();
     if(kind=="call"&&(value.at("calls").empty()||!value.at("text").is_null()))return {false,"call_shape",{}};
@@ -47,5 +43,13 @@ TurnValidation validateTurn(std::string_view text){
     auto valid=[](const std::string& s,bool dotted){return std::all_of(s.begin(),s.end(),[&](unsigned char c){return std::isalnum(c)||c=='_'||c=='-'||(dotted&&c=='.');});};
     for(const auto& call:value.at("calls")){const auto id=call.at("id").get<std::string>(),tool=call.at("tool").get<std::string>();if(!ids.insert(id).second||!valid(id,false)||!valid(tool,true)||call.at("args").dump().size()>32*1024)return {false,"invalid_call_identity_or_size",{}};}
     return {true,"ok",std::move(value)};
+}
+TurnValidation plainReplyCandidate(std::string_view text){
+    if(text.empty()||text.size()>6000)return {false,"plain_reply_size",{}};
+    while(!text.empty()&&(text.front()==' '||text.front()=='\n'||text.front()=='\r'||text.front()=='\t'))text.remove_prefix(1);
+    while(!text.empty()&&(text.back()==' '||text.back()=='\n'||text.back()=='\r'||text.back()=='\t'))text.remove_suffix(1);
+    if(text.empty()||text.find_first_of("{}[]`<>")!=std::string_view::npos||text.starts_with("\xef\xbb\xbf")||Json::accept(text))return {false,"plain_reply_not_dialogue",{}};
+    for(const unsigned char c:text)if(c<32&&c!='\n'&&c!='\r'&&c!='\t')return {false,"plain_reply_control",{}};
+    return validateTurn(Json{{"version",1},{"kind","reply"},{"text",text},{"calls",Json::array()}}.dump());
 }
 }

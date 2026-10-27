@@ -1,7 +1,12 @@
     bool foregroundAvailable()const{
+        if(napcatActive())return false;
         if(!journalHealthy)return false;
         for(const auto& job:jobs()){
             if(job.spec.kind=="role.solitude")continue;
+            if(cfg.channel&&job.state!=JobState::Running&&job.spec.kind=="role.turn"){
+                const auto input=Json::parse(job.spec.payload);const auto request=get("ha.requests",input.value("request_id",std::string{}));
+                if(request.value.value("status",std::string{})=="abandoned")continue;
+            }
             if(job.state==JobState::Running||job.state==JobState::Pending&&
                 (job.spec.id=="chat"||job.spec.id=="event"||job.spec.id=="operator.tool"||job.spec.dueAtMs<=serviceNowMs()))return false;
         }

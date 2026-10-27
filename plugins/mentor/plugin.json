@@ -1,0 +1,18 @@
+{
+  "id":"mentor", "name":"操作导师", "icon":"◇",
+  "description":"小爱遇到操作困难时可咨询导师。保留小爱的决策与表达，由应用核对工具和执行结果。",
+  "version":"0.2.0", "api_version":2, "library":"Hibernation_Mentor.dll", "dependencies":[],
+  "capabilities":["mentor.advice","mentor.execute"],
+  "settings_ui":[
+    {"key":"allowExecution","label":"允许导师通过已授权工具直接执行","type":"toggle","default":true},
+    {"key":"backend","label":"导师连接","type":"select","default":"chatgpt","options":[["chatgpt","ChatGPT · 本机 Codex 账号"],["none","暂不连接导师"]]},
+    {"key":"codexExecutable","label":"Codex 程序路径（留空自动寻找）","type":"text","default":"","maxLength":2048},
+    {"key":"model","label":"导师模型（留空使用 Codex 默认）","type":"text","default":"","maxLength":120},
+    {"key":"useSystemProxy","label":"使用当前 Windows 系统代理","type":"toggle","default":true},
+    {"key":"proxyOrigin","label":"专用 HTTP 代理地址（可留空）","type":"text","default":"","maxLength":256},
+    {"key":"maxRequestsPerHour","label":"导师每小时最多请求次数","type":"number","default":12,"min":1,"max":120,"step":1},
+    {"key":"cooldownSeconds","label":"两次咨询至少间隔（秒）","type":"number","default":60,"min":0,"max":3600,"step":1},
+    {"key":"timeoutSeconds","label":"单次咨询超时（秒）","type":"number","default":35,"min":5,"max":60,"step":1}
+  ],
+  "settings_note":"默认使用本机 Codex 的 ChatGPT 登录，无需 API Key。小爱可以询问方法，也可以把具体操作直接委托导师；委托后应用立即执行已授权工具，并返回每步真实回执。直接执行可单独关闭。导师收到必要目标、障碍、尝试和工具说明，不接收完整人设或档案。未登录或不可用时返回失败，不影响原连接。咨询和委托共享次数限制。"
+}

@@ -11,4 +11,8 @@ std::string turnProviderSchema(const nlohmann::json& catalog);
 /// Required values and unknown properties are never dropped or coerced.
 nlohmann::json normalizeToolArguments(nlohmann::json arguments,const nlohmann::json& schema);
 TurnValidation validateTurn(std::string_view response);
+/// Optional application compatibility candidate: bounded plain dialogue only.
+/// JSON/code/tool-shaped content is rejected; it never creates an action. A host
+/// must still apply the normal final schema and semantic review before display.
+TurnValidation plainReplyCandidate(std::string_view response);
 }

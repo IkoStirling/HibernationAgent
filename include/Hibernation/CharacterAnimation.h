@@ -48,10 +48,13 @@ class Animator {
     const Clip& current()const{return phase_=="start"?variant_->start:phase_=="end"?variant_->end:variant_->loop;}
 public:
     void bind(std::shared_ptr<const Pack> pack){pack_=std::move(pack);variant_=nullptr;requested_.clear();pending_.clear();}
+    // A pointer interrupt may enter an authored pickup at its matching angle.
+    // Offset skips an already completed part of its entrance, never its loop.
+    void interruptAt(const std::string& wanted,double now,double entranceElapsed=0){if(!pack_)return;requested_=wanted;pending_.clear();enter(wanted,now);if(phase_=="start")start_-=std::clamp(entranceElapsed,0.0,current().timeline.durationUs()/1000000.0);}
     Selection select(const std::string& wanted,double now,bool reduced=false){
         if(!pack_)return {};if(!variant_){requested_=wanted;enter(wanted,now);}else if(requested_!=wanted){requested_=wanted;pending_=wanted;const bool urgent=wanted=="dragged"||wanted=="landing"||wanted=="receiving"||wanted=="preparing";if(urgent||variant_->end.frames.empty())enter(wanted,now);else if(phase_!="end"){phase_="end";start_=now;}}
         for(int i=0;i<3&&phase_!="loop";++i){const double duration=current().timeline.durationUs()/1000000.0;if(now-start_<duration)break;start_+=duration;if(phase_=="end")enter(pending_,start_);else phase_="loop";}
-        const auto sample=current().timeline.sample(static_cast<std::uint64_t>(std::max(0.0,now-start_)*1000000));const auto index=reduced?0:sample.frame;return {&current().frames.at(index),requested_,active_,variant_->id,phase_,index};
+        const auto sample=current().timeline.sample(static_cast<std::uint64_t>(std::llround(std::max(0.0,now-start_)*1000000)));const auto index=reduced?0:sample.frame;return {&current().frames.at(index),requested_,active_,variant_->id,phase_,index};
     }
 };
 }

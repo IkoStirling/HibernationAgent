@@ -151,7 +151,8 @@ try{
  Plan @((Calls @((Tool 'missing' 'weather.current' @{}))),(Reply '现在没有天气插件。'));$null=Message '无插件模式';Check ((Feedback)[0].error.code-eq'tool_not_available') 'disabled capability removed from model tool access'
  $settings.profiles.Where({$_.id-eq'fixture'})[0].supportsJsonSchema=$true;$null=Call '/api/settings' @{settings=$settings};Plan @('invalid native schema output',(Calls @((Tool 'native' 'memory.search' @{query='不存在的内容';limit=$null}))),(Reply '严格结构接口验证完成。'));$null=Message '严格结构输出验证';$capture=Capture;Check ($capture.response_format.json_schema.strict-and$capture.response_format.json_schema.schema.required-contains'presentation') 'native structured schema uses closed required fields';Check ((Feedback)[0].ok) 'known optional null normalized before local tool validation';Check ((Call '/api/chat').messages[-1].text-eq'严格结构接口验证完成。') 'native invalid output repairs before executing valid command'
  # User-facing failures must be specific, persistent and independent of provider text.
- foreach($case in @(@(402,'insufficient_balance'),@(401,'credential_invalid'),@(403,'access_denied'),@(404,'endpoint_not_found'),@(400,'request_rejected'),@(422,'request_rejected'),@(429,'rate_limited'),@(503,'provider_unavailable'))){
+ # HTTP 402 now latches offline; role balance recovery is covered by Offline/AutoBalance.
+ foreach($case in @(@(401,'credential_invalid'),@(403,'access_denied'),@(404,'endpoint_not_found'),@(400,'request_rejected'),@(422,'request_rejected'),@(429,'rate_limited'),@(503,'provider_unavailable'))){
   Plan @(@{fixture_status=$case[0]});$null=Message '连接错误提示验证';$chat=Call '/api/chat'
   Check ($chat.call_failed-and$chat.call_error.code-eq$case[1]-and$chat.call_error.http_status-eq$case[0]) "HTTP $($case[0]) exposes classified call failure"
   Check ($chat.call_error.message.Length-gt0-and($chat.call_error.PSObject.Properties.Name.Count-eq3)-and!($chat.call_error|ConvertTo-Json -Compress).Contains('fixture_transient')) 'chat failure contains only local safe message and status'
@@ -183,10 +184,15 @@ try{
  ReviewPlan @((Verdict));Plan @((Calls @((Tool 'traversal' 'workspace.write' @{path='../character/persona.json';content='forbidden'}))),(Reply '这里不能改写。'));$null=Message '审核权限边界验证';Check (!(Feedback)[0].ok) 'reviewer approval never grants workspace permissions'
  ReviewPlan @((Verdict));Plan @(@{version=1;kind='silence';text=$null;calls=@();presentation=@{speech=$false;bubble=$false}});$count=(Call '/api/chat').messages.Count;$null=Message '允许沉默';Check ((Call '/api/chat').messages.Count-eq$count+1-and!(Call '/api/chat').call_failed) 'approved silence remains a valid character choice'
  ReviewPlan @('broken review JSON');Plan @((Reply '不能展示这段未审核回复'));$null=Message '审核格式故障';Check ((Call '/api/chat').call_error.code-eq'review_unavailable') 'malformed reviewer output fails closed'
- ReviewPlan @(@{fixture_status=402});Plan @((Reply '也不能展示这段未审核回复'));$null=Message '审核连接故障';$chat=Call '/api/chat';Check ($chat.call_error.code-eq'review_unavailable'-and$chat.call_error.http_status-eq402) 'review connection failure is distinct from role silence'
+ ReviewPlan @(@{fixture_status=503});Plan @((Reply '也不能展示这段未审核回复'));$null=Message '审核连接故障';$chat=Call '/api/chat';Check ($chat.call_error.code-eq'review_unavailable'-and$chat.call_error.http_status-eq503) 'review connection failure is distinct from role silence'
  ReviewPlan @((Verdict 'rewrite' 'persona'));Plan @((Reply '持续被驳回'));$null=Message '审核次数限制';Check ((Call '/api/chat').call_error.code-eq'review_rejected') 'bounded rewrites stop without publishing rejected output'
  ReviewPlan @((Verdict));Plan @((Reply '不，我暂时不想。'));$null=Message '角色可以拒绝';Check ((Call '/api/chat').messages[-1].text-eq'不，我暂时不想。') 'review preserves a valid refusal'
- Stop-Backend;Start-Backend;Check ((Call '/api/dashboard').settings.review.enabled) 'review settings survive restart'
+ ReviewPlan @(@{fixture_status=402});Plan @((Reply '余额不足时不得展示这段未审核回复'));$null=Message '审核余额保护'
+ Wait-For {(Call '/api/chat').balance_offline} 'reviewer balance offline latch'
+ $chat=Call '/api/chat';$dashboard=Call '/api/dashboard'
+ Check ($chat.offline-and!$chat.call_failed-and$null-eq$chat.call_error-and$chat.messages[-1].text-eq'审核余额保护') 'reviewer balance failure suspends conversation and never publishes unreviewed reply'
+ Check ($dashboard.last_call_error.code-eq'insufficient_balance'-and$dashboard.balance_control.blocked.PSObject.Properties.Name-contains'reviewer') 'management identifies the reviewer balance block'
+ Stop-Backend;Start-Backend;Check ((Call '/api/dashboard').settings.review.enabled-and(Call '/api/chat').balance_offline) 'review settings and automatic offline survive restart'
  Stop-Backend
  [pscustomobject]@{completed=$true;checks=$checks;root=$root;timestamp=[DateTime]::UtcNow.ToString('O')}|ConvertTo-Json|Set-Content (Join-Path $root 'acceptance.json') -Encoding utf8;Write-Output "Protocol integration passed: $checks checks. Evidence: $root"
 }finally{if($service){$service.Refresh();if(!$service.HasExited){try{$null=Call '/api/shutdown' @{};$service.WaitForExit(5000)|Out-Null}catch{};$service.Refresh();if(!$service.HasExited){Stop-Process -Id $service.Id}}};if($provider){$provider.Refresh();if(!$provider.HasExited){Stop-Process -Id $provider.Id}}}

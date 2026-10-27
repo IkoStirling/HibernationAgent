@@ -1,0 +1,25 @@
+import {chromium} from 'file:///C:/Users/lenovo/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+import assert from 'node:assert/strict';import fs from 'node:fs/promises';import path from 'node:path';import {createHash} from 'node:crypto';
+const [origin,root]=process.argv.slice(2);
+const token='chat-history-fixture';let checks=0;const failures=[];
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+const page=await browser.newPage({viewport:{width:900,height:950}});page.on('pageerror',error=>failures.push(error.message));
+async function api(route,body){const response=await fetch(origin+route,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});assert(response.ok);return response.json();}
+function check(value,name){assert(value,name);checks++;console.log('PASS '+name);}
+try{
+ const unauth=await fetch(origin+'/api/chat/page',{method:'POST',body:'{}'});check(unauth.status===401,'history is not anonymously readable');
+ await page.goto(origin+'/ui/chat.html#session='+token);await page.locator('.message').nth(23).waitFor();check(await page.locator('.message').count()===24,'history renders one bounded page');
+ check(!page.url().includes(token),'credential removed from address after opening');
+ await page.getByRole('button',{name:'更早记录',exact:true}).click();await page.getByText('synthetic conversation 154',{exact:true}).waitFor();check(await page.locator('.message').count()===24,'older page replaces rather than appends message controls');
+ await page.getByRole('button',{name:'返回最近',exact:true}).click();await page.getByText('synthetic attachments',{exact:true}).waitFor();
+ check(await page.locator('.card').count()===3,'image, animated GIF and video appear as media cards');
+ await page.locator('.card').first().scrollIntoViewIfNeeded();await page.locator('.card img').first().waitFor();await page.screenshot({path:path.join(root,'history-page.png'),fullPage:true});
+ await page.locator('.card').nth(0).click();await page.waitForFunction(()=>document.querySelector('#content img')?.naturalWidth===32);check(await page.locator('#content img').count()===1,'encrypted image previews after original file removal');await page.keyboard.press('Escape');
+ await page.locator('.card').nth(1).click();await page.waitForFunction(()=>document.querySelector('#content img')?.naturalWidth===32);const frames=[];for(let i=0;i<4;i++){frames.push((await page.locator('#content img').screenshot()).toString('base64'));await page.waitForTimeout(120);}check(new Set(frames).size>1,'GIF preview contains actual changing animation frames');await page.keyboard.press('Escape');
+ await page.locator('.card').nth(2).click();await page.locator('#content video').waitFor();await page.waitForFunction(()=>document.querySelector('video')?.readyState>=1);check(await page.locator('video').evaluate(video=>video.paused&&video.controls&&video.duration>0),'video metadata loads with controls and no autoplay');await page.locator('video').evaluate(async video=>{video.muted=true;await video.play();});await page.waitForFunction(()=>document.querySelector('video')?.currentTime>.1&&document.querySelector('video')?.videoWidth===64);check(true,'video actually decodes and advances its own playback clock');await page.locator('video').evaluate(video=>video.pause());await page.screenshot({path:path.join(root,'video-preview.png')});await page.keyboard.press('Escape');check(await page.locator('#content video').count()===0,'closing preview releases the player');
+ const state=await api('/api/chat/page',{}),message=state.messages.find(message=>message.attachments.length===3);const media=message.attachments[2],metadata=await api('/api/chat/media',{message_id:message.id,id:media.id});const chunks=[];for(let part=0;part<metadata.chunks;part++)chunks.push(Buffer.from((await api('/api/chat/media',{message_id:message.id,id:media.id,part})).base64,'base64'));
+ const hash=buffer=>createHash('sha256').update(buffer).digest('hex');check(hash(Buffer.concat(chunks))===hash(await fs.readFile(path.join(root,'preview.webm'))),'encrypted video reconstruction is byte-for-byte identical');
+ const denied=await fetch(origin+'/api/chat/media',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({message_id:'history-1000',id:media.id})});check(denied.status===404,'media cannot be read through an unrelated message');
+ const selected=await page.locator('.message .text').first().evaluate(element=>{const selection=getSelection(),range=document.createRange();range.selectNodeContents(element);selection.removeAllRanges();selection.addRange(range);return selection.toString();});check(selected.startsWith('synthetic conversation'),'styled dialogue remains selectable');check(failures.length===0,'no history page script errors');
+ await fs.writeFile(path.join(root,'browser-acceptance.json'),JSON.stringify({completed:true,checks,failures},null,2));
+}finally{await browser.close();}

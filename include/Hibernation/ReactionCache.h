@@ -3,6 +3,7 @@
 #include <future>
 #include <atomic>
 #include <optional>
+#include <functional>
 namespace hibernation {
 std::string reactionSchema();
 ValidatedOutput validateReactions(std::string_view text);
@@ -10,7 +11,7 @@ struct ReactionBatch {std::string key,status;Json entries=Json::array(),proposal
 class ReactionGenerator {
 public:
     ~ReactionGenerator();
-    void start(Profile actor,std::optional<Profile> reviewer,Json persona,Json state,Json excluded,std::string key);
+    void start(Profile actor,std::optional<Profile> reviewer,Json persona,Json state,Json excluded,std::string key,std::function<bool()> reserveCall={},std::function<void(const Profile&,int)> observeResult={});
     bool running()const;void cancel();void stop();std::optional<ReactionBatch> poll();
 private:std::future<ReactionBatch> future_;std::shared_ptr<std::atomic<bool>> cancelled_;
 };

@@ -1,6 +1,7 @@
 #include "../PluginCommon.h"
 #include <Hibernation/SmallWorld.h>
 #include <Hibernation/DropPixels.h>
+#include <Hibernation/DesktopActivityArea.h>
 #include <windowsx.h>
 #include <random>
 #include <array>
@@ -13,7 +14,7 @@ namespace {
 class Habitat final:public BasePlugin {
     PluginHostContext host_;PluginJson cfg_;mutable std::recursive_mutex mutex_;SmallWorld world_;
     HWND window_=nullptr;HBITMAP buffer_=nullptr;std::uint32_t* pixels_=nullptr;int surfaceLeft_=0,surfaceTop_=0,surfaceWidth_=0,surfaceHeight_=0;HINSTANCE instance_=nullptr;
-    int width_=1920,height_=1080,actorSize_=112;bool autonomous_=false,visible_=true,paused_=false,busy_=false,input_=false,actor_=false,reducedMotion_=false,actorResting_=false;
+    int width_=1920,height_=1080,actorSize_=112;bool economyFallback_=false;bool autonomous_=false,visible_=true,paused_=false,busy_=false,input_=false,actor_=false,reducedMotion_=false,actorResting_=false;
     double actorX_=.1,actorY_=.5,nextSpawn_=12,nextAutonomy_=30,nextPaint_=0;std::int64_t actorSeen_=0;
     std::uint64_t sequence_=0,attentionEpoch_=0;std::mt19937 random_{std::random_device{}()};double lifetimeMin_=300,lifetimeMax_=600;std::vector<double> creations_;
     struct Retiring {PluginJson item;double born;double opacity;};std::vector<Retiring> retiring_;
@@ -40,10 +41,13 @@ class Habitat final:public BasePlugin {
         window_=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_TOPMOST|WS_EX_NOACTIVATE|WS_EX_LAYERED,wc.lpszClassName,L"小爱 · 桌面小物",WS_POPUP,GetSystemMetrics(SM_XVIRTUALSCREEN),GetSystemMetrics(SM_YVIRTUALSCREEN),width_,height_,nullptr,nullptr,instance_,this);
         if(window_)ShowWindow(window_,SW_SHOWNOACTIVATE);
     }
-    std::pair<double,double> nearbyPoint(){
-        double x=std::clamp(actorX_+(static_cast<int>(random_()%401)-200)/static_cast<double>(std::max(1,width_-actorSize_)),.02,.96),y=std::clamp(actorY_+(static_cast<int>(random_()%121)-60)/static_cast<double>(std::max(1,height_-actorSize_)),.03,.92);
-        POINT p{GetSystemMetrics(SM_XVIRTUALSCREEN)+static_cast<LONG>(x*(width_-actorSize_)+actorSize_/2),GetSystemMetrics(SM_YVIRTUALSCREEN)+static_cast<LONG>(y*(height_-actorSize_)+actorSize_)};MONITORINFO monitor{sizeof(monitor)};
-        if(GetMonitorInfoW(MonitorFromPoint(p,MONITOR_DEFAULTTONEAREST),&monitor)){p.x=std::clamp(p.x,monitor.rcWork.left+actorSize_/2,monitor.rcWork.right-actorSize_/2);p.y=std::clamp(p.y,monitor.rcWork.top+actorSize_,monitor.rcWork.bottom-24);x=std::clamp((p.x-GetSystemMetrics(SM_XVIRTUALSCREEN)-actorSize_/2)/static_cast<double>(std::max(1,width_-actorSize_)),0.0,1.0);y=std::clamp((p.y-GetSystemMetrics(SM_YVIRTUALSCREEN)-actorSize_)/static_cast<double>(std::max(1,height_-actorSize_)),0.0,1.0);}return {x,y};
+    std::pair<double,double> placementPoint(const std::string& placement){
+        const auto areas=desktopActivityAreas(width_,height_,actorSize_);std::pair<double,double> point;
+        if(placement=="desktop")point=sampleActivityPoint(areas,random_);
+        else{double x=actorX_*(width_-actorSize_),y=actorY_*(height_-actorSize_);
+            x+=placement=="left"?-140:placement=="right"?140:std::uniform_real_distribution<double>(-200,200)(random_);
+            y+=std::uniform_real_distribution<double>(-60,60)(random_);point=constrainActivityPoint(areas,x,y);}
+        return {point.first/std::max(1,width_-actorSize_),point.second/std::max(1,height_-actorSize_)};
     }
     PluginJson policy()const{return {{"max_objects",cfg_.value("maxObjects",3)},{"lifetime_min_seconds",lifetimeMin_},{"lifetime_max_seconds",lifetimeMax_},{"creations_per_minute",cfg_.value("creationsPerMinute",12)},{"templates",drops::kinds()},{"custom_attributes","definition is descriptive only; rules, rarity and actual lifetime are program-owned"}};}
     PluginJson observation()const{auto result=world_.observe();result["creation_policy"]=policy();return result;}
@@ -52,10 +56,10 @@ class Habitat final:public BasePlugin {
         const auto authored=drops::definition(kind,args.value("definition",PluginJson::object()));if(!drops::validDefinition(authored))return toolFailure("world_definition_invalid");
         const double lo=args.value("lifetime_min_seconds",lifetimeMin_),hi=args.value("lifetime_max_seconds",lifetimeMax_);if(!std::isfinite(lo)||!std::isfinite(hi)||lo<lifetimeMin_||hi>lifetimeMax_||lo>hi)return toolFailure("world_lifetime_policy");
         if(world_.size()>=static_cast<std::size_t>(cfg_.value("maxObjects",3)))return toolFailure("world_object_limit");std::erase_if(creations_,[&](double at){return world_.clock()-at>=60;});if(creations_.size()>=static_cast<std::size_t>(cfg_.value("creationsPerMinute",12)))return toolFailure("world_creation_rate");
-        auto [x,y]=nearbyPoint();const auto placement=args.value("placement",std::string("nearby"));if(placement!="nearby"&&placement!="left"&&placement!="right")return toolFailure("world_placement_invalid");if(placement!="nearby")x=std::clamp(actorX_+(placement=="left"?-140.0:140.0)/std::max(1,width_-actorSize_),.02,.96);
+        const auto placement=args.value("placement",std::string("desktop"));if(placement!="desktop"&&placement!="nearby"&&placement!="left"&&placement!="right")return toolFailure("world_placement_invalid");auto [x,y]=placementPoint(placement);
         const int roll=static_cast<int>(random_()%100),quality=roll<5?2:roll<25?1:0;const auto id=nextId("object");if(!world_.placeDetailed(id,kind,x,y,authored,std::uniform_real_distribution<double>(lo,hi)(random_),quality,creator))return toolFailure("world_definition_invalid");creations_.push_back(world_.clock());invalidate();return toolSuccess({{"object",world_.object(id)},{"creation_policy",policy()}});
     }
-    bool place(const std::string& kind){return createDrop({{"kind",kind}},"program").value("ok",false);}
+    bool place(const std::string& kind){return createDrop({{"kind",kind},{"placement","desktop"}},"program").value("ok",false);}
     std::string request(const std::string& id,const std::string& action){if(paused_||!visible_)return "world_paused";if(actorResting_)return "world_character_resting";if(!actor_||!host_.desktopEnabled)return "desktop_character_required";return world_.request(id,action,nextId("world-action"));}
     void drain(){for(auto event:world_.takeEvents()){const auto kind=event.at("kind");if(kind=="habitat.consumed"||kind=="habitat.planted"){auto item=kind=="habitat.planted"?event.at("previous_item"):event.at("item");retiring_.push_back({item,world_.clock(),drops::opacity(item,world_.clock())});if(retiring_.size()>8)retiring_.erase(retiring_.begin());}event["plugin"]="habitat";event["occurred_ms"]=nowMs();event["wake_model"]=(kind=="habitat.consumed"||kind=="habitat.planted")&&cfg_.value("wakeOnAction",false);host_.emit(std::move(event));}}
     void paint(HDC target){if(!buffer_||!target)return;auto dc=CreateCompatibleDC(target);auto old=SelectObject(dc,buffer_);BitBlt(target,0,0,surfaceWidth_,surfaceHeight_,dc,0,0,SRCCOPY);SelectObject(dc,old);DeleteDC(dc);}
@@ -82,13 +86,18 @@ public:
     PluginJson tools()const override{return PluginJson::array({
         tool("habitat.observe","观察桌面虚拟物件、正在进行的动作与近期真实结果。",object()),
         tool("habitat.show","显示或收起桌面小物，不删除保存的虚拟物件。",object({{"visible",{{"type","boolean"}}}},PluginJson::array({"visible"}))),
-        tool("habitat.place","在角色附近放一个受数量限制的虚拟小物件，不是现实文件或食物。",object({{"kind",{{"enum",drops::kinds()}}}},PluginJson::array({"kind"}))),
-        tool("habitat.create","创造桌面上的虚拟食物或掉落物，可命名、描述、设定颜色和描述性特征。先observe了解模板和寿命策略；实际稀有度、可食用性和数值由程序决定。成功回执才表示实际创建。",object({{"kind",{{"type","string"},{"enum",drops::kinds()}}},{"definition",drops::definitionSchema()},{"placement",{{"type","string"},{"enum",PluginJson::array({"nearby","left","right"})}}},{"lifetime_min_seconds",{{"type","number"},{"minimum",5},{"maximum",43200}}},{"lifetime_max_seconds",{{"type","number"},{"minimum",5},{"maximum",43200}}}},PluginJson::array({"kind"}))),
+        tool("habitat.place","在可活动的屏幕工作区内放一个受数量限制的虚拟小物件，不是现实文件或食物。",object({{"kind",{{"enum",drops::kinds()}}}},PluginJson::array({"kind"}))),
+        tool("habitat.arrange","走近一件实际存在的小物，把它缓慢挪到桌面相对坐标x/y（0至1）。可排列、留空或布置小场景；不会延长寿命或改变属性。accepted只是开始，完成另有回执。",object({{"id",{{"type","string"},{"minLength",1},{"maxLength",96}}},{"x",{{"type","number"},{"minimum",0},{"maximum",1}}},{"y",{{"type","number"},{"minimum",0},{"maximum",1}}}},PluginJson::array({"id","x","y"}))),
+        tool("habitat.create","创造桌面上的虚拟食物或掉落物，可命名、描述、设定颜色和描述性特征。先observe了解模板和寿命策略；实际稀有度、可食用性和数值由程序决定。成功回执才表示实际创建。",object({{"kind",{{"type","string"},{"enum",drops::kinds()}}},{"definition",drops::definitionSchema()},{"placement",{{"type","string"},{"enum",PluginJson::array({"desktop","nearby","left","right"})}}},{"lifetime_min_seconds",{{"type","number"},{"minimum",5},{"maximum",43200}}},{"lifetime_max_seconds",{{"type","number"},{"minimum",5},{"maximum",43200}}}},PluginJson::array({"kind"}))),
         tool("habitat.act","选择一件实际存在的小物，走过去看、吃或种下。返回accepted只是开始；完成另有真实回执。允许自行忽略或拒绝。",object({{"id",{{"type","string"},{"minLength",1},{"maxLength",96}}},{"action",{{"enum",PluginJson::array({"look","eat","plant"})}}}},PluginJson::array({"id","action"})))
     });}
     PluginJson invoke(const std::string& name,const PluginJson& args,const std::function<bool()>& cancelled)override{
         if(cancelled&&cancelled())return toolFailure("cancelled");std::lock_guard lock(mutex_);if(name=="habitat.observe")return toolSuccess(observation());if(name=="habitat.show"){if(!host_.desktopEnabled)return toolFailure("desktop_required");visible_=args.at("visible");if(!visible_)world_.cancel("objects_hidden");drain();return toolSuccess({{"visible",visible_}});}if(!host_.desktopEnabled)return toolFailure("desktop_required");if(!visible_)return toolFailure("desk_objects_hidden");
         if(name=="habitat.create"||name=="habitat.place"){auto result=createDrop(args,"model");drain();if(name=="habitat.place"&&result.value("ok",false))return toolSuccess(observation());return result;}
+        if(name=="habitat.arrange"){
+            if(paused_||actorResting_)return toolFailure("world_character_unavailable");if(!actor_)return toolFailure("desktop_character_required");
+            const auto point=constrainActivityPoint(desktopActivityAreas(width_,height_,actorSize_),args.at("x").get<double>()*(width_-actorSize_),args.at("y").get<double>()*(height_-actorSize_));const auto error=world_.requestArrangement(args.at("id"),point.first/std::max(1,width_-actorSize_),point.second/std::max(1,height_-actorSize_),nextId("world-action"));if(!error.empty())return toolFailure(error.c_str());return toolSuccess({{"accepted",true},{"completed",false},{"pending",world_.action()}});
+        }
         if(name=="habitat.act"){const auto error=request(args.at("id"),args.at("action"));if(!error.empty())return toolFailure(error.c_str());return toolSuccess({{"accepted",true},{"completed",false},{"pending",world_.action()}});}return toolFailure("tool_not_available");
     }
     void tick(double dt)override{
@@ -97,12 +106,13 @@ public:
         if(!paused_&&visible_&&!busy_&&!input_&&actorAvailable){
             if(cfg_.value("autoSpawn",true)&&world_.clock()>=nextSpawn_){if(world_.size()<static_cast<std::size_t>(cfg_.value("maxObjects",3)))place(drops::kinds().at(random_()%drops::kinds().size()));nextSpawn_=world_.clock()+cfg_.value("spawnSeconds",120.0)*(.8+(random_()%401)/1000.0);}
             if(world_.queued()&&!actorResting_)world_.beginWalk();
-            if(!autonomous_&&cfg_.value("autoInteract",true)&&!actorResting_&&!world_.pending()&&!world_.objects().empty()&&world_.clock()>=nextAutonomy_){nextAutonomy_=world_.clock()+30+random_()%31;if(std::bernoulli_distribution(cfg_.value("interactionProbability",.35))(random_)){std::vector<PluginJson> candidates;for(const auto& item:world_.objects())if(SmallWorld::newObservation(item)||(world_.wantsFood()&&SmallWorld::edible(item.at("kind"))))candidates.push_back(item);if(!candidates.empty()){const auto& item=candidates.at(random_()%candidates.size());request(item.at("id"),world_.wantsFood()&&SmallWorld::edible(item.at("kind"))?"eat":"look");}}}
+            if((!autonomous_||economyFallback_)&&cfg_.value("autoInteract",true)&&!actorResting_&&!world_.pending()&&!world_.objects().empty()&&world_.clock()>=nextAutonomy_){nextAutonomy_=world_.clock()+30+random_()%31;if(std::bernoulli_distribution(cfg_.value("interactionProbability",.35))(random_)){std::vector<PluginJson> candidates;for(const auto& item:world_.objects())if(SmallWorld::newObservation(item)||(world_.wantsFood()&&SmallWorld::edible(item.at("kind"))))candidates.push_back(item);if(!candidates.empty()){const auto& item=candidates.at(random_()%candidates.size());request(item.at("id"),world_.wantsFood()&&SmallWorld::edible(item.at("kind"))?"eat":"look");}}}
         }
         drain();if(window_&&visible_&&world_.clock()>=nextPaint_){nextPaint_=world_.clock()+1.0/15;invalidate();}
     }
     void event(const PluginJson& event)override{
         std::lock_guard lock(mutex_);const auto kind=event.value("kind",std::string{});
+        if(kind=="runtime.autonomy_fallback"){economyFallback_=event.value("enabled",false);return;}
         if(kind=="runtime.autonomy"){autonomous_=event.value("enabled",false);return;}
         if(kind=="runtime.activity_cancel"){world_.cancel("activity_cancelled");drain();return;}
         if(kind=="runtime.paused"){paused_=event.value("paused",false);return;}

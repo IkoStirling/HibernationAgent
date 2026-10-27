@@ -3,17 +3,21 @@
 // configuration object. This manifest format does not load plugin JavaScript.
 function renderDeclaredPluginSettings(parent,manifest,configuration){
   if(!Array.isArray(manifest.settings_ui))return;
+  const preset=manifest.settings_preset;
+  const presetOn=preset&&typeof preset.key==='string'&&configuration[preset.key]===true;
+  const overrides=presetOn&&preset.values&&typeof preset.values==='object'?preset.values:{};
   for(const spec of manifest.settings_ui.slice(0,32)){
     if(!spec||typeof spec!=='object'||typeof spec.key!=='string'||!/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(spec.key)||typeof spec.label!=='string'||spec.label.length>120||['enabled','constructor','prototype'].includes(spec.key)||/(api.?key|secret|token|password|credential)/i.test(spec.key))continue;
-    const value=configuration[spec.key]??spec.default;
-    if(spec.type==='toggle'){toggle(parent,spec.label,typeof value==='boolean'?value:false,v=>configuration[spec.key]=v);continue;}
+    const locked=Object.hasOwn(overrides,spec.key);
+    const value=locked?overrides[spec.key]:(configuration[spec.key]??spec.default);
+    if(spec.type==='toggle'){const input=toggle(parent,spec.label,typeof value==='boolean'?value:false,v=>{configuration[spec.key]=v;if(preset&&spec.key===preset.key){parent.replaceChildren();renderDeclaredPluginSettings(parent,manifest,configuration);}});input.disabled=locked;continue;}
     if(spec.type==='number'){
       const input=field(parent,spec.label,Number.isFinite(value)?value:0,v=>configuration[spec.key]=Number(v));input.type='number';
       for(const property of ['min','max','step'])if(Number.isFinite(spec[property]))input[property]=String(spec[property]);continue;
     }
     if(spec.type==='select'&&Array.isArray(spec.options)){
       const options=spec.options.slice(0,64).filter(v=>Array.isArray(v)&&v.length===2&&v.every(x=>typeof x==='string'&&x.length<=120));
-      if(options.length)field(parent,spec.label,typeof value==='string'?value:options[0][0],v=>configuration[spec.key]=v,options);continue;
+      if(options.length)field(parent,spec.label,typeof value==='string'?value:options[0][0],v=>configuration[spec.key]=v,options).disabled=locked;continue;
     }
     if(spec.type==='text'){const input=field(parent,spec.label,typeof value==='string'?value:'',v=>configuration[spec.key]=v);input.maxLength=Number.isInteger(spec.maxLength)?Math.min(2048,Math.max(1,spec.maxLength)):256;}
   }
