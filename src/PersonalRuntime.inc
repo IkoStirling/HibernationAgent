@@ -125,15 +125,15 @@
         for(auto& match:matches){if(values.size()>=limit)break;values.push_back(std::move(match.second));}
         return {{"threads",values},{"matching_count",matches.size()},{"omitted_count",matches.size()-values.size()},{"guide","这里是有来源的兴趣、偏好和未完打算，不是待完成的作业。stance/note是最近感受，leaning/basis是缓慢积累的倾向；recent_changes保留不同看法。experience_contexts是这些看法曾基于的实际游戏、作品或材料，不表示它们仍在当前场景，也不把它们硬定为下一步目标；旧局的步数不能套到新局。需要过去实际结果时可用memory.archive_search按对象id查阅，只在相关时再接续。self.observe可按query找旧关注，status=closed能找做完或放下的缘由，查询不会恢复旧任务。"}};
     }
-    Json personalDialogueContext(const std::string& input,bool privateTime)const{
+    Json personalDialogueContext(const std::string& input,bool privateTime,const Json& bodyAtInput=Json::object())const{
         auto view=personalContext();if(privateTime)return view;
+        const auto queue=activityQueue(),previous=bodyAtInput.value("activity_queue",Json::object());
         for(auto& thread:view["threads"]){
             const auto text=thread.value("topic",std::string{})+" "+thread.value("note",std::string{});
-            if(thread.value("kind",std::string{})=="intention"||memoryRelevance(input,text)>0){thread["context_detail"]="relevant";continue;}
+            if(memoryRelevance(input,text)>0||personal::pursuedBy(thread,queue)||personal::pursuedBy(thread,previous)){thread["context_detail"]="relevant";continue;}
             // Keep the disposition available without putting the entire same
             // old episode at the front of every unrelated everyday exchange.
-            for(const auto* field:{"note","recent_changes","source_ids","created_ms","last_noticed_ms"})thread.erase(field);
-            thread["context_detail"]="background_index";thread["details_tool"]="self.observe";
+            personal::backgroundIndex(thread);
         }return view;
     }
     Json personalTool(const std::string& name,const Json& args,ProposalContext& context,const std::string& traceId){

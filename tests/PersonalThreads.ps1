@@ -72,8 +72,12 @@ try{
  $r=Message @((Calls @((Tool private self.observe @{query='折痕';status='all'}))),(Reply));Check ($r[0].result.threads.Count-eq0-and!(($r[0].result|ConvertTo-Json -Depth 30).Contains('THREAD_PRIVATE_MARKER'))) 'hidden origin cannot leak through basis or earlier changes'
  $null=Api '/api/access' @{id=$hiddenMemory;accessible=$true}
  $r=Message @((Calls @((Tool restored_again self.observe @{query='折痕'}))),(Reply));Check ($r[0].result.threads[0].revision-eq6-and$r[0].result.threads[0].basis.independent_experiences-eq1) 'restoring visibility restores the same preference history without rewriting it'
+ $loose=@{id='later-board';expected_revision=0;kind='intention';topic='旧棋盘';note='UNRELATED_INTENTION_DETAIL 还想再按一格';stance='want';source_ids=@('${event_id}')}
+ $null=Message @((Calls @((Tool loose self.notice $loose))),(Reply));$r=Message @((Calls @((Tool recall self.observe @{query='折痕'}))),(Reply))
  $job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$info=$job.result|ConvertFrom-Json;$trace=Api '/api/trace' @{id=$info.trace_id};$background=@($trace.personal_context.threads|Where-Object id -eq 'paper-star')[0]
  Check ($background.context_detail-eq'background_index'-and!$background.note-and$r[0].result.threads[0].note.Contains('THREAD_PRIVATE_MARKER')) 'unrelated dialogue receives a small disposition index while deliberate self recall retains its full meaning'
+ $indexed=@($trace.personal_context.threads|Where-Object id -eq $loose.id)[0];Check ($indexed.context_detail-eq'background_index'-and!$indexed.note-and!$indexed.attempts-and$indexed.status-eq'active') 'an unrelated unfinished intention remains available without replaying old counters in every chat'
+ $r=Message @((Calls @((Tool deliberate self.observe @{query='旧棋盘'}))),(Reply));Check ($r[0].result.threads[0].note-eq$loose.note-and$r[0].result.threads[0].revision-eq1) 'deliberate recall retains the unchanged intention and its detailed meaning'
  Check (!((Api '/api/chat').messages|ConvertTo-Json -Depth 10).Contains('THREAD_PRIVATE_MARKER')) 'internal concern is absent from visible dialogue'
  Stop-Backend
  Check (!([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite))).Contains('THREAD_PRIVATE_MARKER'))) 'personal concern remains encrypted at rest'

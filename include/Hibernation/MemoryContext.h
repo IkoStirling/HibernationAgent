@@ -14,10 +14,17 @@ inline MemoryVisibility memoryVisibility(const std::vector<ayt::storage::Version
     bool changed=true;while(changed){changed=false;for(const auto& r:rows){const auto value=Json::parse(r.payload);if(result.memories.contains(r.id)){for(const auto& s:value.at("sources"))if(s.at("scope")=="ha.archive")changed=result.archives.insert(s.at("id").get<std::string>()).second||changed;}else if(!result.allows(value))changed=result.memories.insert(r.id).second||changed;}}
     return result;
 }
+inline bool memoryCjkLetter(std::string_view scalar){
+    if(scalar.size()!=3&&scalar.size()!=4)return false;
+    std::uint32_t code=static_cast<unsigned char>(scalar[0])&(scalar.size()==3?0x0f:0x07);
+    for(std::size_t i=1;i<scalar.size();++i){const auto byte=static_cast<unsigned char>(scalar[i]);if((byte&0xc0)!=0x80)return false;code=(code<<6)|(byte&0x3f);}
+    return (code>=0x3400&&code<=0x9fff)||(code>=0xf900&&code<=0xfaff)||(code>=0x20000&&code<=0x3134f)||
+        (code>=0x3041&&code<=0x3096)||(code>=0x30a1&&code<=0x30fa)||(code>=0xac00&&code<=0xd7af);
+}
 inline std::set<std::string> memoryTerms(std::string text){
     if(text.size()>8192)text.resize(8192);for(auto& c:text)if(static_cast<unsigned char>(c)<128)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     const auto offsets=textOffsets(text);std::set<std::string> terms;std::string word;
-    for(std::size_t i=0;i+1<offsets.size();++i){const auto at=offsets[i],size=offsets[i+1]-at;const auto byte=static_cast<unsigned char>(text[at]);if(size==1&&std::isalnum(byte)){word+=text[at];continue;}if(!word.empty()){terms.insert(word);word.clear();}if(size>=3&&i+2<offsets.size()&&offsets[i+2]-offsets[i+1]>=3)terms.insert(text.substr(at,offsets[i+2]-at));}if(!word.empty())terms.insert(word);return terms;
+    for(std::size_t i=0;i+1<offsets.size();++i){const auto at=offsets[i],size=offsets[i+1]-at;const auto byte=static_cast<unsigned char>(text[at]);if(size==1&&std::isalnum(byte)){word+=text[at];continue;}if(!word.empty()){terms.insert(word);word.clear();}if(i+2<offsets.size()&&memoryCjkLetter(std::string_view(text).substr(at,size))&&memoryCjkLetter(std::string_view(text).substr(offsets[i+1],offsets[i+2]-offsets[i+1])))terms.insert(text.substr(at,offsets[i+2]-at));}if(!word.empty())terms.insert(word);return terms;
 }
 inline int memoryRelevance(const std::string& query,const std::string& text){const auto wanted=memoryTerms(query),actual=memoryTerms(text);int shared=0;for(const auto& term:wanted)if(actual.contains(term))++shared;return shared?std::min(45,10+shared*5):0;}
 // Exact content grouping affects retrieval only; every original record survives.

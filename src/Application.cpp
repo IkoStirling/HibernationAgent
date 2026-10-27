@@ -917,7 +917,7 @@ struct Application::Impl {
         system+="\n某次实际交谈或经历让你此刻有了感受时，也可在最终reply/silence用appraisal:{source_id,valence}提出，source_id只引用本轮已提供的原始交谈/真实经历，valence为-1到1的主观方向，不是直接设心情。不要求每轮评分或解释；成功可以没有特别感受，未成功也可以觉得有趣。程序缓慢调整有限目标，不改身体动作、关系或长期偏好；同一来源同一感受不会反复刷新。与对白用同次审核，实际效果以下次连续状态为准。也可用已有state.appraise工具，不把待做计划、私记或数值快照当成新经历。";
         trace["interaction_policy"]="embodied-dialogue-v6-direct-utterance";trace["plugin_context_projection"]=alone?"character-surfaces-v1":"character-surfaces-v2-dialogue-index";trace["activity_purpose_supported"]=true;trace["body_at_input"]=bodyForModel(payload.value("body_at_input",Json::object()));
         trace["dialogue_context_generation"]=dialogueProjection.value("generation",std::uint64_t(0));
-        trace["personal_context"]=personalDialogueContext(payload.value("topic",text),alone);
+        trace["personal_context"]=personalDialogueContext(payload.value("topic",text),alone,trace.at("body_at_input"));trace["personal_context_projection"]="sourced-dispositions-v3-relevance-and-active-pursuit";
         authorizePersonalAttempts(trace.at("personal_context"),context);
         trace["conversation_focus"]=conversationFocus(context.eventKind,context.eventId);trace["conversation_focus_at_start"]=trace.at("conversation_focus");
         captureActivityNarrativeSources(activityQueue(),context);

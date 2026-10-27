@@ -78,4 +78,14 @@ inline Json context(const Json& record,std::int64_t revision){
     for(std::size_t i=begin;i<episodes.size();++i)result["recent_changes"].push_back({{"note",episodes[i].at("note")},{"stance",episodes[i].at("stance")},{"at_ms",episodes[i].at("at_ms")}});
     result["revision"]=revision;return result;
 }
+inline bool pursuedBy(const Json& thread,const Json& queue){
+    const auto matches=[&](const Json& step){if(!step.is_object())return false;const auto link=step.value("intention",Json::object());return link.is_object()&&link.value("id",std::string{})==thread.value("id",std::string{})&&link.contains("revision")&&thread.contains("revision")&&link.at("revision")==thread.at("revision");};
+    if(matches(queue.value("active",Json(nullptr))))return true;
+    for(const auto* field:{"entries","next"})for(const auto& step:queue.value(field,Json::array()))if(matches(step))return true;
+    return false; // Completed/recent attempts are history, not current pursuit.
+}
+inline void backgroundIndex(Json& thread){
+    for(const auto* field:{"note","recent_changes","source_ids","created_ms","last_noticed_ms","attempts","basis"})thread.erase(field);
+    thread["context_detail"]="background_index";thread["details_tool"]="self.observe";
+}
 }

@@ -42,7 +42,9 @@ try{
  $trace=Message @((Calls @((Tool close self.close $close))),(Silent));Check ($trace.tool_results[0].error_code-eq'personal_source_not_available') 'a private progress record is not standalone proof of completing a larger intention'
  $command.seconds=60
  $null=Message @((Calls @((Tool queue activity.enqueue @{commands=@($command,$command)}))),(Silent));Await {(Api '/api/activities/status').active} 'bound wait starts'
- $null=Message @((Silent));$view=Observe;$thread=@($view.threads|Where-Object id -eq $wish.id)[0]
+ $interrupted=Message @((Silent));$pursued=@($interrupted.personal_context.threads|Where-Object id -eq $wish.id)[0]
+ Check ($pursued.context_detail-eq'relevant'-and$pursued.note-eq$wish.note) 'an intention being pursued at message arrival retains its detail even when unrelated input interrupts the queue'
+ $view=Observe;$thread=@($view.threads|Where-Object id -eq $wish.id)[0]
  Check ($thread.status-eq'active'-and@($thread.attempts|Where-Object status -eq new_input).Count-eq1-and@($thread.attempts|Where-Object status -eq not_started_new_input).Count-eq1) 'new input records both interrupted work and never-started plans while keeping the wish open'
  $updated=$wish.Clone();$updated.expected_revision=1;$updated.note='改为看看它最终停在哪里'
  $command.seconds=1

@@ -608,6 +608,16 @@ TEST_CASE(personal_experience_contexts_are_bounded_provenance_objects_rather_tha
     row.erase("experience_evidence");CHECK(personal::context(row,3).at("experience_contexts").empty());
     row["experience_evidence"]=Json::array();for(int i=0;i<10;++i)row["experience_evidence"].push_back(personal::anchor("puzzle","lights-"+std::to_string(i),1));CHECK(personal::context(row,3).at("experience_contexts").size()==6);
 }
+TEST_CASE(memory_relevance_does_not_mistake_shared_punctuation_for_a_shared_subject){
+    const std::string cup="我找到杯子了，在书架最上层，难怪低头找了半天。现在终于能喝口水。",boat="纸船在橱窗里慢到一秒看不出来，但缺席两天就能看出位置变了。这个变化只在缺席里显形的角度让我在意。";
+    CHECK(memoryRelevance(cup,boat)==0);CHECK(memoryRelevance("不用爬，踮一下脚就够了。你那边呢，刚才还在摆弄灯吗？",boat)==0);CHECK(memoryRelevance("，在。这个？","，在。另一个？")==0);CHECK(memoryTerms("。！？……，、\n🙂🙃").empty());CHECK(memoryRelevance("那座钟塔后来怎样了","钟塔外的雨声还没有停止")>0);CHECK(memoryRelevance("RAIN","Rain outside")>0);CHECK(memoryRelevance("星空，纸船","星空纸船")>0);CHECK(memoryRelevance("ハロー、世界。","世界")>0);
+}
+TEST_CASE(ordinary_intentions_have_indexes_unless_related_or_currently_pursued){
+    Json thread={{"id","old-board"},{"revision",2},{"kind","intention"},{"topic","再试一小步"},{"note","PRIVATE_STALE_COUNTERS"},{"status","active"},{"attempts",Json::array({Json{{"purpose","PRIVATE_ATTEMPT"}}})},{"basis",{{"independent_experiences",3}}},{"experience_contexts",Json::array({Json{{"kind","puzzle"},{"id","lights-1"}}})}};
+    const Json command={{"kind","wait"},{"intention",{{"id","old-board"},{"revision",2}}}};
+    CHECK(personal::pursuedBy(thread,Json{{"active",command}}));CHECK(personal::pursuedBy(thread,Json{{"next",Json::array({command})}}));CHECK(!personal::pursuedBy(thread,Json{{"recent",Json::array({command})}}));auto stale=command;stale["intention"]["revision"]=1;CHECK(!personal::pursuedBy(thread,Json{{"entries",Json::array({stale})}}));
+    personal::backgroundIndex(thread);CHECK(thread.at("id")=="old-board"&&thread.at("status")=="active"&&thread.at("revision")==2);CHECK(thread.at("experience_contexts")[0].at("id")=="lights-1");CHECK(thread.at("details_tool")=="self.observe"&&thread.dump().find("PRIVATE_")==std::string::npos);CHECK(!thread.contains("basis"));
+}
 TEST_CASE(activity_batches_accept_only_bounded_semantic_commands){
     Json plan={{"version",1},{"commands",Json::array({{{"kind","eat_nearest"},{"seconds",0}},{{"kind","rest"},{"seconds",30}},{{"kind","wait"},{"seconds",1}}})}};CHECK(validateActivities(plan.dump()).ok);
     plan["commands"][0]["kind"]="computer.launch";CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["kind"]="eat_nearest";plan["commands"][0]["seconds"]=1;CHECK(!validateActivities(plan.dump()).ok);plan["commands"][0]["seconds"]=0;plan["commands"][1]["seconds"]=1801;CHECK(!validateActivities(plan.dump()).ok);
