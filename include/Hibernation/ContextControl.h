@@ -38,7 +38,7 @@ struct ContextControl {
 inline bool readOnlyModelTool(const std::string& name){
     // Explicit allowlist. Unknown and new plugin tools retain semantic review.
     static const std::set<std::string> names={"capabilities.list","workspace.list","workspace.read","workspace.view_image","computer.list_directory","computer.screenshot","observation.revisit","memory.search","memory.read","memory.archive_search","memory.archive_read","state.observe","stage.observe","body.observe","schedule.list","activity.list","widget.status","television.status","television.observe","television.observe_sequence","television.search","napcat.view_image"};
-    return names.contains(name);
+    return name=="self.observe"||names.contains(name);
 }
 inline bool readOnlyModelBatch(const nlohmann::json& candidate){
     if(candidate.value("kind",std::string{})!="call"||!candidate.contains("calls")||candidate.at("calls").empty())return false;

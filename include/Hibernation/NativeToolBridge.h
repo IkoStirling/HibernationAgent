@@ -28,11 +28,12 @@ inline nlohmann::json nativeArgumentSchema(nlohmann::json schema){
 struct NativeToolBridge {
     static nlohmann::json finalReplyParameters(){
         const auto turn=nlohmann::json::parse(turnSchema());
-        return {{"type","object"},{"additionalProperties",false},{"properties",{{"text",{{"type","string"},{"minLength",1},{"maxLength",6000}}},{"presentation",turn.at("properties").at("presentation")}}},{"required",nlohmann::json::array({"text"})}};
+        return {{"type","object"},{"additionalProperties",false},{"properties",{{"text",{{"type","string"},{"minLength",1},{"maxLength",6000}}},{"presentation",turn.at("properties").at("presentation")},{"carry_forward",personalCarrySchema()}}},{"required",nlohmann::json::array({"text"})}};
     }
+    static nlohmann::json finalSilenceParameters(){return {{"type","object"},{"properties",{{"carry_forward",personalCarrySchema()}}},{"additionalProperties",false}};}
     static std::vector<ayt::inference::ToolDefinition> finalDefinitions(){
         return {{"ha_turn_reply","提交本轮最终对白。text只含角色对用户说的话，正常校验和审核后才显示；不要与操作提案放在同一批。",nativeArgumentSchema(finalReplyParameters()).dump(),false},
-                {"ha_turn_silence","选择本轮不发言；不代表发生了任何动作。不要与操作提案放在同一批。",R"({"type":"object","properties":{},"additionalProperties":false})",false}};
+                {"ha_turn_silence","选择本轮不发言；不代表发生了任何动作。可选carry_forward仅留下一点有来源的持续关注，不是对外发言。",nativeArgumentSchema(finalSilenceParameters()).dump(),false}};
     }
     std::vector<ayt::inference::ToolDefinition> definitions;
     std::map<std::string,nlohmann::json> catalog;
@@ -51,10 +52,10 @@ struct NativeToolBridge {
             if(calls.size()!=1)return {false,"native_final_mixed_with_operations",{}};
             try{
                 const auto finals=finalDefinitions();const auto& declaration=finals[call.name=="ha_turn_reply"?0:1];auto args=Json::parse(call.arguments);
-                args=normalizeToolArguments(std::move(args),call.name=="ha_turn_reply"?finalReplyParameters():Json::parse(declaration.parameters));
+                args=normalizeToolArguments(std::move(args),call.name=="ha_turn_reply"?finalReplyParameters():finalSilenceParameters());
                 if(!ayt::serializer::validateJsonDocument(args.dump(),declaration.parameters))return {false,"native_final_arguments",{}};
                 Json turn={{"version",1},{"kind",call.name=="ha_turn_reply"?"reply":"silence"},{"text",call.name=="ha_turn_reply"?args.at("text"):Json(nullptr)},{"calls",Json::array()}};
-                if(args.contains("presentation"))turn["presentation"]=args.at("presentation");return validateTurn(turn.dump());
+                if(args.contains("presentation"))turn["presentation"]=args.at("presentation");if(args.contains("carry_forward"))turn["carry_forward"]=args.at("carry_forward");return validateTurn(turn.dump());
             }catch(...){return {false,"native_final_arguments",{}};}
         }
         try{for(std::size_t i=0;i<calls.size();++i){const auto found=catalog.find(calls[i].name);if(found==catalog.end())return {false,"native_tool_not_declared",{}};

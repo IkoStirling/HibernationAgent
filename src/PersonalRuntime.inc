@@ -1,13 +1,16 @@
     mutable std::recursive_mutex personalMutex;
     std::int64_t nextPersonalTick=0;
     bool personalInitialized=false,personalWasPaused=false;
-    Json personalContext()const{
+    Json personalContext(const std::string& query="",std::size_t limit=8,const std::string& status="active")const{
         std::lock_guard lock(personalMutex);if(cfg.channel)return {{"threads",Json::array()}};
-        Json values=Json::array();const auto policy=visibility();
+        Json values=Json::array();const auto policy=visibility();std::vector<std::pair<int,Json>> matches;
         const auto index=get("ha.index","personal",Json::array()).value;
-        for(auto it=index.rbegin();it!=index.rend()&&values.size()<8;++it){
-            const auto row=get("ha.personal",it->get<std::string>());if(!row.revision||row.value.value("status",std::string{})!="active")continue;
+        for(auto it=index.rbegin();it!=index.rend();++it){
+            const auto row=get("ha.personal",it->get<std::string>());if(!row.revision)continue;
+            const bool active=row.value.value("status",std::string{})=="active";
+            if((status=="active"&&!active)||(status=="closed"&&active))continue;
             bool allSources=true;for(const auto& ref:row.value.value("evidence_sources",row.value.value("sources",Json::array())))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")})){allSources=false;break;}if(!allSources)continue;
+            for(const auto& ref:row.value.value("resolution_sources",Json::array()))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")})){allSources=false;break;}if(!allSources)continue;
             auto visible=row.value;Json episodes=Json::array();
             for(const auto& episode:row.value.at("episodes")){
                 bool allowed=true;for(const auto& ref:episode.at("sources"))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")})){allowed=false;break;}
@@ -18,13 +21,19 @@
             // narrative or through a derived preference score.
             const auto& latest=episodes.back();visible["note"]=latest.at("note");visible["stance"]=latest.at("stance");
             if(episodes.size()!=row.value.at("episodes").size()){visible["leaning"]=0;visible["familiarity"]="tentative";}
-            auto value=personal::context(visible,row.value.value("edit_revision",row.revision));value["id"]=*it;value["source_ids"]=Json::array();for(const auto& ref:latest.at("sources"))value["source_ids"].push_back(ref.at("id"));values.push_back(std::move(value));
+            auto value=personal::context(visible,row.value.value("edit_revision",row.revision));value["id"]=*it;value["source_ids"]=Json::array();for(const auto& ref:latest.at("sources"))value["source_ids"].push_back(ref.at("id"));
+            if(!active){value["resolution"]=visible.value("resolution",std::string{});value["resolved_ms"]=visible.value("resolved_ms",std::int64_t(0));}
+            const auto search=value.value("topic",std::string{})+" "+value.value("note",std::string{})+" "+value.value("resolution",std::string{});
+            const auto score=query.empty()?1:memoryRelevance(query,search)+(search.find(query)!=std::string::npos?50:0);
+            if(score>0)matches.emplace_back(score,std::move(value));
         }
-        return {{"threads",values},{"guide","这些是有来源的近期兴趣、偏好和未完成意图，不是强制话题或固定台词。可改变主意，也可继续自己的事情；只有确实相关时才带入对话。数值由应用维护，不决定必须如何回复。"}};
+        std::stable_sort(matches.begin(),matches.end(),[](const auto& a,const auto& b){return a.first>b.first;});
+        for(auto& match:matches){if(values.size()>=limit)break;values.push_back(std::move(match.second));}
+        return {{"threads",values},{"matching_count",matches.size()},{"omitted_count",matches.size()-values.size()},{"guide","这些是有来源的近期兴趣、偏好和未完成意图，不是强制话题或固定台词。可改变主意，也可继续自己的事情；只有确实相关时才带入对话。数值由应用维护，不决定必须如何回复。self.observe可按query找较早的关注，status=closed可找已经做完或放下的事；放下的关注不会自动重新激活。"}};
     }
     Json personalTool(const std::string& name,const Json& args,ProposalContext& context,const std::string& traceId){
         std::lock_guard lock(personalMutex);
-        if(name=="self.observe")return observedTool(name,toolSuccess(personalContext()),context,traceId);
+        if(name=="self.observe")return observedTool(name,toolSuccess(personalContext(args.value("query",std::string{}),args.value("limit",std::size_t(24)),args.value("status",std::string("active")))),context,traceId);
         const auto key=args.at("id").get<std::string>();if(!validRequestId(key))return toolFailure("personal_identity");
         auto before=get("ha.personal",key);const auto revision=before.value.value("edit_revision",before.revision);const auto expected=args.value("expected_revision",std::int64_t(0));if(expected!=revision)return toolFailure("personal_revision_conflict");
         const auto refs=checkedSources(args.at("source_ids"),context);if(refs.is_null()||refs.empty())return toolFailure("personal_source_not_available");

@@ -384,6 +384,20 @@ TEST_CASE(turn_protocol_distinguishes_silence_and_never_guesses_malformed_comman
     CHECK(!validateTurn("{\"version\":1,\"version\":1,\"kind\":\"silence\",\"text\":null,\"calls\":[]}").ok);
     auto reply=silence;reply["kind"]="reply";reply["text"]=" \t\n";CHECK(!validateTurn(reply.dump()).ok);reply["text"]=std::string("hello\0world",11);CHECK(!validateTurn(reply.dump()).ok);
 }
+TEST_CASE(personal_carry_is_optional_bounded_authored_content_and_never_a_tool_batch){
+    const Json note={{"id","paper-ship"},{"expected_revision",0},{"kind","interest"},{"topic","橱窗里的纸船"},{"note","想留意它往哪边走"},{"stance","curious"},{"source_ids",Json::array({"event-real"})}};
+    Json turn={{"version",1},{"kind","reply"},{"text","先放着吧。"},{"calls",Json::array()},{"carry_forward",Json::array({note})}};
+    CHECK(validateTurn(turn.dump()).ok);turn["kind"]="silence";turn["text"]=nullptr;CHECK(validateTurn(turn.dump()).ok);
+    turn["kind"]="call";turn["calls"]=Json::array({{{"id","q"},{"tool","self.observe"},{"args",Json::object()}}});CHECK(!validateTurn(turn.dump()).ok);
+    turn["kind"]="silence";turn["calls"]=Json::array();turn["carry_forward"].push_back(note);turn["carry_forward"].push_back(note);CHECK(!validateTurn(turn.dump()).ok);
+    turn["carry_forward"]=Json::array({note});turn["carry_forward"][0]["source_ids"]=Json::array();CHECK(!validateTurn(turn.dump()).ok);
+    turn["carry_forward"]=Json::array({note});turn["carry_forward"][0]["core_persona"]="new";CHECK(!validateTurn(turn.dump()).ok);
+    const NativeToolBridge bridge(Json::array());
+    const auto reply=bridge.candidate({{"final","ha_turn_reply",Json{{"text","嗯。"},{"carry_forward",Json::array({note})}}.dump()}},1);
+    CHECK(reply.ok);CHECK(reply.value.at("carry_forward")[0]==note);
+    CHECK(bridge.candidate({{"final","ha_turn_silence",Json{{"carry_forward",Json::array({note})}}.dump()}},1).ok);
+    CHECK(bridge.candidate({{"final","ha_turn_silence",R"({"carry_forward":null})"}},1).ok);
+}
 TEST_CASE(role_state_moves_gradually_and_restores_without_offline_jumps){
     RoleState state;state.restore(Json::object(),1000);auto first=state.snapshot();std::string issue;CHECK(state.propose("withdrawing",-1,"experience-1",1100,issue));
     CHECK(state.snapshot().at("openness")==first.at("openness"));state.tick(1200);CHECK(state.snapshot().at("activity")=="idle");
@@ -395,7 +409,7 @@ TEST_CASE(strict_provider_schema_and_optional_nulls_preserve_permission_validati
     const Json parameters={{"type","object"},{"additionalProperties",false},{"required",Json::array({"query"})},{"properties",{{"query",{{"type","string"}}},{"limit",{{"type","integer"},{"minimum",1}}}}}};
     const Json catalog=Json::array({{{"name","memory.search"},{"parameters",parameters}}});const auto schema=turnProviderSchema(catalog);CHECK(static_cast<bool>(ayt::serializer::validateJsonSchema(schema)));
     Json turn={{"version",1},{"kind","call"},{"text",nullptr},{"calls",Json::array({{{"id","c"},{"tool","memory.search"},{"args",{{"query","x"},{"limit",nullptr}}}}})},{"presentation",{{"speech",false},{"bubble",false}}}};
-    CHECK(static_cast<bool>(ayt::serializer::validateJsonDocument(turn.dump(),schema)));auto args=normalizeToolArguments(turn.at("calls")[0].at("args"),parameters);CHECK(!args.contains("limit"));CHECK(args.at("query")=="x");
+    turn["carry_forward"]=nullptr;CHECK(static_cast<bool>(ayt::serializer::validateJsonDocument(turn.dump(),schema)));CHECK(validateTurn(turn.dump()).ok);auto args=normalizeToolArguments(turn.at("calls")[0].at("args"),parameters);CHECK(!args.contains("limit"));CHECK(args.at("query")=="x");
     args=normalizeToolArguments({{"query",nullptr},{"unknown",nullptr}},parameters);CHECK(args.contains("query"));CHECK(args.contains("unknown"));CHECK(!ayt::serializer::validateJsonDocument(args.dump(),parameters.dump()));
     turn["calls"][0]["tool"]="shell.run";CHECK(!ayt::serializer::validateJsonDocument(turn.dump(),schema));
 }

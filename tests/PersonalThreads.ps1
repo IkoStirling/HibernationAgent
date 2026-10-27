@@ -52,6 +52,10 @@ try{
  Stop-Backend;Start-Backend
  $r=Message @((Calls @((Tool restored self.observe @{}))),(Reply))
  Check ($r[0].result.threads.Count-eq1-and$r[0].result.threads[0].id-eq'paper-star'-and$r[0].result.threads[0].revision-eq2) 'active concern persists across restart while completed intention stays closed'
+ $r=Message @((Calls @((Tool find_closed self.observe @{query='小故事';status='closed'}))),(Reply))
+ Check ($r[0].result.threads.Count-eq1-and$r[0].result.threads[0].status-eq'completed'-and$r[0].result.threads[0].resolution-eq'已经完成') 'closed intentions can be found with their resolution without becoming active'
+ $r=Message @((Calls @((Tool search self.observe @{query='折痕';limit=1;status='all'}))),(Reply));Check ($r[0].result.threads.Count-eq1-and$r[0].result.threads[0].id-eq'paper-star') 'personal search uses actual disposition content and respects its bounded limit'
+ $r=Message @((Calls @((Tool no_match self.observe @{query='UNRELATED_NO_MATCH_MARKER'}))),(Reply));Check ($r[0].result.matching_count-eq0-and$r[0].result.threads.Count-eq0) 'unrelated personal search does not invent a memory'
  Check (!((Api '/api/chat').messages|ConvertTo-Json -Depth 10).Contains('THREAD_PRIVATE_MARKER')) 'internal concern is absent from visible dialogue'
  Stop-Backend
  Check (!([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite))).Contains('THREAD_PRIVATE_MARKER'))) 'personal concern remains encrypted at rest'

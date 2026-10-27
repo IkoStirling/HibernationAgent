@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import http from 'node:http';
+import {Ledger, createRelay, readUsage} from '../tools/PersonalityBudget.mjs';
+
+const directory = path.resolve(process.argv[2]); fs.mkdirSync(directory,{recursive:true});
+const root = fs.mkdtempSync(path.join(directory,'personality-budget-'));
+const capability = 'a'.repeat(48), secret = 'synthetic-credential-never-log';
+const listen = server => new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve(`http://127.0.0.1:${server.address().port}`)));
+const close = server => new Promise(resolve=>server.close(resolve));
+let forwarded = 0;
+const provider = http.createServer(async (request,response)=>{
+  let body = ''; for await (const chunk of request) body += chunk;
+  const data = JSON.parse(body); ++forwarded;
+  assert.equal(request.headers.authorization,`Bearer ${secret}`);
+  assert.equal(request.url,'/v1/responses');
+  if (data.model === 'unknown-usage') {response.writeHead(503); response.end('{}'); return;}
+  response.setHeader('content-type','text/event-stream');
+  response.end('data: '+JSON.stringify({type:'response.completed',response:{usage:{input_tokens:30,output_tokens:9},output:[{content:secret}]}})+'\n\n');
+});
+const origin = await listen(provider), file = path.join(root,'ledger.json');
+let ledger = new Ledger(file,{calls:3,tokens:10000});
+assert.throws(()=>new Ledger(file,{calls:3,tokens:10000}),/EEXIST/);
+const server = createRelay({ledger,routes:{actor:{origin,basePath:'/v1'}},capability,deadline:'2099-01-01',allowLocalFixture:true});
+const local = await listen(server);
+const send = (model='fixture', token=capability) => fetch(`${local}/${token}/actor/responses`,{method:'POST',headers:{authorization:`Bearer ${secret}`},body:JSON.stringify({model,max_output_tokens:100})}).then(async r=>({status:r.status,text:await r.text()}));
+assert.equal((await send('fixture','b'.repeat(48))).status,404);
+assert.equal((await send()).status,200);
+assert.equal((await send('unknown-usage')).status,503);
+const parallel = await Promise.all([send(),send(),send()]);
+assert.equal(parallel.filter(r=>r.status===200).length,1);
+assert.equal(parallel.filter(r=>r.status===429).length,2);
+assert.equal(forwarded,3);
+assert.equal(ledger.totals().calls,3);
+assert.equal(ledger.data.entries[1].state,'conservative');
+assert.equal(ledger.data.entries[0].charged_tokens,39);
+assert.ok(!fs.readFileSync(file,'utf8').includes(secret));
+await close(server); ledger.close();
+ledger = new Ledger(file,{calls:3,tokens:10000});
+assert.equal(ledger.reserve('reviewer',0,1),null); ledger.close();
+assert.throws(()=>new Ledger(file,{calls:4,tokens:10000}),/budget_identity_mismatch/);
+const tight = new Ledger(path.join(root,'tight.json'),{calls:10,tokens:3000});
+assert.equal(tight.reserve('review',2000,100),null);
+const reservation = tight.reserve('actor',0,10); assert.ok(reservation); tight.close();
+const recovered = new Ledger(path.join(root,'tight.json'),{calls:10,tokens:3000});
+assert.equal(recovered.totals().tokens,2058); // In-flight/crashed calls retain their full reservation.
+recovered.close();
+assert.deepEqual(readUsage('{"usage":{"prompt_tokens":4,"completion_tokens":2}}','application/json'),{input:4,output:2});
+assert.equal(readUsage('broken','application/json'),null);
+assert.throws(()=>createRelay({ledger,routes:{a:{origin:'http://example.com',basePath:'/v1'}},capability,deadline:'2099-01-01'}),/invalid_upstream/);
+const expiredLedger = new Ledger(path.join(root,'expired.json'));
+const expired = createRelay({ledger:expiredLedger,routes:{actor:{origin,basePath:'/v1'}},capability,deadline:'2000-01-01',allowLocalFixture:true});
+const expiredOrigin = await listen(expired);
+assert.equal((await fetch(`${expiredOrigin}/${capability}/actor/responses`,{method:'POST',body:'{}'})).status,429);
+assert.equal(expiredLedger.totals().calls,0); await close(expired); expiredLedger.close();
+await close(provider);
+console.log('Personality budget: durable call/token ceilings, concurrent admission, retry/error accounting, private ledger, route and deadline checks passed.');
