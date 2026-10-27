@@ -16,6 +16,7 @@ TEST_CASE(only_explicit_read_queries_skip_semantic_review){
     Json batch={{"kind","call"},{"calls",Json::array({{{"tool","computer.screenshot"}},{{"tool","memory.read"}}})}};CHECK(readOnlyModelBatch(batch));
     batch["calls"].push_back({{"tool","workspace.write"}});CHECK(!readOnlyModelBatch(batch));
     CHECK(!readOnlyModelTool("plugin.read"));CHECK(!readOnlyModelTool("napcat.capture_and_send"));CHECK(replayProtectedOperation("napcat.capture_and_send"));
+    CHECK(readOnlyModelTool("habitat.observe")&&readOnlyModelTool("atelier.list")&&readOnlyModelTool("atelier.read")&&readOnlyModelTool("pocket.observe"));CHECK(!readOnlyModelTool("atelier.append")&&!readOnlyModelTool("pocket.press"));
 }
 TEST_CASE(review_projection_preserves_current_input_and_referenced_evidence){
     const Json event={{"event_id","current"},{"input",std::string(8000,'u')},{"channel_identity",{{"trusted",true}}},{"authorized_context",Json::array({{{"id","old"},{"data",{{"text",std::string(8000,'h')}}}},{{"id","proof"},{"data",{{"text",std::string(8000,'e')}}}},{{"id","current"},{"data",{{"text","unaltered"}}}}})}};

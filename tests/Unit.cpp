@@ -697,6 +697,16 @@ TEST_CASE(character_plugin_context_keeps_real_affordances_and_omits_rendering_te
     const Json reading={{"last_search",{{"pages",Json::array({{{"key","Light"}}})}}},{"last_read",{{"excerpt","真实节选"}}},{"service_origin","https://configured.invalid"},{"requests_used",2},{"request_limit",12}};
     const auto reference=pluginCharacterContext("reading",reading);CHECK(reference.at("last_search")==reading.at("last_search"));CHECK(reference.at("last_read")==reading.at("last_read"));CHECK(reference.at("request_limit")==12);CHECK(!reference.contains("service_origin"));
 }
+TEST_CASE(ordinary_conversation_has_background_indexes_while_deliberate_observation_keeps_details){
+    const Json objects=Json::array({{{"id","seed"},{"definition",{{"name","one persistent seed"}}}}});
+    const Json full=pluginCharacterContext("habitat",Json{{"objects",objects},{"pending",{{"action","look"},{"object_id","seed"}}},{"visible",true},{"appetite",.4}});
+    const auto ambient=pluginDialogueContext("habitat",full);CHECK(ambient.at("object_count")==1);CHECK(!ambient.contains("objects"));CHECK(ambient.at("pending")==full.at("pending"));CHECK(ambient.at("details_tool")=="habitat.observe");CHECK(full.at("objects")==objects);
+    const Json work={{"piece_count",1},{"can_create",true},{"continuations",Json::array({{{"tail","old private story"}}})},{"pieces",Json::array({{{"id","draft-1"}}})}};
+    const auto index=pluginDialogueContext("atelier",work);CHECK(index.at("piece_count")==1);CHECK(index.at("can_create").get<bool>());CHECK(!index.contains("continuations")&&!index.contains("pieces"));CHECK(pluginCharacterContext("atelier",work)==work);
+    const Json pocket={{"current",{{"game",{{"id","game-1"},{"revision",3},{"status","active"},{"lit_count",5},{"rows",Json::array({Json::array({true,false,true})})}}}}}};
+    const auto game=pluginDialogueContext("pocket",pocket).at("game");CHECK(game.at("id")=="game-1"&&game.at("revision")==3&&game.at("lit_count")==5);CHECK(!game.contains("rows"));CHECK(pluginDialogueContext("pocket",Json{{"current",nullptr}}).at("game").is_null());
+    const Json custom={{"required_by_custom_tool","keep-me"}};CHECK(pluginDialogueContext("new-plugin",custom)==custom);
+}
 TEST_CASE(activity_purpose_is_optional_bounded_and_never_becomes_its_outcome){
     Json command={{"kind","wait"},{"seconds",1},{"purpose","想看看会不会长出一座森林"}};auto plan=Json{{"version",1},{"commands",Json::array({command})}};CHECK(validateActivities(plan.dump()).ok);
     const auto view=activityBodyContext(Json{{"recent",Json::array({command})}});CHECK(view.at("recent")[0].at("purpose")==command.at("purpose"));CHECK(!view.at("recent")[0].contains("completed"));CHECK(view.contains("purpose_meaning"));

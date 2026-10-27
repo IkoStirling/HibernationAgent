@@ -10,6 +10,7 @@ function Plan($Items){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Items
 function Silent{@{version=1;kind='silence';text=$null;calls=@()}}
 function Call($Id,$Tool,$Arguments){@{version=1;kind='call';text=$null;calls=@(@{id=$Id;tool=$Tool;args=$Arguments})}}
 function Capture{Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 65}
+function CapabilityContext{$text=(Capture).messages[0].content;$marker="`n可用能力：";$at=$text.IndexOf($marker);if($at-lt0){throw 'capability context missing'};$begin=$at+$marker.Length;$end=$text.IndexOf("`nSkill只提供",$begin);if($end-le$begin){throw 'capability context end missing'};$text.Substring($begin,$end-$begin)|ConvertFrom-Json -Depth 60}
 function Requests{if(Test-Path -LiteralPath (Join-Path $root provider/requests.jsonl)){return @(Get-Content -LiteralPath (Join-Path $root provider/requests.jsonl)).Count};0}
 function Message($Items){Plan $Items;$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='独立私下活动检查'};Await {!(Api '/api/chat').busy} 'message';Check (!(Api '/api/chat').call_failed) 'fixture dialogue completes'}
 function Alone($Items){Plan $Items;$before=@((Api '/api/state').jobs|Where-Object id -eq solitude.once);$token=if($before.Count){$before[0].run_token}else{0};$null=Api '/api/solitude' @{};Await {$script:last=@((Api '/api/state').jobs|Where-Object id -eq solitude.once)[0];$script:last.state-eq'succeeded'-and$script:last.run_token-gt$token} 'solitude';$script:last.result|ConvertFrom-Json}
@@ -55,8 +56,10 @@ try{
  $before=Requests;$result=Alone @((Silent));Check ($result.status-eq'no_update'-and(Requests)-eq$before) 'administrator tool test is not borrowed as the character private creation'
  Message @((Call 'direct-own-draft' 'atelier.write' @{id='direct-own-work';expected_revision=0;kind='note';title='直接留下的小事';content='DIRECT_PRIVATE_WORK_MARKER 今天想记住一个没画完的圆。';stage='draft'}),(Silent));$feedback=((Capture).messages[-1].content|ConvertFrom-Json -Depth 55).tool_results[0];$directSource=$feedback.source_id
  Check ($feedback.ok-and$directSource) 'character can directly create a real draft without speaking or queueing'
+ $ambient=@((CapabilityContext).plugins|Where-Object id -eq atelier)[0].current;Check ($ambient.context_detail-eq'ambient_index'-and$ambient.details_tool-eq'atelier.list'-and!$ambient.PSObject.Properties['continuations']) 'ordinary dialogue knows the workshop without repeating its old prose'
  $result=Alone @((Silent));$context=(Capture).messages[1].content|ConvertFrom-Json -Depth 55
  Check ($result.status-eq'completed'-and$context.task_context.activity_reflection-and@($context.authorized_context|Where-Object id -eq $directSource).Count-eq1) 'direct silent character work becomes a sourced private consideration opportunity'
+ $private=@((CapabilityContext).plugins|Where-Object id -eq atelier)[0].current;Check (@($private.continuations).Count-gt0-and($private|ConvertTo-Json -Depth 30).Contains('DIRECT_PRIVATE_WORK_MARKER')) 'private consideration retains actual draft details for independent continuation'
  $before=Requests;$result=Alone @((Silent));Check ($result.status-eq'no_update'-and(Requests)-eq$before) 'direct creation is considered once rather than replayed on every quiet period'
  $settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 60|ConvertFrom-Json -AsHashtable;$settings.plugins.habitat=@{enabled=$true;autoSpawn=$false;autoInteract=$false;maxObjects=4};$null=Api '/api/settings' @{settings=$settings}
  $null=Api '/api/plugin/test' @{tool='habitat.create';args=@{kind='seed'}};Await {(Api '/api/plugin/result').state-in@('succeeded','failed')} 'operator object fixture'
@@ -66,6 +69,8 @@ try{
  Check ($result.status-eq'completed'-and@($context.task_context.references|Where-Object id -eq $source).Count-eq1) 'a genuinely character-created desk object can be privately reconsidered'
  $before=Requests;$result=Alone @((Silent));Check ($result.status-eq'no_update'-and(Requests)-eq$before) 'a small object does not force repeated private summaries'
  $state=Api '/api/state';Check ($state.persona_version-eq$original.persona_version-and$state.stage.id-eq$original.stage.id) 'private consideration does not overwrite persona or stage'
+ Message @((Call 'deliberate-workshop-look' 'capabilities.list' @{}),(Silent));$look=((Capture).messages[-1].content|ConvertFrom-Json -Depth 65).tool_results[0];$looked=@($look.result.plugins|Where-Object id -eq atelier)[0].current
+ Check ($look.ok-and@($looked.continuations).Count-gt0-and($looked|ConvertTo-Json -Depth 30).Contains('DIRECT_PRIVATE_WORK_MARKER')) 'deliberate capability observation still retrieves full workshop contents'
  Stop-Backend;$raw=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)));Check (!$raw.Contains('REFLECTION_PRIVATE_MARKER')) 'private interest and consideration history remain encrypted'
  @{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json);Write-Output "Activity reflection passed: $checks checks. Evidence: $root"
 }finally{foreach($process in @($service,$provider)){if($process){$process.Refresh();if(!$process.HasExited){Stop-Process -Id $process.Id}}};if($desktop){$desktop.Dispose()}}
