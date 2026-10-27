@@ -534,3 +534,5 @@
 - IntentionActivities额外验证真正的有限worker版本冲突，有这次自己的tool_attempt来源、棋盘版本和步数保持；定向13.66秒通过。最后限定仅四种相关工具在失败时取世界快照，避免其他插件失败都做无用采样，FailedAttempts/ProcessIntegration最终2/2通过12.98秒（personality-failed-attempt-final-tests.log）。其余Unit、PersonalThreads、IntentionActivities、ActivityReflection初查有通过结果，不声称首轮6/6。
 - 同一主线一轮普通找杯子趣事仍出现牵强的“空的地方也是手边”联想；说刚才躺着则核对到body_at_input真实resting/lying-sleep和活动rest180秒，不能把它误报为幻觉。说明身体连续性可用，但语义自然度仍待改善，不能只靠增加禁令。累计206次请求/2343290个记账token，203次报告、3次保守预留；正式包仍未部署。
 - 下一重点：有来源的主观感受如何影响持续心情，而不是把每个事件强制映射为开心/难过。现有RoleState.propose用于身体休息生命周期，省略valence也会重置到0；接下来应分开身体转换与情绪刺激的时钟，保留原数值和重启连续性，允许角色在已有自主调用中可选提出自己的感受，不增加独立“情感评分模型”或强迫记心得。程序继续渐变、去重、预算和审核，保留不表态。截止07:52:47收尾/08:37:47总结束不变。
+
+- main:c6a58f8 已提交失败尝试来源；源码快照 E:/Aliyat/Backups/HibernationAgent/source-20261028-032842-f51307a0（924文件）。确认旧主实验控制器/后台退出、runner与budget两锁释放、临时凭证文件为0后，更新冻结包零轮打开同一档案。03:29续接控制器59284（启动2026-10-27T19:29:37.6689923Z）/后台54120（19:29:41.9387907Z），报告 episodes/20261027-192940-8f013533/report.json。70条对话、persona v4/initial阶段保留；实验收尾截止23:52:47Z不变，正式 out/build 未部署。下一阶段按上文分离身体状态与有来源情绪，不能仅继续增加格式修复或把后台运行时长当成开发成果。
