@@ -36,6 +36,21 @@
         if(modelView){const auto refs=value.value("narrative_sources",Json::array());const auto policy=visibility();if(refs.empty()||!std::all_of(refs.begin(),refs.end(),[&](const Json& ref){return activityNarrativeSourceAllowed(ref,policy);}))return Json::object();value.erase("narrative_sources");value.erase("access_revision");}
         return serviceNowMs()-value.value("created_at",std::int64_t(0))<=600000?value:Json::object();
     }
+    Json activityReviewFeedback(ProposalContext* context=nullptr)const{
+        auto value=get("ha.autonomy","review-feedback",Json::object()).value;if(value.empty())return value;
+        const auto age=serviceNowMs()-value.value("created_at",std::int64_t(0));if(age<0||age>600000||value.value("access_revision",std::int64_t(-1))!=get("ha.access","current").revision)return Json::object();
+        const auto refs=value.value("narrative_sources",Json::array());const auto policy=visibility();
+        if(refs.empty()||!std::all_of(refs.begin(),refs.end(),[&](const Json& ref){return activityNarrativeSourceAllowed(ref,policy);}))return Json::object();
+        if(context)for(const auto& ref:refs){const Source source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")};context->narrativeSources[source.scope+":"+source.id]=source;}
+        value.erase("narrative_sources");value.erase("access_revision");return value;
+    }
+    void saveActivityReviewFeedback(const ActivityBatch& batch,const std::string& key,bool accepted){
+        const auto before=get("ha.autonomy","review-feedback",Json::object());
+        if(accepted){if(!before.value.empty())commit({mutation("ha.autonomy","review-feedback",before,Json::object(),key)},key);return;}
+        if(batch.status!="activity_review_rejected"||!batch.review.is_object())return;
+        const Json value={{"generation",key},{"created_at",serviceNowMs()},{"decision",batch.review.at("decision")},{"reason",batch.review.at("reason")},{"guidance",batch.review.at("guidance")},{"narrative_sources",batch.narrativeSources},{"access_revision",get("ha.access","current").revision}};
+        commit({mutation("ha.autonomy","review-feedback",before,value,key)},key);
+    }
     Json activityEvidence(const Json& plan)const{
         Json evidence=Json::array();std::set<std::string> seen;const auto policy=visibility();const auto projection=get("ha.context","dialogue").value;
         const auto add=[&](const std::string& key){
@@ -203,7 +218,8 @@
         for(auto it=environment.begin();it!=environment.end();++it)it.value()=pluginCharacterContext(it.key(),it.value());
         Json time={{"now_ms",now}};time.update(presentationTimeContext(now));
         const auto state=modelLifeState(life.snapshot(),&narrative);
-        activityGenerator.start(actor,reviewer,persona,{{"_narrative_sources",activityNarrativeSources(narrative)},{"time_context",time},{"state",state},{"self",self},{"evidence",evidence},{"previous_carry_forward_results",activityCarryFeedback()},{"previous_planning_error",activityError},{"body",bodyState()},{"surfaces",environment},{"available_commands",activityCommands(snapshots,true)},{"queue_slots",6-plan.at("entries").size()-(plan.at("active").is_null()?0:1)},{"memories",summaries},{"recent_activities",activityForModel(plan).at("recent")}},activityKey(),[this]{return consumeModelBudget(1,true);},[this](const Profile& p,int status){providerResult(p,status);});
+        const auto previousReview=activityReviewFeedback(&narrative);
+        activityGenerator.start(actor,reviewer,persona,{{"_narrative_sources",activityNarrativeSources(narrative)},{"time_context",time},{"state",state},{"self",self},{"evidence",evidence},{"previous_carry_forward_results",activityCarryFeedback()},{"previous_planning_error",activityError},{"previous_review_feedback",previousReview},{"body",bodyState()},{"surfaces",environment},{"available_commands",activityCommands(snapshots,true)},{"queue_slots",6-plan.at("entries").size()-(plan.at("active").is_null()?0:1)},{"memories",summaries},{"recent_activities",activityForModel(plan).at("recent")}},activityKey(),[this]{return consumeModelBudget(1,true);},[this](const Profile& p,int status){providerResult(p,status);});
     }
     void collectActivityEffect(std::int64_t now){
         // Finite local effects use one separate worker, keeping disk I/O out of
@@ -228,8 +244,10 @@
             commit({{"ha.activity-generations",key,0,1,Json{{"status",batch->status},{"proposal",batch->proposal},{"format_normalizations",batch->formatNormalizations},{"review",batch->review},{"usage",batch->usage},{"timing_ms",{{"actor",batch->modelMs},{"review",batch->reviewMs}}},{"evidence_refs",refs},{"created_at",now}}.dump(),"autonomy"}},key);
             const bool current=mode&&!runtimePaused&&!inputActive&&!busy()&&batch->key==activityKey()&&std::chrono::steady_clock::now()-batch->createdAt<std::chrono::minutes(2);
             if(current){
+                saveActivityReviewFeedback(*batch,key,false);
                 if(batch->status=="ok"){const auto receipt=enqueueActivities(batch->entries,key,batch->narrativeSources);if(!receipt.value("ok",false))activityError=receipt.at("error").at("code");
                     const auto results=receipt.value("ok",false)?applyActivityCarry(*batch,key):Json::array();
+                    if(receipt.value("ok",false))saveActivityReviewFeedback(*batch,key,true);
                     if(receipt.value("ok",false)&&!runtimePaused&&!inputActive&&!busy()&&batch->key==activityKey()&&std::all_of(results.begin(),results.end(),[](const auto& result){return result.at("receipt").value("ok",false);}))markActivityEncounters(*batch,key);
                     auto archived=get("ha.activity-generations",key);auto detail=archived.value;detail["application_status"]=receipt.value("ok",false)?"accepted":"queue_rejected";detail["carry_forward_results"]=results;commit({mutation("ha.activity-generations",key,archived,detail,key)},key);
                     planningResult(receipt.value("ok",false),batch->entries.empty(),now);}

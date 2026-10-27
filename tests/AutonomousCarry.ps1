@@ -65,12 +65,16 @@ try{
  Check (!$viewText.Contains('AUTONOMY_PRIVATE_PURPOSE')-and!$viewText.Contains('AUTONOMOUS_PRIVATE_MARKER')-and($privateView.context.previous_carry_forward_results|ConvertTo-Json -Compress)-eq'{}') 'background body, recent activity and carry feedback do not restore restricted narrative through derived views'
  Check (!$viewText.Contains('_narrative_sources')-and!$viewText.Contains('narrative_sources')) 'trusted provenance remains internal and is not advertised as new model evidence'
  $null=Api '/api/access' @{id=$memory;accessible=$true}
- $denied=Batch (Note reviewer-denied) $null @{decision='deny';reason='continuity';guidance='不保存这个候选。'}
+ $denied=Batch (Note reviewer-denied) $null @{decision='deny';reason='continuity';guidance='AUTONOMY_REVIEW_PRIVATE_MARKER 保留真实作品的未完成状态，不能说已经续写完成。'}
  Check ($denied.error-eq'activity_review_rejected'-and$denied.feedback.generation-eq$hidden.feedback.generation) 'rejected background candidates never execute their private carry'
  $invalid=Batch (Note invalid-review) $null 'not review JSON' 'activity_review_format'
  Check ($invalid.error-eq'activity_review_format'-and$invalid.feedback.generation-eq$hidden.feedback.generation) 'malformed review is not reported as a semantic rejection and never authorizes carry'
+ Check ($invalid.context.previous_review_feedback.guidance.Contains('AUTONOMY_REVIEW_PRIVATE_MARKER')-and!$invalid.context.previous_review_feedback.narrative_sources) 'the next scheduled planner receives bounded actionable review guidance without granting new source authority'
+ $null=Api '/api/access' @{id=$memory;accessible=$false}
  $unavailable=Batch (Note unavailable-review) $null $approval 'activity_review_unavailable' 503
  Check ($unavailable.error-eq'activity_review_unavailable'-and$unavailable.feedback.generation-eq$hidden.feedback.generation) 'reviewer service failure remains distinct from rejecting a character choice'
+ Check (($unavailable.context.previous_review_feedback|ConvertTo-Json -Compress)-eq'{}') 'old semantic guidance cannot restore private material after its sources are restricted'
+ $null=Api '/api/access' @{id=$memory;accessible=$true}
  Auto $false;$before=Requests;Plan @(@{version=1;commands=@();carry_forward=@((Note interrupted-plan))}) 1800;Plan @($approval) -Review;Auto $true;Await {(Requests)-gt$before} 'delayed planning starts'
  Plan @((Silent));$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='先停一下，我来了。'};Await {!(Api '/api/chat').busy-and!(Api '/api/activities/status').generating} 'new input cancels the old plan';Auto $false
  $self=Observe;Check ($self.threads.Count-eq1-and$self.threads[0].id-eq'own-continuation'-and$self.threads[0].status-eq'active') 'only approved actual notes survive; completing a short wait does not complete the larger intention'
@@ -96,6 +100,6 @@ try{
  $release=@{id='fresh-interest';expected_revision=1;outcome='released';note='现在先不接着看形状了';source_ids=@($finishedSource)};$released=Batch $null $null $null '' 200 $release
  Check ($released.feedback.results[0].tool-eq'self.close'-and$released.feedback.results[0].ok) 'background can also choose to set an interest aside without claiming a completed task'
  $all=Observe all;Check (@($all.threads|Where-Object status -eq active).Count-eq0-and@($all.threads|Where-Object {$_.id-eq'fresh-interest'-and$_.status-eq'released'}).Count-eq1) 'released concern remains retrievable without being reactivated'
- Stop-Backend;$bytes=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)));Check (!$bytes.Contains('AUTONOMOUS_PRIVATE_MARKER')) 'background private notes and feedback remain encrypted at rest'
+ Stop-Backend;$bytes=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)));Check (!$bytes.Contains('AUTONOMOUS_PRIVATE_MARKER')-and!$bytes.Contains('AUTONOMY_REVIEW_PRIVATE_MARKER')) 'background private notes and feedback remain encrypted at rest'
  @{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json);Write-Output "Autonomous carry passed: $checks checks. Evidence: $root"
 }finally{foreach($process in @($service,$provider)){if($process){$process.Refresh();if(!$process.HasExited){Stop-Process -Id $process.Id}}};if($desktop){$desktop.Dispose()}}
