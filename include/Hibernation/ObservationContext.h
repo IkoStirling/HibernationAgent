@@ -17,6 +17,18 @@ inline bool continuityObservationTool(const std::string& tool){
     static const std::set<std::string> effects={"workspace.write","workspace.edit","computer.open_application","television.open","television.open_page","television.play","television.pause","television.stop","atelier.write","atelier.append","habitat.create","habitat.act","habitat.arrange","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel"};
     return revisitableObservationTool(tool)||effects.contains(tool);
 }
+// This proves that an operation/observation really occurred, not that an
+// arbitrarily broad personal goal was achieved. Semantic review still checks
+// the named goal against these facts; a legal press does not mean a won game.
+inline bool personalCompletionObservation(const nlohmann::json& record){
+    using Json=nlohmann::json;if(record.value("kind",std::string{})!="tool_observation")return false;
+    const auto result=record.value("result",Json::object());if(!result.is_object())return false;
+    const auto tool=record.value("tool",std::string{});
+    return result.value("completed",false)||
+        ((tool=="workspace.write"||tool=="workspace.edit"||tool=="atelier.write"||tool=="atelier.append")&&result.value("written",false))||
+        ((tool=="pocket.start"||tool=="pocket.press"||tool=="pocket.leave")&&result.value("applied",false))||
+        revisitableObservationTool(tool)||tool=="pocket.observe"||tool=="habitat.observe";
+}
 inline std::string observedImageDelivery(const nlohmann::json& trace,const std::string& sourceId){
     std::string state="no_saved_receipt";
     for(const auto& visual:trace.value("visual_inputs",nlohmann::json::array()))if(visual.value("source_id",std::string{})==sourceId){

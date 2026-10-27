@@ -13,6 +13,7 @@
 #include <Hibernation/MemoryContext.h>
 #include <Hibernation/MemoryLibrary.h>
 #include <Hibernation/ActivityPlan.h>
+#include <Hibernation/ActivityPruning.h>
 #include <Hibernation/ActivityReuse.h>
 #include <Hibernation/DialoguePreparation.h>
 #include <Hibernation/CharacterAnimation.h>
@@ -742,6 +743,27 @@ TEST_CASE(an_autonomous_game_can_be_left_without_faking_completion_or_replaying_
     CHECK(validateActivities(wrap()).ok);CHECK(ayt::serializer::validateJsonDocument(wrap(),activitySchemaFor(Json::array({"puzzle_leave","wait"}))));
     CHECK(!ayt::serializer::validateJsonDocument(wrap(),activitySchemaFor(Json::array({"puzzle_start","wait"}))));CHECK(!reusableActivity(command));
     command["cell"]=3;CHECK(!validateActivities(wrap()).ok);command.erase("cell");command["seconds"]=10;CHECK(!validateActivities(wrap()).ok);
+}
+TEST_CASE(closing_one_intention_preserves_other_pending_life_and_records_what_never_started){
+    const Json old={{"id","old"},{"revision",1}},other={{"id","other"},{"revision",2}};
+    const Json plan={{"active",{{"id","running"},{"intention",old},{"started_ms",1}}},{"entries",Json::array({
+        {{"id","obsolete"},{"intention",old},{"expires_ms",100}},{{"id","free"},{"expires_ms",100}},
+        {{"id","different-goal"},{"intention",other},{"expires_ms",100}},{{"id","expired"},{"intention",other},{"expires_ms",10}}
+    })}};
+    const auto result=pruneActivityIntentions(plan,10,[&](const Json& binding){return binding==other;});
+    CHECK(result.stopActive);CHECK(result.pending.size()==2);CHECK(result.pending[0].at("id")=="free"&&result.pending[1].at("id")=="different-goal");
+    CHECK(result.removed.size()==2);CHECK(result.removed[0].at("status")=="not_started_intention_changed");CHECK(result.removed[1].at("status")=="not_started_expired");
+    CHECK(!result.removed[0].contains("started_ms"));CHECK(plan.at("entries").size()==4&&plan.at("active").at("id")=="running");
+}
+TEST_CASE(background_closure_keeps_goal_identity_and_rejects_contradictory_batches){
+    const Json close={{"id","old"},{"expected_revision",1},{"outcome","released"},{"note","先放下"},{"source_ids",Json::array({"experience"})}};
+    Json plan={{"version",1},{"commands",Json::array()},{"close_threads",Json::array({close})}};CHECK(validateActivities(plan.dump()).ok);
+    plan["commands"]=Json::array({{{"kind","wait"},{"seconds",1},{"intention",{{"id","old"},{"revision",1}}}}});CHECK(validateActivities(plan.dump()).code=="activity_closed_intention_still_queued");
+    plan["commands"]=Json::array();plan["carry_forward"]=Json::array({{{"id","old"},{"expected_revision",1},{"kind","interest"},{"topic","old"},{"note","new"},{"stance","curious"},{"source_ids",Json::array({"experience"})}}});CHECK(validateActivities(plan.dump()).code=="activity_personal_conflict");
+    plan.erase("carry_forward");plan["close_threads"]=nullptr;CHECK(validateActivities(plan.dump()).ok);plan["close_threads"]=Json::array({close,close});CHECK(!validateActivities(plan.dump()).ok);
+    CHECK(personalCompletionObservation(Json{{"kind","tool_observation"},{"tool","pocket.press"},{"result",{{"applied",true},{"completed",false}}}}));
+    CHECK(!personalCompletionObservation(Json{{"kind","tool_intent"},{"tool","activity.enqueue"},{"result",{{"accepted",1},{"completed",false}}}}));
+    CHECK(!personalCompletionObservation(Json{{"kind","personal_attempt"},{"tool","self.observe"},{"result",{{"completed",true}}}}));
 }
 TEST_CASE(puzzle_progress_is_an_actual_step_even_when_the_larger_game_is_unfinished){
     const Json progress={{"applied",true},{"completed",false},{"game",{{"id","one"},{"revision",2},{"status","active"},{"moves",1},{"lit_count",6}}}};

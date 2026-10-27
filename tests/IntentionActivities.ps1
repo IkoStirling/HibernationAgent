@@ -67,6 +67,13 @@ try{
  $archived=Api '/api/archive' @{id=$puzzleSource};Check ($archived.records[0].data.kind-eq'tool_observation'-and$archived.records[0].data.result.applied-and!$archived.records[0].data.result.completed) 'starting an unfinished game is an actual operation rather than a pending proposal'
  $trace=Message @((Calls @((Tool remember memory.remember @{kind='outer';text='我已经开始了一局，还没有解开。';source_ids=@($puzzleSource)}))),(Silent));Check ($trace.tool_results[0].ok) 'actual unfinished play can be remembered without falsely claiming the puzzle was solved'
  $game=@((Api '/api/capabilities').plugins|Where-Object id -eq pocket)[0].current.current.game
+ $local=$wish.Clone();$local.id='see-one-change';$local.topic='看一次棋盘变化';$local.note='只想实际按一下，看格局怎样变化'
+ $corner=@(@($true,$true,$false),@($true,$false,$false),@($false,$false,$false))|ConvertTo-Json -Compress;$cell=if(($game.rows|ConvertTo-Json -Compress)-eq$corner){1}else{0}
+ $press=@{game_id=$game.id;expected_revision=$game.revision;cell=$cell};$finishLocal=@{id=$local.id;expected_revision=1;outcome='completed';note='已经实际按过一次，也看到了这次的变化';source_ids=@('${last_source_id}')}
+ $trace=Message @((Calls @((Tool local self.notice $local))),(Calls @((Tool step pocket.press $press))),(Calls @((Tool local-done self.close $finishLocal))),(Silent))
+ Check ($trace.tool_results[2].ok) 'an actual unsolved puzzle step can complete the smaller intention of trying one change'
+ $game=@((Api '/api/capabilities').plugins|Where-Object id -eq pocket)[0].current.current.game
+ Check ($game.status-eq'active') 'completing a local intention does not change the actual puzzle to won'
  $beforeRows=$game.rows|ConvertTo-Json -Compress;$leave=@{kind='puzzle_leave';seconds=0;game_id=$game.id;expected_revision=$game.revision;purpose='暂时不解了，去看看别的'}
  $trace=Message @((Calls @((Tool leave activity.enqueue @{commands=@($leave)}))),(Silent));Check ($trace.tool_results[0].ok) 'voluntarily leaving an active game can be scheduled as a finite real action'
  Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'puzzle_leave'-and$_.status-eq'completed'}).Count-eq1} 'voluntary leave completes'

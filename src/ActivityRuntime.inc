@@ -37,9 +37,10 @@
             if(row.revision==ref.revision&&row.value.value("kind",std::string{})==ref.kind&&policy.source(ref)&&(!row.value.contains("sources")||policy.allows(row.value)))context.sources[ref.id]=ref;
         }
         const auto cancelled=[&]{return !autonomousMode()||runtimePaused||inputActive||busy()||batch.key!=activityKey();};
-        const auto results=applyPersonalCarry(batch.carryForward,context,key,key,cancelled);
+        auto results=applyPersonalCarry(batch.closeThreads,context,key,key,cancelled,PersonalCarryOperation::Close);
+        for(auto& result:applyPersonalCarry(batch.carryForward,context,key,key,cancelled))results.push_back(std::move(result));
         if(!results.empty()){
-            Json summary=Json::array();for(const auto& result:results){const auto& receipt=result.at("receipt");Json item={{"id",result.at("id")},{"ok",receipt.value("ok",false)}};
+            Json summary=Json::array();for(const auto& result:results){const auto& receipt=result.at("receipt");Json item={{"id",result.at("id")},{"tool",result.at("tool")},{"ok",receipt.value("ok",false)}};
                 if(receipt.value("ok",false)){item["revision"]=receipt.at("result").at("revision");item["deduplicated"]=receipt.at("result").value("deduplicated",false);}else item["error"]=receipt.value("error",Json::object());summary.push_back(std::move(item));}
             const auto before=get("ha.autonomy","carry-feedback");commit({mutation("ha.autonomy","carry-feedback",before,{{"generation",key},{"created_at",serviceNowMs()},{"results",summary}},key)},key);
         }return results;
@@ -67,6 +68,16 @@
         auto plan=activityQueue();if(plan.at("active").is_null()&&plan.at("entries").empty())return;finishActivity(plan,reason);
         for(auto pending:plan.at("entries"))if(pending.contains("intention")){pending["status"]="not_started_"+reason;pending["ended_ms"]=serviceNowMs();recordIntentionAttempt(pending);}
         plan["entries"]=Json::array();saveActivities(plan);if(plugins)plugins->event({{"kind","runtime.activity_cancel"},{"reason",reason}});
+    }
+    void pruneChangedIntentionActivities(std::int64_t now){
+        auto plan=activityQueue();std::optional<MemoryVisibility> policy;std::map<std::string,bool> checked;
+        const auto pruned=pruneActivityIntentions(plan,now,[&](const Json& binding){const auto key=binding.dump();if(const auto found=checked.find(key);found!=checked.end())return found->second;if(!policy)policy=visibility();return checked[key]=currentIntention(binding,&*policy);});
+        if(!pruned.stopActive&&pruned.removed.empty())return;
+        ++activityGenerationEpoch;activityGenerator.cancel();nextActivityFill=now+30000;
+        if(pruned.stopActive){if(activityEffectCancelled)activityEffectCancelled->store(true);finishActivity(plan,"intention_changed");}
+        for(auto removed:pruned.removed){if(removed.contains("intention"))removed["attempt_source_id"]=recordIntentionAttempt(removed);plan["recent"].push_back(std::move(removed));}
+        while(plan["recent"].size()>8)plan["recent"].erase(0);plan["entries"]=pruned.pending;saveActivities(plan);
+        if(pruned.stopActive){if(plugins)plugins->event({{"kind","runtime.activity_cancel"},{"reason","intention_changed"}});nextActivityTick=now+500;}
     }
     Json activityCommands(const Json& snapshots,bool background=false)const{
         std::set<std::string> tools;for(const auto& item:plugins->catalog())tools.insert(item.at("name").get<std::string>());
@@ -174,6 +185,7 @@
             }
             if(batch->status!="ok"||!current){auto archived=get("ha.activity-generations",key);auto detail=archived.value;detail["application_status"]=!current?"discarded_stale":"model_rejected";detail["carry_forward_results"]=Json::array();commit({mutation("ha.activity-generations",key,archived,detail,key)},key);}
         }
+        pruneChangedIntentionActivities(now);
         if(!mode||runtimePaused){if(!activitySuspended)cancelActivities(mode?"paused":"mode_disabled");notifyEconomyFallback(false);activitySuspended=true;return;}
         if(activitySuspended){nextActivityFill=now;nextActivityTick=now;activitySuspended=false;}
         initializeActivityReuse();
@@ -186,7 +198,7 @@
         notifyEconomyFallback(economy&&plan.at("active").is_null()&&plan.at("entries").empty());
         if(!plan.at("active").is_null()){
             const auto active=plan.at("active");const auto kind=active.at("kind").get<std::string>();
-            if(active.contains("intention")&&!currentIntention(active.at("intention"))){cancelActivities("intention_changed");return;}
+            if(active.contains("intention")&&!currentIntention(active.at("intention"))){pruneChangedIntentionActivities(now);return;}
             if(kind=="pose"){
                 const auto expected=active.at("state").get<std::string>();auto resolved=expected;for(const auto& pose:widget.value("animation_catalog",Json::array()))if(pose.at("state")==expected)resolved=pose.value("resolved",expected);
                 const auto animation=widget.value("animation",Json::object());const bool shown=widget.value("state",std::string{})==expected&&(animation.value("backend",std::string{})=="procedural"||(animation.value("resolved",std::string{})==resolved&&animation.value("phase",std::string{})=="loop"));

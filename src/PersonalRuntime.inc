@@ -1,17 +1,18 @@
     mutable std::recursive_mutex personalMutex;
-    Json applyPersonalCarry(const Json& notes,ProposalContext& context,const std::string& stableId,const std::string& traceId,const std::function<bool()>& cancelled){
+    enum class PersonalCarryOperation{Notice,Close};
+    Json applyPersonalCarry(const Json& notes,ProposalContext& context,const std::string& stableId,const std::string& traceId,const std::function<bool()>& cancelled,PersonalCarryOperation operation=PersonalCarryOperation::Notice){
         Json results=Json::array();std::size_t slot=0;
         for(const auto& args:notes){
-            const auto key=stableId+".carry-"+std::to_string(slot++);const Json call={{"tool","self.notice"},{"args",args}};const auto previous=get("ha.calls",key);Json receipt;
+            const std::string tool=operation==PersonalCarryOperation::Notice?"self.notice":"self.close";const auto key=stableId+(operation==PersonalCarryOperation::Notice?".carry-":".close-")+std::to_string(slot++);const Json call={{"tool",tool},{"args",args}};const auto previous=get("ha.calls",key);Json receipt;
             if(cancelled&&cancelled())receipt=toolFailure("cancelled");
-            else if(!skillAllows(context,"self.notice"))receipt=toolFailure("skill_tool_denied");
+            else if(!skillAllows(context,tool))receipt=toolFailure("skill_tool_denied");
             else if(previous.revision)receipt=previous.value.at("call")==call?previous.value.value("output",toolFailure("previous_outcome_unknown")):toolFailure("call_id_reused_with_different_arguments");
             else{
                 commit({{"ha.calls",key,0,1,Json{{"call",call},{"status","started"}}.dump(),traceId}},traceId);
-                try{receipt=performTool("self.notice",args,context,traceId,cancelled);}catch(...){receipt=toolFailure("tool_execution_failed");}
+                try{receipt=performTool(tool,args,context,traceId,cancelled);}catch(...){receipt=toolFailure("tool_execution_failed");}
                 auto started=get("ha.calls",key);commit({mutation("ha.calls",key,started,{{"call",call},{"status","completed"},{"output",receipt}},traceId)},traceId);
             }
-            results.push_back({{"id",args.at("id")},{"receipt",receipt}});
+            results.push_back({{"id",args.at("id")},{"tool",tool},{"receipt",receipt}});
         }return results;
     }
     std::int64_t nextPersonalTick=0;
@@ -39,10 +40,10 @@
         };
         for(const auto& ref:refs)visit(ref,0);return values;
     }
-    bool currentIntention(const Json& link)const{
+    bool currentIntention(const Json& link,const MemoryVisibility* supplied=nullptr)const{
         std::lock_guard lock(personalMutex);const auto row=get("ha.personal",link.at("id"));
         if(!row.revision||row.value.value("kind",std::string{})!="intention"||row.value.value("status",std::string{})!="active"||row.value.value("edit_revision",row.revision)!=link.at("revision"))return false;
-        const auto policy=visibility();for(const auto& ref:row.value.value("evidence_sources",row.value.value("sources",Json::array())))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")}))return false;
+        const auto local=supplied?MemoryVisibility{}:visibility();const auto& policy=supplied?*supplied:local;for(const auto& ref:row.value.value("evidence_sources",row.value.value("sources",Json::array())))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")}))return false;
         return true;
     }
     std::string recordIntentionAttempt(const Json& result){
@@ -158,10 +159,7 @@
                         const auto event=evidence.value.value("observation",Json::object()).value("kind",std::string{});
                         if(event=="widget.move_finished"||event=="rhythm.rest_finished"||event=="habitat.consumed"||event=="habitat.inspected"||event=="habitat.arranged"||event=="habitat.planted"||event=="habitat.appeared"||event=="atelier.created"||event=="atelier.revised"||event=="pocket.solved")actual=true;
                     }
-                    if(kind=="tool_observation"){
-                        const auto tool=evidence.value.value("tool",std::string{});const auto result=evidence.value.value("result",Json::object());
-                        if(result.value("completed",false)||((tool=="workspace.write"||tool=="atelier.write")&&result.value("written",false)))actual=true;
-                    }
+                    if(kind=="tool_observation"&&personalCompletionObservation(evidence.value))actual=true;
                 }
                 if(!actual)return toolFailure("personal_completion_requires_result");
             }

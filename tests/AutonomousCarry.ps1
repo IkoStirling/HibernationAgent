@@ -4,7 +4,7 @@ Add-Type -Path (Join-Path $PSScriptRoot PrivateDesktop.cs)
 $root=Join-Path $ProjectRoot ('artifacts/autonomous-carry-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='autonomous-carry-fixture';$service=$null;$provider=$null;$desktop=$null;$checks=0
 function Check($Value,$Name){if(!$Value){throw "CHECK FAILED: $Name"};$script:checks++;Write-Output "PASS $Name"}
-function Await([scriptblock]$Probe,$Name){$end=[DateTime]::UtcNow.AddSeconds(30);while([DateTime]::UtcNow-lt$end){if(&$Probe){return};Start-Sleep -Milliseconds 50};throw "TIMEOUT $Name"}
+function Await([scriptblock]$Probe,$Name,[int]$Seconds=30){$end=[DateTime]::UtcNow.AddSeconds($Seconds);while([DateTime]::UtcNow-lt$end){if(&$Probe){return};Start-Sleep -Milliseconds 50};throw "TIMEOUT $Name"}
 function Api($Path,$Data=$null){$p=@{Uri=$script:origin+$Path;Headers=@{Authorization='Bearer autonomous-carry-fixture'};TimeoutSec=12};if($null-ne$Data){$p.Method='Post';$p.ContentType='application/json';$p.Body=[Text.Encoding]::UTF8.GetBytes(($Data|ConvertTo-Json -Depth 65 -Compress))};Invoke-RestMethod @p}
 function Plan($Items,[int]$Delay=0,[switch]$Review,[int]$HttpStatus=200){$file=if($Review){'review-plan.json'}else{'plan.json'};@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Items|ForEach-Object {@{response=$_;delay_ms=$Delay;http_status=$HttpStatus}})}|ConvertTo-Json -Depth 65|Set-Content -LiteralPath (Join-Path $root provider/$file) -Encoding utf8}
 function Capture{Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 70}
@@ -14,9 +14,9 @@ function Call($Id,$Tool,$Arguments){@{version=1;kind='call';text=$null;calls=@(@
 function Message($Items){Plan $Items;Plan @($script:approval) -Review;$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='合成相处：刚才那段未写完的故事可以先留在这里。'};Await {!(Api '/api/chat').busy} 'fixture dialogue';Check (!(Api '/api/chat').call_failed) 'fixture dialogue succeeds'}
 function Auto($Enabled){$settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 65|ConvertFrom-Json -AsHashtable;$settings.plugins.widget.autonomousMode=$Enabled;$null=Api '/api/settings' @{settings=$settings};Await {(Api '/api/activities/status').enabled-eq$Enabled} 'autonomy setting';if(!$Enabled){Await {!(Api '/api/activities/status').generating} 'planner stopped'}}
 function Note($Id){@{id=$Id;expected_revision=0;kind='intention';topic='未写完的小故事';note='AUTONOMOUS_PRIVATE_MARKER 想在下次有空时续上那个没画完的圆';stance='want';source_ids=@($script:workSource)}}
-function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int]$ReviewHttpStatus=200){
+function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int]$ReviewHttpStatus=200,$Close=$null){
  Auto $false;$before=(Api '/api/activities/status').personal_carry_feedback.generation;$calls=Requests;$reviews=Requests $true
- Plan @(@{version=1;commands=@(@{kind='wait';seconds=1});carry_forward=@($Note)}) $(if($During){1800}else{0})
+ Plan @(@{version=1;commands=@(@{kind='wait';seconds=1});carry_forward=@($Note|Where-Object {$null-ne$_});close_threads=@($Close|Where-Object {$null-ne$_})}) $(if($During){1800}else{0})
  if($Verdict-and!$ExpectedError){$ExpectedError='activity_review_rejected'}
  Plan @($(if($Verdict){$Verdict}else{$script:approval})) -Review -HttpStatus $ReviewHttpStatus;Auto $true
  Await {(Requests)-gt$calls} 'background request';$context=(Capture).messages[1].content|ConvertFrom-Json -Depth 65
@@ -25,7 +25,7 @@ function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int
  $status=Api '/api/activities/status';Auto $false
  return @{context=$context;feedback=$status.personal_carry_feedback;error=$status.last_error;actor_calls=(Requests)-$calls;review_calls=(Requests $true)-$reviews}
 }
-function Observe{$null=Message @((Call self self.observe @{}),(Silent));((Capture).messages[-1].content|ConvertFrom-Json -Depth 65).tool_results[0].result}
+function Observe([string]$Status='active'){$null=Message @((Call self self.observe @{status=$Status}),(Silent));((Capture).messages[-1].content|ConvertFrom-Json -Depth 65).tool_results[0].result}
 function Start-Backend{$script:desktop=[PrivateDesktop]::new((Join-Path $BuildRoot hibernation-agent.exe),$configPath,$ready,$ProjectRoot);$script:service=$desktop.Child;Await {if($service.HasExited){throw 'autonomous carry host exited'};if(Test-Path -LiteralPath $ready){return (Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).pid-eq$service.Id};$false} 'backend';$script:origin='http://127.0.0.1:'+((Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).port)}
 function Stop-Backend{$null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)-and$service.ExitCode-eq0) 'host exits cleanly';$desktop.Dispose();$script:desktop=$null}
 try{
@@ -59,8 +59,28 @@ try{
  Auto $false;$before=Requests;Plan @(@{version=1;commands=@();carry_forward=@((Note interrupted-plan))}) 1800;Plan @($approval) -Review;Auto $true;Await {(Requests)-gt$before} 'delayed planning starts'
  Plan @((Silent));$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='先停一下，我来了。'};Await {!(Api '/api/chat').busy-and!(Api '/api/activities/status').generating} 'new input cancels the old plan';Auto $false
  $self=Observe;Check ($self.threads.Count-eq1-and$self.threads[0].id-eq'own-continuation'-and$self.threads[0].status-eq'active') 'only approved actual notes survive; completing a short wait does not complete the larger intention'
+ Message @((Call finish-work atelier.append @{id='own-unfinished';expected_revision=1;content='风绕过缺口又转了回来，这次圆认得它了。';stage='finished'}),(Silent));$finishedSource=((Capture).messages[-1].content|ConvertFrom-Json -Depth 60).tool_results[0].source_id
+ Check ([bool]$finishedSource) 'finishing the actual draft produces a later result source'
+ # A real background close must cancel only its old bound wait. Two unrelated
+ # waits, one queued earlier and one from the new plan, must both survive.
+ Auto $true
+ Message @((Call queue-old activity.enqueue @{commands=@(@{kind='wait';seconds=60;intention=@{id='own-continuation';revision=1};purpose='等待决定旧故事的收尾'},@{kind='wait';seconds=1;purpose='UNRELATED_ALREADY_QUEUED'})}),(Silent))
+ Await {(Api '/api/activities/status').active.intention.id-eq'own-continuation'} 'old bound activity starts'
+ $close=@{id='own-continuation';expected_revision=1;outcome='completed';note='故事已经实际续写并收尾，先不再追着它了';source_ids=@($finishedSource)}
+ $new=Note fresh-interest;$new.kind='interest';$new.stance='curious';$new.topic='给画里的缺口留一点空间';$new.note='AUTONOMOUS_PRIVATE_MARKER 想留意这种没有合拢的小形状';$new.source_ids=@($finishedSource)
+ $count=Requests;$reviewCount=Requests $true
+ Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='UNRELATED_FROM_NEW_PLAN'});close_threads=@($close);carry_forward=@($new)});Plan @($approval) -Review
+ Await {$f=(Api '/api/activities/status').personal_carry_feedback;@($f.results|Where-Object {$_.tool-eq'self.close'-and$_.id-eq'own-continuation'-and$_.ok}).Count-eq1} 'background closes its own old intention' 45
+ Await {$a=Api '/api/activities/status';@($a.recent|Where-Object {$_.purpose-eq'UNRELATED_ALREADY_QUEUED'-and$_.status-eq'completed'}).Count-eq1-and@($a.recent|Where-Object {$_.purpose-eq'UNRELATED_FROM_NEW_PLAN'-and$_.status-eq'completed'}).Count-eq1} 'unrelated prior and new activities survive the closure'
+ $status=Api '/api/activities/status';Check (@($status.recent|Where-Object {$_.intention.id-eq'own-continuation'-and$_.status-eq'intention_changed'}).Count-eq1) 'the old active goal is stopped without cancelling unrelated life'
+ Check ((Requests)-$count-eq1-and(Requests $true)-$reviewCount-eq1) 'closing old and noticing new concerns share a single existing actor and review pass'
+ Auto $false;$self=Observe;Check ($self.threads.Count-eq1-and$self.threads[0].id-eq'fresh-interest') 'new interest remains active while the completed intention leaves the active view'
+ $all=Observe all;$closed=@($all.threads|Where-Object id -eq own-continuation)[0];Check ($all.threads.Count-eq2-and$closed.status-eq'completed'-and$closed.resolution) 'completed intention retains its actual resolution and original history'
  $state=Api '/api/state';Check ($state.persona_version-eq$original.persona_version-and$state.stage.id-eq$original.stage.id) 'background carry preserves core persona and development stage'
- Stop-Backend;Start-Backend;$self=Observe;Check ($self.threads.Count-eq1-and$self.threads[0].id-eq'own-continuation') 'own intention persists across a real restart'
+ Stop-Backend;Start-Backend;$self=Observe;Check ($self.threads.Count-eq1-and$self.threads[0].id-eq'fresh-interest') 'own ongoing interest persists across a real restart'
+ $release=@{id='fresh-interest';expected_revision=1;outcome='released';note='现在先不接着看形状了';source_ids=@($finishedSource)};$released=Batch $null $null $null '' 200 $release
+ Check ($released.feedback.results[0].tool-eq'self.close'-and$released.feedback.results[0].ok) 'background can also choose to set an interest aside without claiming a completed task'
+ $all=Observe all;Check (@($all.threads|Where-Object status -eq active).Count-eq0-and@($all.threads|Where-Object {$_.id-eq'fresh-interest'-and$_.status-eq'released'}).Count-eq1) 'released concern remains retrievable without being reactivated'
  Stop-Backend;$bytes=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)));Check (!$bytes.Contains('AUTONOMOUS_PRIVATE_MARKER')) 'background private notes and feedback remain encrypted at rest'
  @{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json);Write-Output "Autonomous carry passed: $checks checks. Evidence: $root"
 }finally{foreach($process in @($service,$provider)){if($process){$process.Refresh();if(!$process.HasExited){Stop-Process -Id $process.Id}}};if($desktop){$desktop.Dispose()}}

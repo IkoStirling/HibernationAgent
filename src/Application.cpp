@@ -23,6 +23,7 @@
 #include <Hibernation/DesktopServices.h>
 #include <Hibernation/ReactionCache.h>
 #include <Hibernation/ActivityPlan.h>
+#include <Hibernation/ActivityPruning.h>
 #include <Hibernation/SkillRegistry.h>
 #include <Hibernation/ActivityReuse.h>
 #include <Hibernation/AppearanceCatalog.h>
@@ -349,7 +350,7 @@ struct Application::Impl {
         add("self.observe","寻找自己持续关注的兴趣、偏好与未完意图，query可找较早的事；status可选active/closed/all，closed包含做完或放下时的缘由，不会重新激活。limit默认24。它们不强制成为话题。",object({{"query",{{"type","string"},{"maxLength",160}}},{"limit",{{"type","integer"},{"minimum",1},{"maximum",24}}},{"status",{{"enum",Json::array({"active","closed","all"})}}}},Json::array()));
         const Json personalSources={{"type","array"},{"minItems",1},{"maxItems",4},{"items",shortText}};
         add("self.notice","把本次真实交谈或经历引出的兴趣、偏好、想做的小事留给自己。interest配curious，preference配like/avoid，intention配want。数值由程序维护；同一来源不会重复强化。新id的expected_revision=0，已存在id先self.observe取版本；kind/topic不可偷换。",object({{"id",shortText},{"expected_revision",{{"type","integer"},{"minimum",0}}},{"kind",{{"enum",Json::array({"interest","preference","intention"})}}},{"topic",shortText},{"note",{{"type","string"},{"minLength",1},{"maxLength",600}}},{"stance",{{"enum",Json::array({"curious","like","avoid","want"})}}},{"source_ids",personalSources}},Json::array({"id","expected_revision","kind","topic","note","stance","source_ids"})));
-        add("self.close","结束自己的关注或意图。completed仅用于有实际结果来源的意图；abandoned表示改变主意，released表示暂时放下。不会修改人格或删除经历。",object({{"id",shortText},{"expected_revision",{{"type","integer"},{"minimum",1}}},{"outcome",{{"enum",Json::array({"completed","abandoned","released"})}}},{"note",{{"type","string"},{"minLength",1},{"maxLength",600}}},{"source_ids",personalSources}},Json::array({"id","expected_revision","outcome","note","source_ids"})));
+        add("self.close","结束自己的关注或意图。completed仅用于有实际结果来源的意图；abandoned表示改变主意，released表示暂时放下。不会修改人格或删除经历。",personalCloseParameters());
         add("stage.observe","读取当前发展阶段与下一阶段要求，不改变阶段。",object(Json::object(),Json::array()));
         add("stage.propose","提交有真实经历依据的下一阶段候选，仅人工审核后生效。",object({{"stage_id",shortText},{"reason",text},{"evidence_ids",{{"type","array"},{"minItems",1},{"maxItems",8},{"items",shortText}}}},Json::array({"stage_id","reason","evidence_ids"})));
         add("state.propose","提出有来源的活动意图；数值由程序渐变，不能直接覆盖。",object({{"activity",{{"enum",Json::array({"idle","engaging","watching","reflecting","resting","withdrawing"})}}},{"intensity",{{"type","number"},{"minimum",-1},{"maximum",1}}},{"source_id",shortText},{"focus",shortText},{"valence",{{"type","number"},{"minimum",-1},{"maximum",1}}}},Json::array({"activity","intensity","source_id"})));
