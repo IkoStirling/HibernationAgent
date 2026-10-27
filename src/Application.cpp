@@ -846,7 +846,7 @@ struct Application::Impl {
         std::reverse(recentRows.begin(),recentRows.end());
         for(const auto& r:recentRows) {
             if(blockedSources.contains(r.id)&&r.id!=eventId)continue;
-            auto data=Json::parse(r.payload);if(isLegacyMetaReply(data)||(data.value("kind","")=="assistant_message"&&dialogueExcluded(dialogueProjection,r.id)))continue;if(causalIds.contains(r.id))data=boundedCausalDialogue(std::move(data));else if(r.id!=eventId)data=summarizedArchive(r.id,r.revision,std::move(data),memories,policy);const auto kind=data.value("kind","");if(isLegacyMetaReply(data))continue;if(kind=="assistant_message")data["context_role"]="previous_dialogue";
+            auto data=Json::parse(r.payload);const auto kind=data.value("kind",std::string{});if(isLegacyMetaReply(data)||(kind=="assistant_message"&&dialogueExcluded(dialogueProjection,r.id)))continue;if(causalIds.contains(r.id))data=boundedCausalDialogue(std::move(data));else if(r.id!=eventId)data=summarizedArchive(r.id,r.revision,std::move(data),memories,policy);if(isLegacyMetaReply(data))continue;if(kind=="assistant_message")data["context_role"]="previous_dialogue";
             if(context.sources.contains(r.id))continue;fragments.push_back({r.id,data.dump(),"archive@"+std::to_string(r.revision),r.id==eventId?100:causalIds.contains(r.id)?98:std::max(71,recentPriority--)});
             context.sources.emplace(r.id,Source{r.id,r.revision,kind});
         }
@@ -874,7 +874,7 @@ struct Application::Impl {
         chronologicalRecentContext(assembled.selected,recentIds);
         if(alone&&assembled.selected.empty())return {true,false,Json{{"status","no_update"},{"kind","solitude"},{"reason","no_authorized_context"}}.dump(),{}};
         std::set<std::string> admitted;Json contextValues=Json::array(),selectedIds=Json::array();
-        for(const auto& f:assembled.selected){admitted.insert(f.id);selectedIds.push_back(f.id);contextValues.push_back({{"id",f.id},{"source",f.source},{"data",Json::parse(f.text)}});}
+        for(const auto& f:assembled.selected){admitted.insert(f.id);selectedIds.push_back(f.id);auto data=Json::parse(f.text);const auto kind=context.sources.at(f.id).kind;contextValues.push_back({{"id",f.id},{"source",f.source},{"authorship",recordAuthorship(kind,data.value("kind",std::string{})!=kind)},{"data",std::move(data)}});}
         std::erase_if(context.sources,[&](const auto& entry){return !admitted.contains(entry.first);});
         if(!eventId.empty()&&!admitted.contains(eventId))return {false,false,"current_event_context_limit",{}};
         if(alone)for(const auto& ref:payload.value("references",Json::array()))if(!admitted.contains(ref.at("id").get<std::string>()))return {true,false,Json{{"status","no_update"},{"kind","solitude"},{"reason","task_context_limit"}}.dump(),{}};

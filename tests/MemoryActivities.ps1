@@ -33,11 +33,16 @@ try{
  Check ($compacted.ok-and$compacted.result.original_preserved-and$compacted.result.manager_profile-eq'manager') 'manager connection produces sourced digest without changing original'
  Check ((Api '/api/archive' @{id=$first.event_id}).records[0].data.text-eq$text) 'full original remains byte identical in encrypted database'
  $memory=@((Api '/api/memories').memories|Where-Object id -eq $digestId)[0];Check ($memory.kind-eq'summary'-and$memory.sources[0].id-eq$first.event_id-and$memory.keywords-contains'北极灯塔') 'digest retains summary category source revision keywords and uncertainty'
+ # The immediate preceding pair intentionally keeps a verbatim causal excerpt.
+ # Advance once before checking that an older record uses its sourced digest.
+ Review @($approve);Plan @((Reply '先放在这里。'));$null=Message '刚才的计划先保留。'
  Review @($approve);Plan @((Calls @((Tool 'search' 'memory.search' @{query='北极灯塔'}),(Tool 'page' 'memory.archive_read' @{id=$first.event_id;offset=1;length=256}))),(Reply '还只是一个计划。'));$null=Message '关键词与原文分段';$feedback=Feedback
  Check ($feedback[0].ok-and$feedback[0].result.memories[0].id-eq$digestId) 'keyword retrieval finds digest even when keyword is absent from summary'
  Check ($feedback[1].ok-and$feedback[1].result.records[0].offset-eq0-and$feedback[1].result.records[0].next_offset-le256-and$feedback[1].result.records[0].truncated) 'archive reads are byte bounded and UTF8 aligned'
+ Check ($feedback[1].result.records[0].authorship.reported_by-eq'counterpart'-and$feedback[0].result.memories[0].authorship.reported_by-eq'derived_record') 'retrieved originals distinguish the counterpart from derived recollection'
  $capture=Get-Content (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 60;$authorized=($capture.messages[1].content|ConvertFrom-Json -Depth 50).authorized_context
  Check (@($authorized|Where-Object {$_.id-eq$first.event_id-and$_.data.summary_not_original}).Count-eq1) 'later context uses labeled digest rather than full old transcript'
+ $projected=@($authorized|Where-Object id -eq $first.event_id)[0];Check ($projected.authorship.reported_by-eq'counterpart'-and$projected.authorship.record_kind-eq'user_message'-and$projected.authorship.derived) 'summary projection preserves the original reporting speaker without making it character speech'
  Plan @((Calls @((Tool 'read' 'memory.archive_read' @{id=$first.event_id}))),(Calls @((Tool 'again' 'memory.compact' @{id=$first.event_id}))),(Reply '没有重复整理。'));$null=Message '重复整理检查';Check ((Feedback)[0].result.deduplicated-and(Feedback)[0].result.id-eq$digestId) 'same source and revision compaction is idempotent'
  Review @($approve,'invalid digest','invalid digest',$approve);Plan @((Calls @((Tool 'bad-digest' 'memory.compact' @{id='${event_id}'}))),(Reply '先保留原文。'));$null=Message '不能生成有效摘要的独立测试';Check (!(Feedback)[0].ok) 'malformed manager output fails closed after bounded repair'
  Review @($approve);Plan @((Calls @((Tool 'hidden' 'memory.archive_read' @{id='trace-chat-1'}),(Tool 'sql' 'memory.sql' @{query='SELECT * FROM records'}))),(Reply '没有读取内部资料。'));$null=Message '内部范围检查';$feedback=Feedback;Check ($feedback[0].result.records.Count-eq0-and!$feedback[1].ok) 'character cannot query internal traces or arbitrary SQL'

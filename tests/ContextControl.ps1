@@ -43,6 +43,10 @@ try{
   Check ($full.reviews.Count-eq3-and$small.reviews.Count-eq1-and$small.reviews_skipped.Count-eq2) "$protocol read-only steps skip semantic review but final dialogue is reviewed"
   Check ($full.turns[2].request_footprint.image_count-eq1-and$small.turns[2].request_footprint.image_count-eq0) "$protocol previously acknowledged image is not sent repeatedly"
   Check ($small.context_bytes-le12000-and$small.selected_ids.Count-gt0) "$protocol assembled history is bounded with sources retained"
+  $actorRequest=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 65
+  $actorMessages=if($protocol-eq'responses'){$actorRequest.input}else{$actorRequest.messages}
+  $actorContext=($actorMessages[1].content|ConvertFrom-Json -Depth 60).authorized_context
+  Check (@($actorContext|Where-Object {$_.data.kind-eq'user_message'-and$_.authorship.reported_by-eq'counterpart'}).Count-gt0-and@($actorContext|Where-Object {$_.data.kind-eq'assistant_message'-and$_.authorship.reported_by-eq'character'}).Count-gt0) "$protocol provenance separates actual user and character history"
   Check ((Size $small)-lt(Size $full)) "$protocol total text and schema bytes decrease"
   Check ($small.turns[0].request_footprint.output_schema_bytes-eq0-and$full.turns[0].request_footprint.output_schema_bytes-gt0) "$protocol native schema is not duplicated"
   $results+=@{protocol=$protocol;full_calls=$full.turns.Count+$full.reviews.Count;balanced_calls=$small.turns.Count+$small.reviews.Count;full_bytes=(Size $full);balanced_bytes=(Size $small)}

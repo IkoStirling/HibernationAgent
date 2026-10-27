@@ -65,10 +65,13 @@ inline nlohmann::json priorReceiptContext(const nlohmann::json& value,std::size_
 inline nlohmann::json reviewEventContext(const std::string& text,const nlohmann::json& candidate,std::size_t budget){
     using Json=nlohmann::json;auto event=Json::parse(text,nullptr,false);if(!event.is_object())return Json{{"context_unavailable",true}};
     if(!event.contains("authorized_context")||!event.at("authorized_context").is_array())return event;
-    const auto all=event.at("authorized_context");Json selected=Json::array(),omitted=Json::array();std::size_t used=0;
+    const auto all=event.at("authorized_context");Json selected=Json::array(),omitted=Json::array();std::size_t used=0;std::set<std::size_t> admitted;
     const auto mentions=[&](const Json& node,const std::string& id,auto&& self)->bool{if(node.is_string())return node.get_ref<const std::string&>()==id;if(node.is_structured())for(const auto& child:node)if(self(child,id,self))return true;return false;};
-    for(const auto& row:all){const auto id=row.value("id",std::string{});if(id==event.value("event_id",std::string{})||mentions(candidate,id,mentions)){selected.push_back(row);used+=row.dump().size();}}
-    for(auto it=all.rbegin();it!=all.rend();++it){const auto id=it->value("id",std::string{});if(id==event.value("event_id",std::string{})||mentions(candidate,id,mentions))continue;const auto size=it->dump().size();if(used+size<=budget){selected.push_back(*it);used+=size;}else omitted.push_back(id);}
+    for(std::size_t i=0;i<all.size();++i){const auto& row=all.at(i);const auto id=row.value("id",std::string{});if(id==event.value("event_id",std::string{})||mentions(candidate,id,mentions)){admitted.insert(i);used+=row.dump().size();}}
+    for(std::size_t i=all.size();i-->0;){if(admitted.contains(i))continue;const auto size=all.at(i).dump().size();if(used+size<=budget){admitted.insert(i);used+=size;}}
+    // Select newest background evidence first, but present it in the actor's
+    // original order. Reversing dialogue places corrections before the mistake.
+    for(std::size_t i=0;i<all.size();++i)if(admitted.contains(i))selected.push_back(all.at(i));else omitted.push_back(all.at(i).value("id",std::string{}));
     event["authorized_context"]=selected;event["review_context_omitted_ids"]=omitted;return event;
 }
 inline void compactPriorToolMessages(std::vector<ayt::inference::Message>& messages,std::size_t limit){

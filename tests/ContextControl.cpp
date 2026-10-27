@@ -1,5 +1,6 @@
 #include <Hibernation/ContextControl.h>
 #include <Hibernation/OperationReplay.h>
+#include <Hibernation/Review.h>
 #include <AYTestFixtures.h>
 using namespace hibernation;
 using Json=nlohmann::json;
@@ -25,6 +26,21 @@ TEST_CASE(old_receipts_preserve_execution_and_source_facts_without_mutating_orig
     const Json receipt={{"ok",true},{"source_id","evidence"},{"call_id","a"},{"result",{{"completed",false},{"queued",true},{"text",std::string(20000,'x')}}}};
     const auto compact=priorReceiptContext(receipt,1024);CHECK(compact.dump().size()<=1024);CHECK(compact.at("source_id")=="evidence");CHECK(!compact.at("result").at("completed").get<bool>());CHECK(compact.at("result").at("queued").get<bool>());CHECK(receipt.at("result").at("text").get<std::string>().size()==20000);
     std::vector<ayt::inference::Message> messages={{"tool",receipt.dump()},{"user",Json{{"input",std::string(20000,'u')}}.dump()}};const auto user=messages.back().text;compactPriorToolMessages(messages,1024);CHECK(messages[0].text.size()<=1024);CHECK(messages[1].text==user);
+}
+TEST_CASE(review_keeps_corrections_after_the_mistaken_claim_with_their_speakers){
+    const Json history=Json::array({
+        {{"id","user-old"},{"authorship",recordAuthorship("user_message")},{"data",{{"text","I find those apples too sour."}}}},
+        {{"id","mistake"},{"authorship",recordAuthorship("assistant_message")},{"data",{{"text","I was the one who disliked them."}}}},
+        {{"id","correction"},{"authorship",recordAuthorship("user_message")},{"data",{{"text","No, that was me; our friend likes sour apples."}}}},
+        {{"id","current"},{"authorship",recordAuthorship("user_message")},{"data",{{"text","What did you like about them?"}}}}
+    });
+    const Json event={{"event_id","current"},{"authorized_context",history}};
+    const auto result=reviewEventContext(event.dump(),Json{{"text","I remember"}},8000);
+    CHECK(result.at("authorized_context")==history);
+    const auto trimmed=reviewEventContext(event.dump(),Json{{"carry_forward",Json::array({{{"source_ids",Json::array({"correction"})}}})}},0);
+    CHECK(trimmed.at("authorized_context").size()==2);
+    CHECK(trimmed.at("authorized_context")[0]==history[2]);CHECK(trimmed.at("authorized_context")[1]==history[3]);
+    CHECK(event.at("authorized_context")==history);
 }
 TEST_CASE(request_footprints_measure_bytes_without_claiming_prices_or_tokens){
     ayt::inference::Request request;request.messages={{"system","abc"},{"user","xyz",{{"data:image/png;base64,AA==","auto"}}}};request.tools={{"test","desc","{}",false}};
