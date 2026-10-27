@@ -14,6 +14,7 @@
 #include <Hibernation/MemoryLibrary.h>
 #include <Hibernation/ActivityPlan.h>
 #include <Hibernation/ActivityPruning.h>
+#include <Hibernation/AttemptObservation.h>
 #include <Hibernation/ActivityReuse.h>
 #include <Hibernation/DialoguePreparation.h>
 #include <Hibernation/CharacterAnimation.h>
@@ -846,6 +847,20 @@ TEST_CASE(activity_narrative_visibility_preserves_physical_results_and_original_
     const auto restored=activityNarrativeProjection(snapshot,[&](const Json& ref){return ref==source;});CHECK(restored.at("active").at("purpose")=="PRIVATE_REASON");CHECK(snapshot.at("active").contains("narrative_sources")&&raw.at("active")==command);
     auto legacy=command;legacy.erase("narrative_sources");const auto unknown=activityNarrativeProjection(Json{{"active",legacy}},[](const Json&){return true;});CHECK(!unknown.at("active").contains("purpose")&&!unknown.at("active").contains("intention"));CHECK(unknown.at("active").at("status")=="completed");
     auto supplied=command;supplied.erase("status");supplied.erase("attempt_source_id");CHECK(!validateActivities(Json{{"version",1},{"commands",Json::array({supplied})}}.dump()).ok);
+}
+TEST_CASE(only_real_domain_failures_with_known_targets_become_failed_experiences){
+    const Json args={{"id","own-piece"},{"expected_revision",1},{"content","PRIVATE_DRAFT_CONTENT"}},target={{"id","own-piece"},{"revision",2},{"stage","draft"}};
+    Json receipt={{"ok",false},{"error",{{"code","atelier_revision_conflict"},{"message","DO_NOT_ARCHIVE_UNTRUSTED_MESSAGE"}}}};
+    const auto attempt=failedDomainAttempt("atelier.append",args,receipt,target);CHECK(attempt.is_object());CHECK(attempt.at("attempted").get<bool>()&&!attempt.at("succeeded").get<bool>()&&!attempt.at("completed").get<bool>());CHECK(attempt.at("target").at("revision")==2&&attempt.at("expected_revision")==1);
+    CHECK(attempt.dump().find("PRIVATE_DRAFT_CONTENT")==std::string::npos&&attempt.dump().find("DO_NOT_ARCHIVE_UNTRUSTED_MESSAGE")==std::string::npos);
+    const Json record={{"kind","tool_attempt"},{"tool","atelier.append"},{"result",attempt}};CHECK(!personalCompletionObservation(record));
+    const auto anchor=personal::terminalAnchor(record,Json{{"id","attempt-source"}});CHECK(anchor.at("key")=="authored_piece:own-piece"&&anchor.at("weight")==.25);
+    const auto success=personal::terminalAnchor(Json{{"kind","tool_observation"},{"tool","atelier.write"},{"result",{{"written",true},{"piece",target}}}},Json{{"id","work-source"}});CHECK(success.at("key")==anchor.at("key")&&success.at("weight")==1);
+    const auto compact=compactObservation(record,false);CHECK(compact.at("context_role")=="previous_failed_attempt"&&compact.at("result").at("target")==attempt.at("target"));
+    for(const auto* code:{"invalid_arguments","tool_denied","cancelled","provider_unavailable","model_call_budget","atelier_piece_unavailable"}){receipt["error"]["code"]=code;CHECK(failedDomainAttempt("atelier.append",args,receipt,target).is_null());}
+    receipt["error"]["code"]="atelier_revision_conflict";CHECK(failedDomainAttempt("unknown.tool",args,receipt,target).is_null());CHECK(failedDomainAttempt("atelier.append",args,receipt,Json(nullptr)).is_null());
+    auto equal=target;equal["revision"]=1;CHECK(failedDomainAttempt("atelier.append",args,receipt,equal).is_null());auto wrong=target;wrong["id"]="some-other-piece";CHECK(failedDomainAttempt("atelier.append",args,receipt,wrong).is_null());
+    receipt["ok"]=true;CHECK(failedDomainAttempt("atelier.append",args,receipt,target).is_null());
 }
 TEST_SUITE_END
 int main(int argc,char** argv){return ayt::test::runTests("HibernationAgent",argc,argv);}

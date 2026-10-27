@@ -18,7 +18,7 @@
             if(discovered.contains(sourceId)){for(auto& candidate:candidates)if(candidate.id==sourceId){if(delivery=="acknowledged")candidate.delivery=delivery;candidate.recentMs=std::max(candidate.recentMs,recentMs);}return;}
             if(candidates.size()>=32||discovered.size()>=64)return;discovered.insert(sourceId);
             const auto source=get(archiveScope,sourceId);if(!source.revision)return;
-            const auto kind=source.value.value("kind",std::string{});if((kind!="tool_observation"&&kind!="tool_intent")||!policy.source(Source{sourceId,source.revision,kind,archiveScope}))return;
+            const auto kind=source.value.value("kind",std::string{});if((kind!="tool_observation"&&kind!="tool_intent"&&kind!="tool_attempt")||!policy.source(Source{sourceId,source.revision,kind,archiveScope}))return;
             const auto traceId=source.value.value("trace_id",std::string{});
             if(delivery=="no_saved_receipt"&&!traceId.empty()){
                 auto found=receiptTraces.find(traceId);if(found==receiptTraces.end())found=receiptTraces.emplace(traceId,get("ha.trace",traceId)).first;

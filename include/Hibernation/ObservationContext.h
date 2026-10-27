@@ -55,6 +55,7 @@ inline nlohmann::json referencedObservationContext(nlohmann::json record){
 // transcript, granting old permissions, or carrying pixels into every turn.
 inline nlohmann::json compactObservation(const nlohmann::json& record,bool imageDelivered,const std::string& deliveryState={}){
     using Json=nlohmann::json;Json result={{"kind",record.at("kind")},{"tool",record.at("tool")},{"created_at",record.value("created_at",std::int64_t(0))},{"context_role","previous_tool_observation"}};
+    if(record.at("kind")=="tool_attempt"){result["context_role"]="previous_failed_attempt";result["meaning"]="这次实际尝试没有成功，不是等待完成，不证明写入、游戏推进或更大目标达成，也不表示变化是谁造成的。";}
     const auto& data=record.at("result");Json summary=Json::object();
     if(record.at("tool")=="mentor.execute"){
         for(const auto* field:{"delegated","operations_executed","operations_dispatched","operations_may_have_executed","steps_attempted","steps_succeeded","all_steps_succeeded","has_pending_effects","cancelled","task_completion"})if(data.contains(field)&&data.at(field).is_primitive())summary[field]=data.at(field);
@@ -66,6 +67,7 @@ inline nlohmann::json compactObservation(const nlohmann::json& record,bool image
     if(data.contains("piece")&&data.at("piece").is_object()){summary["piece"]=Json::object();for(const auto* field:{"id","title","revision","kind","stage"})if(data.at("piece").contains(field))summary["piece"][field]=data.at("piece").at(field);}
     if(data.contains("game")&&data.at("game").is_object()){summary["game"]=Json::object();for(const auto* field:{"id","revision","status","lit_count","moves","moves_remaining"})if(data.at("game").contains(field))summary["game"][field]=data.at("game").at(field);}
     if(data.contains("applied")&&data.at("applied").is_boolean())summary["applied"]=data.at("applied");
+    if(record.at("kind")=="tool_attempt")for(const auto* field:{"attempted","succeeded","outcome","error_code","expected_revision","target_kind","target","target_observed_after_attempt"})if(data.contains(field))summary[field]=data.at(field);
     for(const auto* field:{"sampled_frames","span_seconds","stop_reason","full_video_watched","audio_delivered"})if(data.contains(field)&&data.at(field).is_primitive())summary[field]=data.at(field);
     if(data.contains("frames")&&data.at("frames").is_array()){
         summary["frames"]=Json::array();for(const auto& frame:data.at("frames")){if(summary.at("frames").size()>=3)break;Json meta=Json::object();for(const auto* field:{"index","frame_time_seconds","observed_at_ms"})if(frame.contains(field)&&frame.at(field).is_number())meta[field]=frame.at(field);summary["frames"].push_back(std::move(meta));}

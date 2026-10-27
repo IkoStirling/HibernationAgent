@@ -1,6 +1,6 @@
     ActivityGenerator activityGenerator;mutable std::recursive_mutex activityMutex;
     std::future<Json> activityEffect;std::shared_ptr<std::atomic<bool>> activityEffectCancelled;
-    std::string activityEffectId,activityEffectTool;
+    std::string activityEffectId,activityEffectTool;Json activityEffectArguments=Json::object();
     std::uint64_t activityGenerationEpoch=0;
     std::int64_t nextActivityFill=0,nextActivityTick=0,nextActivityMaintenance=0;
     bool activityInitialized=false,activityModeNotified=false,activityLastMode=false,activitySuspended=false;
@@ -41,10 +41,10 @@
         const auto add=[&](const std::string& key){
             if(key.empty()||evidence.size()>=6||!seen.insert(key).second)return;
             const auto row=get(archiveScope,key);if(!row.revision)return;const auto kind=row.value.value("kind",std::string{});
-            if(kind!="user_message"&&kind!="assistant_message"&&kind!="tool_observation"&&kind!="outer_event")return;
+            if(kind!="user_message"&&kind!="assistant_message"&&kind!="tool_observation"&&kind!="tool_attempt"&&kind!="outer_event")return;
             const Source ref{key,row.revision,kind,archiveScope};if(!policy.source(ref)||(row.value.contains("sources")&&!policy.allows(row.value))||isLegacyMetaReply(row.value)||(kind=="assistant_message"&&dialogueExcluded(projection,key)))return;
             Json data;
-            if(kind=="tool_observation"){
+            if(kind=="tool_observation"||kind=="tool_attempt"){
                 const auto delivery=get("ha.image-delivery",key);const bool acknowledged=delivery.value.value("ever_acknowledged",false);
                 data=compactObservation(row.value,acknowledged,acknowledged?"acknowledged":"unknown");data["image_content_in_context"]=false;
             }else{const auto text=row.value.value("text",std::string{});data={{"kind",kind},{"text",excerpt(text,900)},{"text_is_excerpt",text.size()>900},{"created_at",row.value.value("created_at",std::int64_t(0))}};if(kind=="outer_event"&&row.value.contains("observation"))data["event_kind"]=row.value.at("observation").value("kind",std::string{});}
@@ -189,11 +189,11 @@
         // the desktop pump. Cancellation stops future work, not committed past.
         if(activityEffect.valid()&&activityEffect.wait_for(std::chrono::milliseconds(0))==std::future_status::ready){
             Json receipt;try{receipt=activityEffect.get();}catch(...){receipt=toolFailure("activity_effect_failed");}
-            ProposalContext evidence;evidence.eventKind="solitude";receipt=observedTool(activityEffectTool,std::move(receipt),evidence,activityEffectId);
+            ProposalContext evidence;evidence.eventKind="solitude";receipt=observedTool(activityEffectTool,std::move(receipt),evidence,activityEffectId,&activityEffectArguments);
             auto plan=activityQueue();const auto status=receipt.value("ok",false)?std::string("completed"):receipt.value("error",Json::object()).value("code",std::string("failed"));
             if(plan.at("active").is_object()&&plan.at("active").value("id",std::string{})==activityEffectId){plan["active"]["source_id"]=receipt.value("source_id",std::string{});finishActivity(plan,status);}
             else for(auto& recent:plan["recent"])if(recent.value("id",std::string{})==activityEffectId){recent["effect_outcome"]=status;recent["effect_ended_ms"]=now;recent["source_id"]=receipt.value("source_id",std::string{});if(recent.contains("intention"))recent["attempt_source_id"]=recordIntentionAttempt(recent);}
-            saveActivities(plan);activityEffectId.clear();activityEffectTool.clear();activityEffectCancelled.reset();nextActivityTick=now+500;
+            saveActivities(plan);activityEffectId.clear();activityEffectTool.clear();activityEffectArguments=Json::object();activityEffectCancelled.reset();nextActivityTick=now+500;
         }
     }
     void activitiesTick(std::int64_t now){
@@ -254,7 +254,7 @@
             else if(kind=="reference_search"){activityEffectTool="reading.search";args={{"query",command.at("query")},{"language",command.at("language")}};}
             else if(kind=="reference_read"){activityEffectTool="reading.open";args={{"key",command.at("key")},{"language",command.at("language")}};}
             else {activityEffectTool="atelier.write";args={{"id",id("piece")},{"expected_revision",0},{"title",command.at("title")},{"kind",command.at("piece_kind")},{"stage","draft"},{"content",command.at("content")}};}
-            const auto tool=activityEffectTool;auto* runtime=plugins.get();activityEffect=std::async(std::launch::async,[runtime,tool,args=std::move(args),cancel]{return runtime->invoke(tool,args,[cancel]{return cancel->load();});});return;
+            activityEffectArguments=args;const auto tool=activityEffectTool;auto* runtime=plugins.get();activityEffect=std::async(std::launch::async,[runtime,tool,args=std::move(args),cancel]{return runtime->invoke(tool,args,[cancel]{return cancel->load();});});return;
         }
         if(kind=="wait"){plan["active"]["until_ms"]=now+static_cast<std::int64_t>(command.at("seconds").get<double>()*1000);saveActivities(plan);return;}
         if(kind=="move_to")receipt=plugins->invoke("widget.move",{{"x",command.at("x")},{"y",command.at("y")}},{});

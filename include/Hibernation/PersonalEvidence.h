@@ -18,6 +18,10 @@ inline EvidenceJson terminalAnchor(const EvidenceJson& record,const EvidenceJson
     if(kind=="user_message"&&at>0){auto value=anchor("conversation",std::to_string(at),.5);value["observed_ms"]=at;return value;}
     if(kind=="story_end")return anchor("story",source.at("id"),.75);
     const auto result=record.value("result",EvidenceJson::object());
+    if(kind=="tool_attempt"&&result.is_object()&&result.value("attempted",false)&&!result.value("succeeded",true)){
+        const auto type=result.value("target_kind",std::string{});if(type!="authored_piece"&&type!="puzzle")return nullptr;
+        return anchor(type,result.value("target",EvidenceJson::object()).value("id",std::string{}),.25);
+    }
     if((kind=="tool_observation"||kind=="tool_intent")&&result.is_object()){
         const auto game=result.value("game",EvidenceJson::object());
         if(tool.starts_with("pocket.")&&game.is_object()&&game.contains("id"))return anchor("puzzle",game.at("id"),result.value("applied",false)?1:.5);

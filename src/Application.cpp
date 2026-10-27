@@ -36,6 +36,7 @@
 #include <Hibernation/PlanningCadence.h>
 #include <Hibernation/PersonalThreads.h>
 #include <Hibernation/ObservationContext.h>
+#include <Hibernation/AttemptObservation.h>
 #include <Hibernation/ToolImages.h>
 #include <Hibernation/WorkspaceText.h>
 #include <Hibernation/NativeToolBridge.h>
@@ -379,11 +380,19 @@ struct Application::Impl {
         return result;
     }
     std::mutex observationMutex;
-    Json observedTool(const std::string& name,Json result,ProposalContext& context,const std::string& traceId){
-        if(result.value("ok",false)){
+    Json observedTool(const std::string& name,Json result,ProposalContext& context,const std::string& traceId,const Json* attemptedArgs=nullptr){
+        Json failure=nullptr;
+        if(!result.value("ok",false)&&attemptedArgs&&plugins&&!cfg.channel&&(name=="atelier.write"||name=="atelier.append"||name=="pocket.press"||name=="pocket.leave")){
+            const auto snapshots=plugins->liveSnapshots();Json target=nullptr;
+            if(name=="atelier.write"||name=="atelier.append")for(const auto& piece:snapshots.value("atelier",Json::object()).value("pieces",Json::array()))if(piece.at("id")==attemptedArgs->value("id",std::string{})){target=piece;break;}
+            if(name=="pocket.press"||name=="pocket.leave")target=snapshots.value("pocket",Json::object()).value("current",Json::object()).value("game",Json(nullptr));
+            failure=failedDomainAttempt(name,*attemptedArgs,result,target);
+        }
+        if(result.value("ok",false)||!failure.is_null()){
             std::lock_guard guard(observationMutex);
-            const auto observation=id("observation");const auto& value=result.at("result");const std::string sourceKind=toolObservationKind(name,value);
-            const auto data=Json{{"kind",sourceKind},{"tool",name},{"result",value},{"created_at",serviceNowMs()},{"trace_id",traceId}};
+            const auto observation=id("observation");const auto& value=failure.is_null()?result.at("result"):failure;const std::string sourceKind=failure.is_null()?toolObservationKind(name,value):"tool_attempt";
+            auto data=Json{{"kind",sourceKind},{"tool",name},{"result",value},{"created_at",serviceNowMs()},{"trace_id",traceId}};
+            if(!failure.is_null())data["text"]="一次实际操作尝试没有成功；只确认尝试及回执，不表示写入完成或游戏推进，也不说明谁导致了变化。";
             std::vector<RecordMutation> changes={{archiveScope,observation,0,1,data.dump(),traceId}};
             // A real tool receipt survives silence, cancellation or a later
             // provider failure. It must not depend on a spoken assistant row.
@@ -443,7 +452,7 @@ struct Application::Impl {
             const auto kind=args.at("kind").get<std::string>();Json sources=Json::array();std::set<std::string> seen;bool factual=false;
             for(const auto& s:args.at("source_ids")){const auto key=s.get<std::string>();auto found=context.sources.find(key);if(found==context.sources.end()||!policy.source(found->second)||!seen.insert(key).second)return toolFailure("memory_source_not_available");const auto& source=found->second;
                 if(sharedMemoryId(key)&&get(source.scope,key).revision!=source.revision)return toolFailure("memory_source_not_available");
-                if((kind=="conversation"&&source.kind=="user_message")||(kind=="story"&&source.kind=="story_end")||(kind=="outer"&&(source.kind=="outer_event"||source.kind=="task_complete"||source.kind=="tool_observation")))factual=true;
+                if((kind=="conversation"&&source.kind=="user_message")||(kind=="story"&&source.kind=="story_end")||(kind=="outer"&&(source.kind=="outer_event"||source.kind=="task_complete"||source.kind=="tool_observation"||source.kind=="tool_attempt")))factual=true;
                 sources.push_back({{"scope",source.scope},{"id",source.id},{"revision",source.revision},{"kind",source.kind}});
             }
             if(kind!="inference"&&kind!="summary"&&!factual)return toolFailure("memory_category_requires_experience");
@@ -507,7 +516,7 @@ struct Application::Impl {
         // Host-authored, one-use operational catalogue. No persona, transcript,
         // archive payloads or credentials are forwarded to the mentor plugin.
         if(name=="mentor.ask"&&plugins)plugins->event({{"kind","mentor.context"},{"turn_id",context.eventId.empty()?traceId:context.eventId},{"tools",tools()}});
-        return observedTool(name,plugins?plugins->invoke(name,args,cancelled):toolFailure("tool_not_available"),context,traceId);
+        return observedTool(name,plugins?plugins->invoke(name,args,cancelled):toolFailure("tool_not_available"),context,traceId,&args);
     }
     Json modelBudgetStatus() const {
         std::lock_guard lock(modelBudgetMutex);const auto now=serviceNowMs();const auto value=get("ha.budget","models",{{"started_ms",now},{"count",0}}).value;

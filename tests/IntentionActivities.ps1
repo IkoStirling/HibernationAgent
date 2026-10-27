@@ -81,6 +81,14 @@ try{
  Check ($after.id-eq$game.id-and$after.status-eq'left'-and$after.revision-eq$game.revision+1-and($after.rows|ConvertTo-Json -Compress)-eq$beforeRows) 'leaving preserves actual unsolved board rather than marking it won'
  $result=@((Api '/api/activities/status').recent|Where-Object kind -eq puzzle_leave)[0];$source=Api '/api/archive' @{id=$result.source_id}
  Check ($source.records[0].data.kind-eq'tool_observation'-and$source.records[0].data.result.applied-and!$source.records[0].data.result.completed) 'voluntary leave has an original actual-operation receipt while the puzzle remains unfinished'
+ $null=Message @((Calls @((Tool another pocket.start @{}))),(Silent));$game=@((Api '/api/capabilities').plugins|Where-Object id -eq pocket)[0].current.current.game
+ $mismatch=@{kind='puzzle_press';game_id=$game.id;expected_revision=$game.revision+1;cell=0}
+ $null=Message @((Calls @((Tool pending activity.enqueue @{commands=@($mismatch)}))),(Silent))
+ Await {@((Api '/api/activities/status').recent|Where-Object {$_.game_id-eq$game.id-and$_.status-eq'pocket_revision_conflict'}).Count-eq1} 'finite worker reports the actual failed versioned attempt'
+ $failed=@((Api '/api/activities/status').recent|Where-Object {$_.game_id-eq$game.id-and$_.status-eq'pocket_revision_conflict'})[0];$actual=(Api '/api/archive' @{id=$failed.source_id}).records[0].data
+ Check ($failed.source_id-and$actual.kind-eq'tool_attempt'-and$actual.result.attempted-and!$actual.result.succeeded-and$actual.result.target.id-eq$game.id) 'autonomous finite failures expose their own original attempt source rather than an earlier success'
+ $unchanged=@((Api '/api/capabilities').plugins|Where-Object id -eq pocket)[0].current.current.game
+ Check ($unchanged.revision-eq$game.revision-and$unchanged.moves-eq$game.moves) 'a failed finite attempt never advances the actual game'
  $private=$wish.Clone();$private.id='private-purpose';$private.note='这是属于一个来源的私人打算'
  $privateCommand=@{kind='wait';seconds=1;purpose='ACTIVITY_PRIVATE_PURPOSE';intention=@{id=$private.id;revision=1}}
  $null=Message @((Calls @((Tool private self.notice $private))),(Calls @((Tool remember memory.remember @{kind='inference';text='活动目的权限的合成来源';source_ids=@('${event_id}')}))),(Calls @((Tool private-queue activity.enqueue @{commands=@($privateCommand)}))),(Silent))
