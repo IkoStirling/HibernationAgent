@@ -726,6 +726,23 @@ TEST_CASE(activity_can_reference_an_existing_intention_without_promoting_an_outc
     CHECK(!bridge.candidate({{"call","ha_activity_DOT_enqueue",R"({"commands":[{"kind":"wait","seconds":null}]})"}},1).ok);
     CHECK(!bridge.candidate({{"call","ha_activity_DOT_enqueue",R"({"commands":[{"kind":"wait","seconds":1,"unknown":null}]})"}},1).ok);
 }
+TEST_CASE(background_private_carry_is_optional_and_cannot_replace_the_action_contract){
+    Json note={{"id","own-idea"},{"expected_revision",0},{"kind","intention"},{"topic","a short unfinished story"},{"note","return to its last sentence later"},{"stance","want"},{"source_ids",Json::array({"actual-work"})}};
+    Json plan={{"version",1},{"commands",Json::array()},{"carry_forward",Json::array({note})}};
+    CHECK(validateActivities(plan.dump()).ok);
+    CHECK(ayt::serializer::validateJsonDocument(plan.dump(),activitySchemaFor(Json::array())));
+    plan["carry_forward"].push_back(note);CHECK(!validateActivities(plan.dump()).ok);
+    plan["carry_forward"]=nullptr;const auto empty=validateActivities(plan.dump());CHECK(empty.ok&&!empty.value.contains("carry_forward"));
+    plan["carry_forward"]=Json::array({note});plan["carry_forward"][0]["authorize_tools"]=true;CHECK(!validateActivities(plan.dump()).ok);
+    plan["carry_forward"]=Json::array({note});plan["commands"]=Json::array({{{"kind","wait"},{"seconds",0}}});CHECK(!validateActivities(plan.dump()).ok);
+}
+TEST_CASE(an_autonomous_game_can_be_left_without_faking_completion_or_replaying_it){
+    Json command={{"kind","puzzle_leave"},{"seconds",0},{"game_id","lights-1"},{"expected_revision",4},{"purpose","先放下这局，想去看看别的"}};
+    const auto wrap=[&]{return Json{{"version",1},{"commands",Json::array({command})}}.dump();};
+    CHECK(validateActivities(wrap()).ok);CHECK(ayt::serializer::validateJsonDocument(wrap(),activitySchemaFor(Json::array({"puzzle_leave","wait"}))));
+    CHECK(!ayt::serializer::validateJsonDocument(wrap(),activitySchemaFor(Json::array({"puzzle_start","wait"}))));CHECK(!reusableActivity(command));
+    command["cell"]=3;CHECK(!validateActivities(wrap()).ok);command.erase("cell");command["seconds"]=10;CHECK(!validateActivities(wrap()).ok);
+}
 TEST_CASE(puzzle_progress_is_an_actual_step_even_when_the_larger_game_is_unfinished){
     const Json progress={{"applied",true},{"completed",false},{"game",{{"id","one"},{"revision",2},{"status","active"},{"moves",1},{"lit_count",6}}}};
     CHECK(toolObservationKind("pocket.press",progress)=="tool_observation");CHECK(toolObservationKind("activity.enqueue",progress)=="tool_intent");

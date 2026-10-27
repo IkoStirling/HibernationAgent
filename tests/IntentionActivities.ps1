@@ -66,6 +66,14 @@ try{
  $trace=Message @((Calls @((Tool puzzle pocket.start @{}))),(Silent));$puzzleSource=$trace.tool_results[0].source_id
  $archived=Api '/api/archive' @{id=$puzzleSource};Check ($archived.records[0].data.kind-eq'tool_observation'-and$archived.records[0].data.result.applied-and!$archived.records[0].data.result.completed) 'starting an unfinished game is an actual operation rather than a pending proposal'
  $trace=Message @((Calls @((Tool remember memory.remember @{kind='outer';text='我已经开始了一局，还没有解开。';source_ids=@($puzzleSource)}))),(Silent));Check ($trace.tool_results[0].ok) 'actual unfinished play can be remembered without falsely claiming the puzzle was solved'
+ $game=@((Api '/api/capabilities').plugins|Where-Object id -eq pocket)[0].current.current.game
+ $beforeRows=$game.rows|ConvertTo-Json -Compress;$leave=@{kind='puzzle_leave';seconds=0;game_id=$game.id;expected_revision=$game.revision;purpose='暂时不解了，去看看别的'}
+ $trace=Message @((Calls @((Tool leave activity.enqueue @{commands=@($leave)}))),(Silent));Check ($trace.tool_results[0].ok) 'voluntarily leaving an active game can be scheduled as a finite real action'
+ Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'puzzle_leave'-and$_.status-eq'completed'}).Count-eq1} 'voluntary leave completes'
+ $after=@((Api '/api/capabilities').plugins|Where-Object id -eq pocket)[0].current.current.game
+ Check ($after.id-eq$game.id-and$after.status-eq'left'-and$after.revision-eq$game.revision+1-and($after.rows|ConvertTo-Json -Compress)-eq$beforeRows) 'leaving preserves actual unsolved board rather than marking it won'
+ $result=@((Api '/api/activities/status').recent|Where-Object kind -eq puzzle_leave)[0];$source=Api '/api/archive' @{id=$result.source_id}
+ Check ($source.records[0].data.kind-eq'tool_observation'-and$source.records[0].data.result.applied-and!$source.records[0].data.result.completed) 'voluntary leave has an original actual-operation receipt while the puzzle remains unfinished'
  $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)) 'clean shutdown'
  Check (!([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)))).Contains('INTENTION_PRIVATE_MARKER')) 'intentions and attempts stay encrypted'
  @{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json)

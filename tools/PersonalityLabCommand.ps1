@@ -1,6 +1,6 @@
 param(
  [Parameter(Mandatory)][string]$LabRoot,
- [ValidateSet('say','episode','snapshot','consider','stop')][string]$Action='snapshot',
+ [ValidateSet('say','episode','snapshot','consider','rebuild_dialogue','stop')][string]$Action='snapshot',
  [string]$Text='',
  [string]$Episode='',
  [int]$TimeoutSeconds=135

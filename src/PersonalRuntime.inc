@@ -1,4 +1,19 @@
     mutable std::recursive_mutex personalMutex;
+    Json applyPersonalCarry(const Json& notes,ProposalContext& context,const std::string& stableId,const std::string& traceId,const std::function<bool()>& cancelled){
+        Json results=Json::array();std::size_t slot=0;
+        for(const auto& args:notes){
+            const auto key=stableId+".carry-"+std::to_string(slot++);const Json call={{"tool","self.notice"},{"args",args}};const auto previous=get("ha.calls",key);Json receipt;
+            if(cancelled&&cancelled())receipt=toolFailure("cancelled");
+            else if(!skillAllows(context,"self.notice"))receipt=toolFailure("skill_tool_denied");
+            else if(previous.revision)receipt=previous.value.at("call")==call?previous.value.value("output",toolFailure("previous_outcome_unknown")):toolFailure("call_id_reused_with_different_arguments");
+            else{
+                commit({{"ha.calls",key,0,1,Json{{"call",call},{"status","started"}}.dump(),traceId}},traceId);
+                try{receipt=performTool("self.notice",args,context,traceId,cancelled);}catch(...){receipt=toolFailure("tool_execution_failed");}
+                auto started=get("ha.calls",key);commit({mutation("ha.calls",key,started,{{"call",call},{"status","completed"},{"output",receipt}},traceId)},traceId);
+            }
+            results.push_back({{"id",args.at("id")},{"receipt",receipt}});
+        }return results;
+    }
     std::int64_t nextPersonalTick=0;
     bool personalInitialized=false,personalWasPaused=false;
     Json personalEvidenceAnchors(const Json& refs)const{

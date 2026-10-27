@@ -21,6 +21,8 @@ try{
  $before=Command snapshot;Check ($before.activities.enabled-and$before.backend_pid-gt0) 'continuous private desktop and autonomous plugin context are live'
  $said=Command say '合成记录：那只纸船现在先别动。';Check (!$said.failed-and$said.reply) 'message command reaches the same continuing role'
  $after=Command snapshot;Check ($after.backend_pid-eq$before.backend_pid-and$after.turn_count-eq$before.turn_count+1) 'conversation continues without restarting the backend'
+ $rebuilt=Command rebuild_dialogue;$preserved=Command snapshot
+ Check ($rebuilt.rebuilt-and$rebuilt.history_retained-and$rebuilt.state_retained-and$preserved.dialogue_message_count-eq$after.dialogue_message_count-and$preserved.persona_version-eq$after.persona_version-and$preserved.stage_id-eq$after.stage_id) 'an explicit lab intervention rebuilds working dialogue while retaining actual history persona and stage'
  $manifest=Get-Content -LiteralPath (Join-Path $lab controller.json) -Raw|ConvertFrom-Json
  $id=[Guid]::NewGuid().ToString('N');$marker=Join-Path $root must-not-execute.txt
  $partial=Join-Path $lab ('inbox/'+$id+'.partial');@{controller_id=$manifest.controller_id;action='execute';text=('Set-Content '+$marker+' forbidden')}|ConvertTo-Json|Set-Content -LiteralPath $partial -Encoding utf8
@@ -33,7 +35,11 @@ try{
  Check (!$saved.running-and!(Get-Process -Id $saved.backend_pid -ErrorAction SilentlyContinue)-and!(Test-Path -LiteralPath (Join-Path $lab runner.lock))) 'child desktop and archive ownership are released'
  Check (!(Get-Content -LiteralPath (Join-Path $root controller-90.log) -Raw).Contains('personality-lab-')) 'local session token is absent from controller logs'
  Check (!((Get-Content -LiteralPath (Join-Path $lab controller.json) -Raw)-match'(?i)authorization|credential|session_key')) 'controller manifest contains no session or provider credential'
- Start-Controller 12;Check ($controller.WaitForExit(22000)-and$controller.ExitCode-eq0) 'real deadline ends a continuing controller without another command'
+ @{version=1;title='maintenance resume without a new user event';turns=@()}|ConvertTo-Json|Set-Content -LiteralPath $episode -Encoding utf8
+ Start-Controller 12
+ Await {if($controller.HasExited){throw 'Controller resume failed'};$x=Get-Content -LiteralPath (Join-Path $lab controller.json) -Raw|ConvertFrom-Json;$x.pid-eq$controller.Id-and$x.running} 'resumed controller'
+ $resumed=Command snapshot;Check ($resumed.turn_count-eq0-and$resumed.dialogue_message_count-eq$preserved.dialogue_message_count) 'maintenance resume can preserve the same life without inventing another user conversation'
+ Check ($controller.WaitForExit(22000)-and$controller.ExitCode-eq0) 'real deadline ends a continuing controller without another command'
  $saved=Get-Content -LiteralPath (Join-Path $lab controller.json) -Raw|ConvertFrom-Json;Check (!$saved.running-and!(Get-Process -Id $saved.backend_pid -ErrorAction SilentlyContinue)) 'deadline also stops its child backend'
  Write-Output "Personality controller passed: $checks checks. Evidence: $root"
 }finally{

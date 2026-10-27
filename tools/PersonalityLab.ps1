@@ -25,7 +25,7 @@ if(!$BudgetLedger){$BudgetLedger=Join-Path $ProjectRoot artifacts/personality-gr
 $BudgetLedger=[IO.Path]::GetFullPath($BudgetLedger)
 if(!$BudgetLedger.StartsWith($allowed,[StringComparison]::OrdinalIgnoreCase)){throw 'Experiment ledger must stay inside project artifacts; all contrast branches share this ledger'}
 $steps=Get-Content -LiteralPath $Episode -Raw|ConvertFrom-Json -AsHashtable
-if($steps.version-ne1-or!$steps.title-or$steps.turns.Count-lt1-or$steps.turns.Count-gt20){throw 'Episode requires version 1, title and 1..20 meaningful turns'}
+if($steps.version-ne1-or!$steps.title-or$steps.turns-isnot[Array]-or$steps.turns.Count-lt$(if($Serve){0}else{1})-or$steps.turns.Count-gt20){throw 'Episode requires version 1, title and 1..20 meaningful turns; a continuing controller can resume with zero turns'}
 if($steps.opportunitySeconds-and(!$steps.autonomy-or$steps.opportunitySeconds-lt1-or$steps.opportunitySeconds-gt45)){throw 'An independent activity opportunity requires autonomy and 1..45 seconds'}
 foreach($step in $steps.turns){if(!$step.text-or$step.text.Length-gt3000){throw 'Episode text must be 1..3000 characters'};if($step.settleSeconds-and($step.settleSeconds-lt0-or$step.settleSeconds-gt30)){throw 'Activity settlement is limited to 30 seconds'}}
 if($Serve){$serveUntil=[DateTime]::Parse($ServeUntilUtc).ToUniversalTime();if($serveUntil-le[DateTime]::UtcNow-or$serveUntil-gt[DateTime]::Parse($DeadlineUtc).ToUniversalTime()){throw 'Controller must end inside the authorized work window'}}
@@ -88,7 +88,7 @@ function Consider-OwnWork{
 }
 function Lab-Snapshot{
  $state=Api '/api/state';$surfaces=@((Api '/api/capabilities').plugins|Where-Object {$_.id-in@('widget','habitat','pocket','atelier','rhythm')})
- return @{observed_utc=[DateTime]::UtcNow.ToString('O');backend_pid=$service.Id;busy=$state.busy;continuous_state=$state.continuous_state;activities=(Api '/api/activities/status');surfaces=$surfaces;report_path=$reportPath;turn_count=$report.turns.Count}
+  return @{observed_utc=[DateTime]::UtcNow.ToString('O');backend_pid=$service.Id;busy=$state.busy;continuous_state=$state.continuous_state;activities=(Api '/api/activities/status');surfaces=$surfaces;report_path=$reportPath;turn_count=$report.turns.Count;dialogue_message_count=@((Api '/api/chat').messages).Count;persona_version=$state.persona_version;stage_id=$state.stage.id}
 }
 try{
  $marker=Join-Path $LabRoot .personality-lab.json
@@ -196,12 +196,14 @@ try{
     try{
      $command=Get-Content -LiteralPath $commandFile.FullName -Raw|ConvertFrom-Json -AsHashtable -Depth 30
      if($command.controller_id-ne$controllerId){throw 'Stale controller'}
-     foreach($key in $command.Keys){if($key-notin@('controller_id','action','text','turns')){throw 'Unknown controller field'}}
+     $allowed=@('controller_id','action');if($command.action-eq'say'){$allowed+='text'}elseif($command.action-eq'episode'){$allowed+='turns'}
+     foreach($key in $command.Keys){if($key-notin$allowed){throw 'Unknown controller field'}}
      switch($command.action){
       'say' {Run-LabTurn @{text=$command.text} $commandFile.BaseName;$result=@{reply=$report.turns[-1].reply;failed=$report.turns[-1].failed;report_path=$reportPath}}
       'episode' {if($command.turns-isnot[Array]-or$command.turns.Count-lt1-or$command.turns.Count-gt12){throw 'Invalid conversation block'};$index=0;foreach($step in $command.turns){Run-LabTurn $step ($commandFile.BaseName+'-'+$index);++$index};$result=@{turn_count=$report.turns.Count;report_path=$reportPath}}
       'snapshot' {$result=Lab-Snapshot}
       'consider' {Consider-OwnWork;$result=@{status=$report.private_consideration.status;report_path=$reportPath}}
+      'rebuild_dialogue' {$result=Api '/api/dialogue/rebuild' @{};$report.interventions=@($report.interventions|Where-Object {$null-ne$_})+@(@{kind='working_dialogue_projection';at_utc=[DateTime]::UtcNow.ToString('O');receipt=$result});$report|ConvertTo-Json -Depth 85|Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM}
       'stop' {$stopRequested=$true;$result=@{stopping=$true;report_path=$reportPath}}
       default {throw 'Unknown controller action'}
      }

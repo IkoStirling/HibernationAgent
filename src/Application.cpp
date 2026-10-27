@@ -716,18 +716,7 @@ struct Application::Impl {
                 // Authored carry notes share the exact self.notice gate. They
                 // only run after semantic approval; silence with notes is not
                 // read-only. Stable slots prevent duplicate edits on job retry.
-                trace["carry_forward_results"]=Json::array();std::size_t kept=0;
-                for(const auto& args:turn.value.value("carry_forward",Json::array())){
-                    const auto key=stableTurnId+".carry-"+std::to_string(kept++);const Json call={{"tool","self.notice"},{"args",args}};auto previous=get("ha.calls",key);Json receipt;
-                    if(!skillAllows(context,"self.notice"))receipt=toolFailure("skill_tool_denied");
-                    else if(previous.revision)receipt=previous.value.at("call")==call?previous.value.value("output",toolFailure("previous_outcome_unknown")):toolFailure("call_id_reused_with_different_arguments");
-                    else{
-                        commit({{"ha.calls",key,0,1,Json{{"call",call},{"status","started"}}.dump(),traceId}},traceId);
-                        try{receipt=performTool("self.notice",args,context,traceId,cancelled);}catch(...){receipt=toolFailure("tool_execution_failed");}
-                        auto started=get("ha.calls",key);commit({mutation("ha.calls",key,started,{{"call",call},{"status","completed"},{"output",receipt}},traceId)},traceId);
-                    }
-                    trace["carry_forward_results"].push_back({{"id",args.at("id")},{"receipt",receipt}});
-                }
+                trace["carry_forward_results"]=applyPersonalCarry(turn.value.value("carry_forward",Json::array()),context,stableTurnId,traceId,cancelled);
                 auto output=emptyOutput();if(kind=="reply")output["visible_reply"]=turn.value.at("text");trace["silent"]=kind=="silence";trace["proactive"]=kind=="reply"&&context.eventKind=="solitude";trace["presentation"]=turn.value.value("presentation",Json::object());result.text=output.dump();return result;
             }
             if(control.enabled){compactPriorToolMessages(request.messages,control.oldReceiptBytes);compactPriorToolMessages(completedMessages,control.oldReceiptBytes);}
