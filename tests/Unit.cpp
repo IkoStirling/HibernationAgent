@@ -275,7 +275,8 @@ TEST_CASE(cached_creativity_is_bounded_and_cannot_become_arbitrary_program_execu
 }
 TEST_CASE(legacy_applied_puzzle_intents_have_a_read_only_factual_projection){
     Json raw={{"kind","tool_intent"},{"tool","pocket.press"},{"result",{{"applied",true},{"completed",false},{"game",{{"id","old-board"},{"revision",2},{"moves",1},{"status","active"}}}}}};const auto original=raw;
-    const auto view=libraryArchiveView(raw);CHECK(!view.is_null());CHECK(view.at("recorded_kind")=="tool_intent");CHECK(view.at("legacy_applied_puzzle")==true);CHECK(view.at("result").at("applied")==true);CHECK(view.at("result").at("completed")==false);CHECK(raw==original);
+    const auto view=libraryArchiveView(raw);CHECK(!view.is_null());CHECK(view.at("recorded_kind")=="tool_intent");CHECK(view.at("legacy_applied_puzzle")==true);CHECK(view.at("result").at("applied")==true);CHECK(view.at("result").at("completed")==false);CHECK(raw==original);CHECK(appraisalExperienceRecord(raw));CHECK(personalCompletionObservation(raw));
+    auto denied=raw;denied["result"]["applied"]=false;CHECK(!appraisalExperienceRecord(denied));CHECK(!personalCompletionObservation(denied));denied=raw;denied["result"]["game"].erase("id");CHECK(!appraisalExperienceRecord(denied));CHECK(!personalCompletionObservation(denied));
     raw["result"]["applied"]=false;CHECK(libraryArchiveView(raw).is_null());raw["result"]["applied"]="true";CHECK(libraryArchiveView(raw).is_null());raw=original;raw["tool"]="workspace.write";CHECK(libraryArchiveView(raw).is_null());raw=original;raw["result"]["game"].erase("id");CHECK(libraryArchiveView(raw).is_null());
 }
 TEST_CASE(previous_observations_keep_receipts_without_replaying_private_pixels){

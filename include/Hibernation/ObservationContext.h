@@ -2,7 +2,17 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <set>
+#include <cstdint>
 namespace hibernation {
+inline bool legacyAppliedPuzzleRecord(const nlohmann::json& record){
+    try{
+        if(record.value("kind",std::string{})!="tool_intent")return false;
+        const auto tool=record.value("tool",std::string{});if(tool!="pocket.start"&&tool!="pocket.press"&&tool!="pocket.leave")return false;
+        const auto& data=record.at("result");if(!data.is_object()||!data.at("applied").is_boolean()||data.at("applied")!=true)return false;
+        const auto& game=data.at("game");const auto& id=game.at("id");const auto& revision=game.at("revision");
+        return game.is_object()&&id.is_string()&&!id.get_ref<const std::string&>().empty()&&id.get_ref<const std::string&>().size()<=32&&revision.is_number_integer()&&revision.get<std::int64_t>()>0;
+    }catch(const nlohmann::json::exception&){return false;}
+}
 inline std::string toolObservationKind(const std::string& tool,const nlohmann::json& result){
     const bool appliedPuzzle=(tool=="pocket.start"||tool=="pocket.press"||tool=="pocket.leave")&&result.is_object()&&result.value("applied",false);
     // For this contract completed means the whole puzzle was solved, while
@@ -21,13 +31,13 @@ inline bool appraisalExperienceRecord(const nlohmann::json& record){
     const auto kind=record.value("kind",std::string{});
     if(kind=="user_message"||kind=="story_end"||kind=="outer_event"||kind=="task_complete"||kind=="tool_attempt")return true;
     const auto tool=record.value("tool",std::string{});
-    return kind=="tool_observation"&&(continuityObservationTool(tool)||tool=="pocket.observe"||tool=="habitat.observe");
+    return (kind=="tool_observation"||legacyAppliedPuzzleRecord(record))&&(continuityObservationTool(tool)||tool=="pocket.observe"||tool=="habitat.observe");
 }
 // This proves that an operation/observation really occurred, not that an
 // arbitrarily broad personal goal was achieved. Semantic review still checks
 // the named goal against these facts; a legal press does not mean a won game.
 inline bool personalCompletionObservation(const nlohmann::json& record){
-    using Json=nlohmann::json;if(record.value("kind",std::string{})!="tool_observation")return false;
+    using Json=nlohmann::json;if(record.value("kind",std::string{})!="tool_observation"&&!legacyAppliedPuzzleRecord(record))return false;
     const auto result=record.value("result",Json::object());if(!result.is_object())return false;
     const auto tool=record.value("tool",std::string{});
     return result.value("completed",false)||

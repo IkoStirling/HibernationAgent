@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <set>
 #include <string>
+#include "Hibernation/ObservationContext.h"
 
 namespace hibernation {
 // Read-only semantic views of known world receipts. Internal diagnostics and
@@ -15,8 +16,7 @@ inline nlohmann::json archiveWorldExperience(const nlohmann::json& record){
     if(!record.contains("result")||!record.at("result").is_object())return nullptr;
     const auto tool=record.value("tool",std::string{});
     const auto& data=record.at("result");const auto kind=record.value("kind",std::string{});
-    const auto game=data.value("game",Json::object());
-    const bool legacyApplied=kind=="tool_intent"&&(tool=="pocket.start"||tool=="pocket.press"||tool=="pocket.leave")&&data.contains("applied")&&data.at("applied").is_boolean()&&data.at("applied")==true&&game.is_object()&&game.contains("id")&&game.at("id").is_string()&&!game.at("id").get_ref<const std::string&>().empty()&&game.at("id").get_ref<const std::string&>().size()<=32&&game.contains("revision")&&game.at("revision").is_number_integer()&&game.at("revision").get<std::int64_t>()>0;
+    const bool legacyApplied=legacyAppliedPuzzleRecord(record);
     if(kind!="tool_observation"&&!legacyApplied)return nullptr;
     static const std::set<std::string> concrete={"pocket.start","pocket.press","pocket.leave","pocket.observe","atelier.write","atelier.append","atelier.read","reading.open","workspace.read","workspace.write","workspace.edit","habitat.create","habitat.act","habitat.arrange","habitat.observe","workspace.view_image","computer.screenshot","television.observe","television.observe_sequence"};
     if(!concrete.contains(tool))return nullptr;
