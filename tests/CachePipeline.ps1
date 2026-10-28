@@ -18,10 +18,15 @@ try{
  $cfg.review=@{enabled=$true;profileId='review';maxRewrites=1};$cfg|ConvertTo-Json -Depth 65|Set-Content -LiteralPath (Join-Path $root config.json) -Encoding utf8
  @{prompt_tokens=100;completion_tokens=10;prompt_cache_hit_tokens=80;prompt_cache_miss_tokens=20}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $providerRoot usage.json) -Encoding utf8
  Plan @(@{decision='approve';reason='ok';guidance=''}) $true;Start-Backend;$null=Api '/api/model' @{id='actor'}
- Plan @((Native 'a' 'ha_state_DOT_observe' @{}),(Native 'b' 'ha_state_DOT_observe' @{}),(Native 'c' 'ha_state_DOT_observe' @{}),(Native 'final' 'ha_turn_reply' @{text='三次核对完成。'}));$trace=Message '读取当前状态三次'
+ New-Item -ItemType Directory -Force (Join-Path $cfg.dataRoot drafts)|Out-Null;[IO.File]::WriteAllText((Join-Path $cfg.dataRoot drafts/prefix.txt),('h'*8000))
+ Plan @((Native 'a' 'ha_workspace_DOT_read' @{mount='drafts';path='prefix.txt';length=8192}),(Native 'b' 'ha_state_DOT_observe' @{}),(Native 'c' 'ha_state_DOT_observe' @{}),(Native 'final' 'ha_turn_reply' @{text='三次核对完成。'}));$trace=Message '读取当前状态三次'
  Check (!(Api '/api/chat').call_failed-and$trace.turns.Count-eq4) 'native three-action turn completes with independent final review'
  $wire=@(Get-Content (Join-Path $providerRoot requests.jsonl)|ForEach-Object {$_|ConvertFrom-Json -Depth 80});$definitions=$wire[0].tools|ConvertTo-Json -Depth 75 -Compress
  Check (@($wire|Where-Object {($_.tools|ConvertTo-Json -Depth 75 -Compress)-cne$definitions}).Count-eq0) 'native tool definitions stay byte-equivalent through the final round'
+ $receipt=$wire[1].messages|Where-Object role -eq tool|Select-Object -First 1;$laterReceipt=$wire[2].messages|Where-Object role -eq tool|Select-Object -First 1
+ Check ($receipt.content.Length-gt8000-and$receipt.content-ceq$laterReceipt.content) 'an already sent eight-kilobyte receipt stays identical on the next action step'
+ $reviewWire=Get-Content (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 80;$reviewFrame=$reviewWire.messages[1].content|ConvertFrom-Json -Depth 80
+ Check ($reviewFrame.event_context.StartsWith('{"event_kind"')) 'review projection retains cache ordering inside the nested serialized event'
  Check ($trace.turns[0].usage.cached_input_tokens-eq80-and$trace.reviews[0].usage.uncached_input_tokens-eq20) 'actor streaming and reviewer usage reach encrypted traces'
  $system=$wire[0].messages[0].content;$frame=$wire[0].messages[1].content|ConvertFrom-Json -Depth 65
  Check (!$system.Contains('"observed_at_ms"')-and$frame.authoritative_state-and$frame.current_capabilities-and$trace.cache_layout.dynamic_state_in_system-eq$false) 'dynamic facts remain available outside the stable system prompt'

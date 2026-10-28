@@ -383,7 +383,7 @@ struct Application::Impl {
         add("workspace.write","写入草稿文本；核心设定与原始档案不可改写。",object({{"path",shortText},{"content",{{"type","string"},{"minLength",1},{"maxLength",8192}}}},Json::array({"path","content"})));
         if(cfg.desktopEnabled&&plugins&&plugins->enabled("widget"))add("body.observe","查看此刻身体的实际姿态、转身阶段、位置、可用动画和活动队列。准备回答只是界面阶段，发消息前的状态见 body_at_input。",object(Json::object(),Json::array()));
         if(autonomousMode()){
-            const auto activity=Json::parse(activitySchemaFor(activityCommands(plugins->liveSnapshots())));add("activity.enqueue","为自己安排最多6项连续活动：move_to用x/y去桌面任意位置，pose用state做已有动作，eat_nearest/look_nearest执行时找物件，rest休息，wait停留。interact选择具体object_id和look/eat/plant；create_drop创造小物，creative_note新建短创作，creative_read以实际piece_id重读已有作品，creative_continue接写最近已有草稿并检查版本；作品不属于桌面物件，不把piece_id当成interact的object_id；puzzle_start/puzzle_press在口袋小玩具里开始或按一格；reference_search/reference_read在获准自主阅读时分步搜索、选择已返回的条目导言或按detail=source分段阅读正文源文本，实际可用种类以此Schema和body为准。seconds仅pose/wait/rest为实际持续秒数，其余固定0。移动不受随机游走的200像素限制。可选purpose留一句当时想做这件事的目的，不是完成事实或思维过程。这是稍后执行的计划，新输入会取消尚未发生的活动；需要现在保存或接写作品时直接用atelier.write/append，不把待执行队列称为已写好。等本轮对白结束后串行执行，可从 body 或 body.observe 获取动作目录、状态和队列。",object({{"commands",activity.at("properties").at("commands")}},Json::array({"commands"})));
+            const auto activity=Json::parse(activitySchemaFor(activityCommands(plugins->liveSnapshots(),false,true)));add("activity.enqueue","为自己安排最多6项连续活动：move_to用x/y去桌面任意位置，pose用state做已有动作，eat_nearest/look_nearest执行时找物件，rest休息，wait停留。interact选择具体object_id和look/eat/plant；create_drop创造小物，creative_note新建短创作，creative_read以实际piece_id重读已有作品，creative_continue接写最近已有草稿并检查版本；作品不属于桌面物件，不把piece_id当成interact的object_id；puzzle_start/puzzle_press在口袋小玩具里开始或按一格；reference_search/reference_read在获准自主阅读时分步搜索、选择已返回的条目导言或按detail=source分段阅读正文源文本，Schema列出当前配置支持的种类，此刻可执行种类以body.available_commands及实际回执为准。seconds仅pose/wait/rest为实际持续秒数，其余固定0。移动不受随机游走的200像素限制。可选purpose留一句当时想做这件事的目的，不是完成事实或思维过程。这是稍后执行的计划，新输入会取消尚未发生的活动；需要现在保存或接写作品时直接用atelier.write/append，不把待执行队列称为已写好。等本轮对白结束后串行执行，可从 body 或 body.observe 获取动作目录、状态和队列。",object({{"commands",activity.at("properties").at("commands")}},Json::array({"commands"})));
             add("activity.status","读取自己的待执行活动与真实完成/中断回执。",object(Json::object(),Json::array()));
             add("activity.cancel","取消自己剩余的自主活动队列。",object(Json::object(),Json::array()));
         }
@@ -665,7 +665,7 @@ struct Application::Impl {
                 if(reviewFailure.usage.inputTokens)observation["input_tokens"]=*reviewFailure.usage.inputTokens;if(reviewFailure.usage.outputTokens)observation["output_tokens"]=*reviewFailure.usage.outputTokens;
                 if(verdict.ok){
                     if(trackFocus){observation["focus_update_status"]=updateConversationFocus(verdict.value.at("focus_update"),context,traceId);const auto focus=conversationFocus(context.eventKind,context.eventId);trace["conversation_focus"]=focus;
-                        for(auto* messages:{&request.messages,&initialMessages}){auto value=Json::parse(messages->at(1).text);value["conversation_focus"]=focus;messages->at(1).text=value.dump();}}
+                        for(auto* messages:{&request.messages,&initialMessages}){auto value=Json::parse(messages->at(1).text);value["conversation_focus"]=focus;messages->at(1).text=cacheOrderedEvent(value);}}
                     return verdict.value.at("decision").get<std::string>();
                 }
                 if(!reviewFailure&&reviewFailure.status!=ayt::inference::Status::InvalidOutput)break;
@@ -683,7 +683,7 @@ struct Application::Impl {
                 const auto projection=rebuildDialogue(excluded,trace["reviews"].back().at("verdict").value("reason",std::string("other")),traceId);
                 trace["dialogue_context_generation"]=projection.at("generation");trace["context_excluded_count"]=projection.at("excluded_assistants").size();
                 if(authorized.is_array())for(auto it=authorized.begin();it!=authorized.end();)if(dialogueDigestExcluded(projection,it->at("data")))it=authorized.erase(it);else ++it;
-                request.messages.at(1).text=rebuilt.dump();request.messages.insert(request.messages.end(),completedMessages.begin(),completedMessages.end());
+                request.messages.at(1).text=cacheOrderedEvent(rebuilt);request.messages.insert(request.messages.end(),completedMessages.begin(),completedMessages.end());
                 trace["context_rebuilds"]=trace.value("context_rebuilds",0)+1;
             }
             const auto guidance=trace["reviews"].back().at("verdict");
@@ -767,7 +767,7 @@ struct Application::Impl {
                 trace["appraisal_result"]=turn.value.contains("appraisal")?applyPrivateOperation("state.appraise",turn.value.at("appraisal"),context,stableTurnId+".appraisal",traceId,cancelled):Json(nullptr);
                 auto output=emptyOutput();if(kind=="reply")output["visible_reply"]=turn.value.at("text");trace["silent"]=kind=="silence";trace["proactive"]=kind=="reply"&&context.eventKind=="solitude";trace["presentation"]=turn.value.value("presentation",Json::object());result.text=output.dump();return result;
             }
-            if(control.enabled){compactPriorToolMessages(request.messages,control.oldReceiptBytes);compactPriorToolMessages(completedMessages,control.oldReceiptBytes);}
+            if(control.enabled&&compactCachedToolMessages(request.messages,control.oldReceiptBytes)){compactPriorToolMessages(completedMessages,control.oldReceiptBytes);trace["cache_layout"]["receipt_rebases"]=trace["cache_layout"].value("receipt_rebases",0)+1;}
             ++toolRounds;ayt::inference::Message assistant{"assistant",nativeResponse?std::string{}:turn.value.dump()};if(nativeResponse)assistant.toolCalls=nativeCalls;request.messages.push_back(std::move(assistant));Json feedback=Json::array();std::vector<ayt::inference::ImageInput> images;std::size_t nativeIndex=0;
             completedMessages.push_back(request.messages.back());
             for(auto call:turn.value.at("calls")){
@@ -959,7 +959,7 @@ struct Application::Impl {
         if(!trace.at("conversation_focus").empty()){const auto focus=get("ha.dialogue","focus").value;const auto sourceId=focus.at("source_id").get<std::string>();context.narrativeSources[sourceId]={sourceId,focus.at("source_revision"),"user_message",archiveScope};}
         auto liveCapabilities=characterCapabilities(!alone);liveCapabilities.erase("tools");liveCapabilities["vision_available"]=selectedProfile.model.supportsVision;
         req.messages={{"system",system},{"user",cacheOrderedEvent(Json{{"authoritative_state",continuousAtStart},{"current_capabilities",liveCapabilities},{"event_kind",eventKind},{"event_id",eventId},{"conversation_delivery",dialogueDeliveryContext()},{"input",payload.value("topic",text)},{"perception",imageDeliveryContext(selectedProfile.model.supportsVision,0)},{"conversation_focus",trace.at("conversation_focus")},{"self",trace.at("personal_context")},{"body",bodyState()},{"body_at_input",trace.at("body_at_input")},{"time_context",trace.at("time_context")},{"open_questions",questions},{"task_context",trace.at("task_context")},{"current_task",currentTask},{"ongoing_tasks",taskListing(&context,false,4)},{"authorized_context",contextValues}})}};
-        trace["cache_layout"]={{"version",1},{"stable_system_bytes",system.size()},{"dynamic_state_in_system",false},{"stable_tool_declarations",true}};
+        trace["cache_layout"]={{"version",2},{"nested_review_ordered",true},{"stable_activity_declarations",true},{"stable_system_bytes",system.size()},{"dynamic_state_in_system",false},{"stable_tool_declarations",true}};
         if(selectedProfile.model.protocol==ayt::inference::Protocol::Mock) {
             auto mock=emptyOutput();
             if(alone) {

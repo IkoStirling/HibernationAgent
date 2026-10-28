@@ -10,15 +10,50 @@ inline std::string cacheOrderedEvent(const nlohmann::json& event){
     for(auto it=event.begin();it!=event.end();++it)if(!wire.contains(it.key()))wire[it.key()]=it.value();
     return wire.dump();
 }
+inline nlohmann::ordered_json cacheBackgroundWire(const nlohmann::json& event){
+    nlohmann::ordered_json wire=nlohmann::ordered_json::object();
+    for(const auto* key:{"conversation_delivery","memories","self","evidence","excluded","recent_activities"})if(event.contains(key))wire[key]=event.at(key);
+    for(auto it=event.begin();it!=event.end();++it)if(!wire.contains(it.key()))wire[it.key()]=it.value();return wire;
+}
 inline std::string cacheOrderedReview(const nlohmann::json& event){
     nlohmann::ordered_json wire=nlohmann::ordered_json::object();
     for(const auto* key:{"conversation_delivery","event_context","context","current_user_message","conversation_focus","authoritative_state","open_questions","state","excluded"})if(event.contains(key))wire[key]=event.at(key);
-    for(auto it=event.begin();it!=event.end();++it)if(!wire.contains(it.key()))wire[it.key()]=it.value();return wire.dump();
+    for(auto it=event.begin();it!=event.end();++it)if(!wire.contains(it.key()))wire[it.key()]=it.value();
+    // Ordering only the wrapper is insufficient: json assignment otherwise
+    // restores alphabetical body/state ordering inside the review evidence.
+    if(event.contains("context")&&event.at("context").is_object())wire["context"]=cacheBackgroundWire(event.at("context"));
+    if(event.contains("event_context")&&event.at("event_context").is_string()){
+        const auto nested=nlohmann::json::parse(event.at("event_context").get_ref<const std::string&>(),nullptr,false);
+        if(nested.is_object())wire["event_context"]=cacheOrderedEvent(nested);
+    }
+    return wire.dump();
 }
 inline std::string cacheOrderedBackground(const nlohmann::json& event){
-    nlohmann::ordered_json wire=nlohmann::ordered_json::object();
-    for(const auto* key:{"conversation_delivery","memories","evidence","excluded","self","recent_activities"})if(event.contains(key))wire[key]=event.at(key);
-    for(auto it=event.begin();it!=event.end();++it)if(!wire.contains(it.key()))wire[it.key()]=it.value();return wire.dump();
+    return cacheBackgroundWire(event).dump();
+}
+// Keep an already-sent tool receipt immutable while the turn remains within a
+// bounded receipt window. Rewriting it on every step destroys append-only reuse.
+// A real overflow starts a compacted prefix; authority/source checks are unchanged.
+inline bool compactCachedToolMessages(std::vector<ayt::inference::Message>& messages,std::size_t limit){
+    std::size_t bytes=0;
+    for(const auto& message:messages){
+        if(message.role=="tool")bytes+=message.text.size();
+        else if(message.role=="user"){
+            const auto value=nlohmann::json::parse(message.text,nullptr,false);
+            if(value.is_object()&&value.contains("tool_results"))bytes+=message.text.size();
+        }
+    }
+    if(bytes<=std::max<std::size_t>(16384,limit*4))return false;
+    bool changed=false;
+    for(auto& message:messages){
+        if(message.role!="tool"&&message.role!="user")continue;
+        auto value=nlohmann::json::parse(message.text,nullptr,false);if(!value.is_object())continue;
+        if(message.role=="tool")value=priorReceiptContext(value,limit);
+        else if(value.contains("tool_results")&&value.at("tool_results").is_array())for(auto& receipt:value["tool_results"])receipt=priorReceiptContext(receipt,limit);
+        else continue;
+        auto text=value.dump();if(text!=message.text){message.text=std::move(text);changed=true;}
+    }
+    return changed;
 }
 inline nlohmann::json cacheUsageJson(const ayt::inference::Usage& usage){
     using Json=nlohmann::json;Json out={{"input_tokens",nullptr},{"output_tokens",nullptr},{"cached_input_tokens",nullptr},{"uncached_input_tokens",nullptr},{"cache_hit_ratio",nullptr}};

@@ -141,25 +141,25 @@
         while(plan["recent"].size()>8)plan["recent"].erase(0);plan["entries"]=pruned.pending;saveActivities(plan);
         if(pruned.stopActive){if(plugins)plugins->event({{"kind","runtime.activity_cancel"},{"reason","intention_changed"}});nextActivityTick=now+500;}
     }
-    Json activityCommands(const Json& snapshots,bool background=false)const{
+    Json activityCommands(const Json& snapshots,bool background=false,bool declarations=false)const{
         std::set<std::string> tools;for(const auto& item:plugins->catalog())tools.insert(item.at("name").get<std::string>());
         Json commands=Json::array({"wait"});const auto widget=snapshots.value("widget",Json::object());
-        if(tools.contains("widget.move")&&(!background||widget.value("roaming",false)))commands.push_back("move_to");
+        if(tools.contains("widget.move")&&(declarations||!background||widget.value("roaming",false)))commands.push_back("move_to");
         if(tools.contains("widget.animate"))commands.push_back("pose");
-        const bool hasObjects=!snapshots.value("habitat",Json::object()).value("objects",Json::array()).empty();
+        const bool hasObjects=declarations||!snapshots.value("habitat",Json::object()).value("objects",Json::array()).empty();
         if(tools.contains("habitat.act")){commands.push_back("eat_nearest");commands.push_back("look_nearest");if(hasObjects)commands.push_back("interact");}
         if(tools.contains("habitat.arrange")&&hasObjects)commands.push_back("arrange");
         if(tools.contains("habitat.create"))commands.push_back("create_drop");
         const auto atelier=snapshots.value("atelier",Json::object());
-        if(tools.contains("atelier.write")&&creativeSlotAvailable(atelier))commands.push_back("creative_note");
-        if(tools.contains("atelier.append")&&!visibleContinuationDrafts(atelier).empty())commands.push_back("creative_continue");
-        if(tools.contains("atelier.read")&&!atelier.value("pieces",Json::array()).empty())commands.push_back("creative_read");
+        if(tools.contains("atelier.write")&&(declarations||creativeSlotAvailable(atelier)))commands.push_back("creative_note");
+        if(tools.contains("atelier.append")&&(declarations||!visibleContinuationDrafts(atelier).empty()))commands.push_back("creative_continue");
+        if(tools.contains("atelier.read")&&(declarations||!atelier.value("pieces",Json::array()).empty()))commands.push_back("creative_read");
         const auto reading=snapshots.value("reading",Json::object());
-        if(reading.value("autonomous_allowed",false)){if(tools.contains("reading.search"))commands.push_back("reference_search");if(tools.contains("reading.open")&&(!reading.value("last_search",Json::object()).value("pages",Json::array()).empty()||!reading.value("last_read",Json::object()).value("key",std::string{}).empty()))commands.push_back("reference_read");}
+        if(reading.value("autonomous_allowed",false)){if(tools.contains("reading.search"))commands.push_back("reference_search");if(tools.contains("reading.open")&&(declarations||!reading.value("last_search",Json::object()).value("pages",Json::array()).empty()||!reading.value("last_read",Json::object()).value("key",std::string{}).empty()))commands.push_back("reference_read");}
         const auto game=snapshots.value("pocket",Json::object()).value("current",Json::object()).value("game",Json(nullptr));
-        if(tools.contains("pocket.start")&&(!game.is_object()||game.value("status",std::string{})!="active"))commands.push_back("puzzle_start");
-        if(tools.contains("pocket.press")&&game.is_object()&&game.value("status",std::string{})=="active")commands.push_back("puzzle_press");
-        if(tools.contains("pocket.leave")&&game.is_object()&&game.value("status",std::string{})=="active")commands.push_back("puzzle_leave");
+        if(tools.contains("pocket.start")&&(declarations||!game.is_object()||game.value("status",std::string{})!="active"))commands.push_back("puzzle_start");
+        if(tools.contains("pocket.press")&&(declarations||(game.is_object()&&game.value("status",std::string{})=="active")))commands.push_back("puzzle_press");
+        if(tools.contains("pocket.leave")&&(declarations||(game.is_object()&&game.value("status",std::string{})=="active")))commands.push_back("puzzle_leave");
         if(tools.contains("rhythm.rest"))commands.push_back("rest");return commands;
     }
     Json enqueueActivities(const Json& commands,const std::string& source,const Json& narrativeSources=Json::array()){
@@ -228,7 +228,7 @@
         Json time={{"now_ms",now}};time.update(presentationTimeContext(now));
         const auto state=modelLifeState(life.snapshot(),&narrative);
         const auto previousReview=activityReviewFeedback(&narrative);
-        activityGenerator.start(actor,reviewer,persona,{{"_narrative_sources",activityNarrativeSources(narrative)},{"time_context",time},{"state",state},{"self",self},{"evidence",evidence},{"previous_carry_forward_results",activityCarryFeedback()},{"previous_planning_error",activityError},{"previous_review_feedback",previousReview},{"body",bodyState()},{"surfaces",environment},{"available_commands",activityCommands(snapshots,true)},{"queue_slots",6-plan.at("entries").size()-(plan.at("active").is_null()?0:1)},{"memories",summaries},{"recent_activities",activityForModel(plan).at("recent")}},activityKey(),[this]{return consumeModelBudget(1,true);},[this](const Profile& p,int status){providerResult(p,status);});
+        activityGenerator.start(actor,reviewer,persona,{{"_narrative_sources",activityNarrativeSources(narrative)},{"time_context",time},{"state",state},{"self",self},{"evidence",evidence},{"previous_carry_forward_results",activityCarryFeedback()},{"previous_planning_error",activityError},{"previous_review_feedback",previousReview},{"body",bodyState()},{"surfaces",environment},{"available_commands",activityCommands(snapshots,true)},{"declared_commands",activityCommands(snapshots,true,true)},{"queue_slots",6-plan.at("entries").size()-(plan.at("active").is_null()?0:1)},{"memories",summaries},{"recent_activities",activityForModel(plan).at("recent")}},activityKey(),[this]{return consumeModelBudget(1,true);},[this](const Profile& p,int status){providerResult(p,status);});
     }
     void collectActivityEffect(std::int64_t now){
         // Finite local effects use one separate worker, keeping disk I/O out of
