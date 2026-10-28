@@ -741,3 +741,11 @@
 - 独立源码构建out/sp-verify：单元、SessionProjection、ProcessIntegration、ConfigurationCheck通过；ContinuityIntegration在修正测试还原器对空event_id后台事件的识别后64.63秒通过。合并构建out/cache-20261028：SessionProjection、ProtocolIntegration、Vision、NativeTools通过；ContinuityIntegration最终63.78秒通过。此前ContextControl、CachePipeline、Napcat定向回归通过。浏览器6项开关/保存/重载/窄窗口检查通过，证据artifacts/session-projection-ui-1793197118059。
 - 隔离构建首次误用All配合仅构建三个目标，触发未构建的引擎测试Not Run；不将其计作通过。后续采用Build及明确的上述应用目标。早期失败和超时日志保留在artifacts/session-projection-*，不以反复付费请求或长稳测试填充验证。
 - 本轮实际付费模型调用0，不复制私人对白，未改正式配置、密钥、人设和档案。缓存生产代码已冻结；按另一聊天获用户授权的协调要求，不自行替换正式后台，由QQ/桌面共享记忆任务完成最终合并、备份及统一部署。冻结提交和验证清单见artifacts/session-projection-freeze.json；旧V0.7标签保持不变。
+
+## 2026-10-28 主人 QQ 私聊与桌面连续性修复（已部署）
+- 定位：QQ 中 1836 字节的长消息原文仍在，后续两轮未装入上下文；当地语义记忆为空，QQ 未继承桌面交流焦点。只读加密副本检查验证新装配可完整取得这份原文，未导出私人正文。
+- 实现：统一主人私聊与桌面的最近交谈、角色兴趣、焦点和语义写入；新增有原句、来源版本、有效状态及 CAS 的精确约定。审核在现有调用中提议更新，旧原文不能覆盖较新的纠正／撤回，人格提案保持 pending。长原文索引持久保存，他人与群聊隔离，桌面工作上下文重建也覆盖 QQ 旧回复。
+- 协调：经用户明确授权联系缓存聊天，等待其冻结并提交 dc573cd 后合并；保留 v2 投影、来源权限分类、批准修订版本更新及修复输出后的权限检查。QQ 投影新增桌面访问／重建版本栅栏；审核读取展开后的当前帧，约定变化走状态 patch。主目录合并前一直在独立副本开发。
+- 验证：19 组相关合并回归逐项通过；最终冻结组合又通过 OwnerContinuity JSON/native、SessionProjection、NativeTools，完整协议 50.63 秒通过。独立的纯功能提交源码构建并通过 11 组回归，提交 4156507，未夹带导师等其他未提交代码。原生/JSON 两条路径覆盖跨端、重启、精确口令、更正撤回、旧资料复活拒绝、伪造来源/原句/版本拒绝、人格提案审批、跨端重建、完整缓存前缀移除和同轮共享记忆修订。
+- 真实模型：全新独立存档 5 轮 / 16 次调用，称呼与口令在换话题、修改、撤回和重启后正确延续；没有导入私人对白。实验原文与早期失败记录保留在忽略的 evidence 目录，不写入正式记忆。描述性构建路径过长时现有便携恢复单元触发 Win32 路径限制，短临时目录下合并版 205 项全部通过；纯功能版在普通 CTest 路径通过。
+- 部署：备份 out/deployment-backups/owner-continuity-20261028-233112，更新后台、NapCat DLL 和合并 UI；后台 PID 61376，health=ok，paused=false，导师 0.5.0 保留。审计确认全部 56860 条既有密文记录版本、配置、人设、记忆密钥保留；新增版本属正常初始化。正式数据仍在 E 盘。详细证据 artifacts/owner-continuity，说明 docs/owner-continuity.md。旧 V0.7 标签不变。
