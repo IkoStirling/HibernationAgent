@@ -66,7 +66,7 @@ foreach($root in @($candidateRoot,$installRoot,$dataRoot,$backupRoot,$characterR
  }
 }
 if($selection.version-ne2-or$selection.candidate-ne$candidateRoot-or$selection.package-ne$installRoot-or!$selection.preserve_unselected_files){throw 'unexpected_selection'}
-if($selection.expected_host_sha256-ne'FFADBC7AD69034B1B90F7966B29FC1829EB4C9CB23C590A3FA5269C4A85E2944'){throw 'unverified_host_identity'}
+if($selection.expected_host_sha256-ne'0001CB26E4F46C4C32FA2943AD6D7CAA9A8AA3D505F22D8FEEDE6EA90EE856FB'){throw 'unverified_host_identity'}
 if((Hash (Join-Path $candidateRoot 'hibernation-agent.exe'))-ne$selection.expected_host_sha256){throw 'candidate_host_changed'}
 $cfg=Get-Content -LiteralPath $configPath -Raw|ConvertFrom-Json
 if([IO.Path]::GetFullPath($cfg.dataRoot)-ne$dataRoot){throw 'unexpected_production_data_root'}
