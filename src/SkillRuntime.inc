@@ -1,6 +1,6 @@
     std::unique_ptr<SkillRegistry> skillRegistry;
     static bool skillControl(const std::string& name){return name.starts_with("skills.")||name=="capabilities.list";}
-    bool skillAllows(const ProposalContext& context,const std::string& name)const{return context.skillId.empty()||skillControl(name)||context.skillTools.contains(name);}
+    bool skillAllows(const ProposalContext& context,const std::string& name)const{return (context.taskId.empty()||context.taskTools.contains(name))&&(context.skillId.empty()||skillControl(name)||context.skillTools.contains(name));}
     Json scopedTools(const ProposalContext& context)const{auto value=tools();for(auto it=value.begin();it!=value.end();)if(!skillAllows(context,it->at("name").template get<std::string>()))it=value.erase(it);else ++it;return value;}
     Json skillTool(const std::string& name,const Json& args,ProposalContext& context){
         if(!skillRegistry)return toolFailure("skills_unavailable");

@@ -76,7 +76,7 @@ Config loadConfig(const std::filesystem::path& path) {
     const auto text=readFile(path,64*1024);
     if(!ayt::serializer::validateJsonDocument(text,"{}")) throw std::runtime_error("config_json");
     const auto j=Json::parse(text);
-    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","reflectOnActivities","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer","frontend","contextControl","skills","memoryWorkshop","dashboard"};
+    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","reflectOnActivities","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer","frontend","contextControl","skills","memoryWorkshop","dashboard","continuousTasks"};
     for(auto it=j.begin();it!=j.end();++it) if(!allowed.contains(it.key())) throw std::runtime_error("config_unknown_field");
     if(j.at("schemaVersion")!=1) throw std::runtime_error("config_version");
     Config c;c.memoryWorkshop=j.value("memoryWorkshop",c.memoryWorkshop);workshop::validateSettings(c.memoryWorkshop);c.dashboardLayout=j.value("dashboard",Json::object());workshop::validateDashboard(c.dashboardLayout);c.contextControl=j.value("contextControl",Json::object());ContextControl::read(c.contextControl);c.frontend=j.value("frontend",c.frontend);if(!c.frontend.is_object())throw std::runtime_error("frontend_config");for(auto it=c.frontend.begin();it!=c.frontend.end();++it)if((it.key()!="startupAnimation"&&it.key()!="reducedMotion")||!it.value().is_boolean())throw std::runtime_error("frontend_config");const auto base=std::filesystem::absolute(path).parent_path();
@@ -85,6 +85,11 @@ Config loadConfig(const std::filesystem::path& path) {
         if(it->is_number_unsigned()&&it->get<std::uint64_t>()>static_cast<std::uint64_t>(maximum))throw std::runtime_error("config_range");
         const auto n=it->get<std::int64_t>();if(n<minimum||n>maximum)throw std::runtime_error("config_range");return n;
     };
+    c.continuousTasks=j.value("continuousTasks",c.continuousTasks);
+    if(!c.continuousTasks.is_object())throw std::runtime_error("continuous_tasks_config");
+    for(auto it=c.continuousTasks.begin();it!=c.continuousTasks.end();++it)if(it.key()!="enabled"&&it.key()!="maxActive"&&it.key()!="maxSteps")throw std::runtime_error("continuous_tasks_field");
+    if(c.continuousTasks.contains("enabled")&&!c.continuousTasks.at("enabled").is_boolean())throw std::runtime_error("continuous_tasks_enabled");
+    c.continuousTasks["maxActive"]=integer(c.continuousTasks,"maxActive",3,1,8);c.continuousTasks["maxSteps"]=integer(c.continuousTasks,"maxSteps",24,1,100);
     auto resolve=[&](const char* key){auto p=std::filesystem::u8path(j.at(key).get<std::string>());return std::filesystem::absolute(p.is_absolute()?p:base/p).lexically_normal();};
     c.dataRoot=resolve("dataRoot");c.characterRoot=resolve("characterRoot");c.uiRoot=resolve("uiRoot");
     c.configPath=std::filesystem::absolute(path);c.projectRoot=c.characterRoot.parent_path();

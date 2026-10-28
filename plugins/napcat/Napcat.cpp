@@ -102,7 +102,8 @@ class Napcat final:public BasePlugin {
             // Read-only snapshots need fresh pixels/layout even with identical
             // arguments. Side effects keep their stable recovery identity.
             const auto call=desktopOperationKey(requestId,name,hostArgs,std::to_string(nowMs())+":"+std::to_string(++observationSequence_));
-            const Json operation={{"tool",name},{"args",hostArgs},{"sources",sources},{"call_key",call},{"style_internal",name=="style_lora.preview"}};
+            Json operation={{"tool",name},{"args",hostArgs},{"sources",sources},{"call_key",call},{"style_internal",name=="style_lora.preview"}};
+            operation["input_source_id"]=tag+context.eventId;
             auto result=mailbox("napcat.tool.request",operation);
             const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(110);
             while(result.is_object()&&!result.value("done",false)&&!cancelled()&&!(stop&&stop())&&std::chrono::steady_clock::now()<deadline){std::this_thread::sleep_for(std::chrono::milliseconds(40));result=result.value("retry",false)?mailbox("napcat.tool.request",operation):mailbox("napcat.tool.result",{{"call_key",call}});}

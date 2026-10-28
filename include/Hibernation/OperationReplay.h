@@ -11,7 +11,7 @@ namespace hibernation {
 inline bool replayProtectedOperation(const std::string& tool){
     if(tool=="napcat.capture_and_send"||tool=="napcat.send_image")return true;
     static const std::set<std::string> names={"workspace.write","workspace.edit","activity.enqueue","habitat.create","habitat.act","habitat.arrange","atelier.write","atelier.append","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel","schedule.create","schedule.cancel","memory.remember","memory.revise","reflection.open","reflection.resolve","self.notice","self.close","state.propose","stage.propose","computer.open_application","television.open","television.open_page"};
-    return names.contains(tool)||pixelMutationTool(tool)||tool=="state.appraise"||tool=="mentor.execute";
+    return names.contains(tool)||(tool.starts_with("task.")&&tool!="task.status")||pixelMutationTool(tool)||tool=="state.appraise"||tool=="mentor.execute";
 }
 class OperationReplay {
     using Json=nlohmann::json;

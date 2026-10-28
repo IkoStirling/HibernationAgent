@@ -209,6 +209,7 @@
         finishActivity(plan,completed?"completed":"interrupted");saveActivities(plan);nextActivityTick=serviceNowMs()+500;
     }
     void prefetchActivities(std::int64_t now,const Json& snapshots,const Json& plan){
+        if(continuousWorkPending())return;
         const auto last=get("ha.state","current").value.value("lastUserInteractionMs",std::int64_t(0));const double idle=cfg.plugins.value("widget",Json::object()).value("autonomyIdleSeconds",30.0);
         const auto actor=profile(get("ha.settings","model").value.at("id"));const bool deferred=callsFor(actor).deferPrefetch;
         if(activityWasDeferred&&!deferred)nextActivityFill=now;activityWasDeferred=deferred;

@@ -1,6 +1,11 @@
 {
   "schemaVersion": 1,
-  "skills": {"enabled": true, "useBuiltins": true, "root": "", "grants": []},
+  "skills": {
+    "enabled": true,
+    "useBuiltins": true,
+    "root": "",
+    "grants": []
+  },
   "frontend": {
     "startupAnimation": true,
     "reducedMotion": false
@@ -60,10 +65,42 @@
   ],
   "maxToolRounds": 6,
   "plugins": {
-    "pixel-canvas": {"enabled": false, "maximumDocuments": 32, "reducedMotion": false, "topmost": true},
-    "style-lora": {"enabled": false, "applyEnabled": false, "pythonExecutable": "", "baseModelPath": "", "adapterId": "", "adapterScale": 1, "rank": 8, "maxSteps": 100, "maxSequenceLength": 512, "learningRate": 0.0002, "device": "auto"},
-    "mentor": {"enabled":true,"allowExecution":true,"backend":"chatgpt","codexExecutable":"","model":"","useSystemProxy":true,"proxyOrigin":"","maxRequestsPerHour":12,"cooldownSeconds":60,"timeoutSeconds":35},
-    "pocket": {"enabled":false,"scrambleSteps":4,"maximumMoves":24},
+    "pixel-canvas": {
+      "enabled": false,
+      "maximumDocuments": 32,
+      "reducedMotion": false,
+      "topmost": true
+    },
+    "style-lora": {
+      "enabled": false,
+      "applyEnabled": false,
+      "pythonExecutable": "",
+      "baseModelPath": "",
+      "adapterId": "",
+      "adapterScale": 1,
+      "rank": 8,
+      "maxSteps": 100,
+      "maxSequenceLength": 512,
+      "learningRate": 0.0002,
+      "device": "auto"
+    },
+    "mentor": {
+      "enabled": true,
+      "allowExecution": true,
+      "backend": "chatgpt",
+      "codexExecutable": "",
+      "model": "",
+      "useSystemProxy": true,
+      "proxyOrigin": "",
+      "maxRequestsPerHour": 12,
+      "cooldownSeconds": 60,
+      "timeoutSeconds": 35
+    },
+    "pocket": {
+      "enabled": false,
+      "scrambleSteps": 4,
+      "maximumMoves": 24
+    },
     "atelier": {
       "enabled": false,
       "maximumPieces": 48
@@ -81,7 +118,13 @@
       "wakeOnAction": false,
       "reducedMotion": false
     },
-    "reading": {"enabled": false,"language": "zh","maxRequestsPerHour": 60,"useSystemProxy": true,"autonomousReading": false},
+    "reading": {
+      "enabled": false,
+      "language": "zh",
+      "maxRequestsPerHour": 60,
+      "useSystemProxy": true,
+      "autonomousReading": false
+    },
     "television": {
       "enabled": false,
       "volume": 65,
@@ -155,6 +198,14 @@
     "profileId": "",
     "maxRewrites": 2
   },
-  "memoryWorkshop": {"enabled": true, "backupRoot": ""},
-  "dashboard": {}
+  "memoryWorkshop": {
+    "enabled": true,
+    "backupRoot": ""
+  },
+  "dashboard": {},
+  "continuousTasks": {
+    "enabled": true,
+    "maxActive": 3,
+    "maxSteps": 24
+  }
 }

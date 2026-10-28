@@ -39,7 +39,7 @@
         auto respond=[&](const char* responseKind,Json body){body["kind"]=responseKind;body["token"]=event.value("token",std::string{});plugins->event(body);};
         if(kind=="napcat.context.request"){
             const auto who=event.value("identity",Json::object());
-            const bool available=!runtimePaused&&!inputActive&&!busy()&&validRequestId(request)&&napcatIdentityAllowed(who);
+            const bool available=!runtimePaused&&!inputActive&&foregroundAvailable()&&validRequestId(request)&&napcatIdentityAllowed(who);
             Json response={{"available",available}};
             if(available){
                 yieldBackground(serviceNowMs());cancelActivities("qq_input");reactionGenerator.cancel();napcatSession=request;napcatIdentity=who;napcatLeaseUntil=serviceNowMs()+360000;life.contact(serviceNowMs());saveLife();
@@ -47,7 +47,7 @@
                 const auto development=get("ha.stage","current").value;Json state=life.snapshot();
                 const auto access=ChannelAccess::read(cfg.plugins.at("napcat"));const bool controls=napcatCanControl(who);
                 if(access.isolateMemory){Json limited=Json::object();for(const auto* field:{"activity","mood","energy","openness","willingness","attention","social_load","conversation_mode","behavior","updated_ms"})if(state.contains(field))limited[field]=state.at(field);state=std::move(limited);}
-                auto catalog=Json::array();if(controls)for(const auto& tool:tools()){const auto name=tool.at("name").get<std::string>();if(!name.starts_with("memory.")&&name!="capabilities.list")catalog.push_back(tool);}
+                auto catalog=Json::array();if(controls)for(const auto& tool:tools()){const auto name=tool.at("name").get<std::string>();if(!name.starts_with("memory.")&&name!="capabilities.list"&&(!continuous::taskTool(name)||taskChannelAllowed(who)))catalog.push_back(tool);}
                 auto capabilities=controls?characterCapabilities():Json::object();capabilities.erase("tools");
                 response["config"]={{"profiles",profiles},{"selectedProfile",get("ha.settings","model").value.at("id")},
                     {"reviewEnabled",access.review},{"reviewProfileId",cfg.reviewEnabled?cfg.reviewProfileId:get("ha.settings","model").value.at("id").get<std::string>()},{"maxReviewRewrites",cfg.maxReviewRewrites},
@@ -71,7 +71,7 @@
             if(worker->running()||!foregroundAvailableForNapcat()){nextWorkerPoll=0;respond("runtime.napcat.tool",{{"done",false},{"retry",true}});return true;}
             const auto catalog=styleInternal?plugins->catalog():tools();if(name.starts_with("memory.")||name=="capabilities.list"||std::none_of(catalog.begin(),catalog.end(),[&](const auto& t){return t.at("name")==name;})){
                 respond("runtime.napcat.tool",{{"done",true},{"output",toolFailure("tool_not_available")}});return true;}
-            Json payload={{"tool",name},{"args",event.value("args",Json::object())},{"call_key",key},{"identity",napcatIdentity},{"sources",event.value("sources",Json::array())},{"channel_request",request},{"style_internal",styleInternal}};
+            Json payload={{"tool",name},{"args",event.value("args",Json::object())},{"call_key",key},{"identity",napcatIdentity},{"sources",event.value("sources",Json::array())},{"channel_request",request},{"style_internal",styleInternal},{"input_source_id",event.value("input_source_id",std::string{})}};
             // A persisted start without completion is never blindly reexecuted.
             commit({{"ha.channel-calls",key,0,1,Json{{"status","started"},{"channel_request",request},{"tool",name}}.dump(),request}},request);
             auto job=spec("qq.tool","napcat.tool",payload,serviceNowMs());job.maxAttempts=1;
@@ -99,7 +99,7 @@
         if(payload.value("style_internal",false)&&payload.at("tool")=="style_lora.preview"&&napcatIdentityAllowed(payload.at("identity"))&&!token.requested()&&plugins&&plugins->enabled("style-lora")&&cfg.plugins.value("style-lora",Json::object()).value("applyEnabled",false)){
             output=plugins->invoke("style_lora.preview",payload.at("args"),[token]{return token.requested();});
         }else if(!payload.value("style_internal",false)&&napcatCanControl(payload.at("identity"))&&!token.requested()){
-            ProposalContext context;context.eventKind="user_message";context.eventId=payload.at("channel_request");context.stage=get("ha.stage","current").value.at("id");
+            ProposalContext context;context.eventKind="user_message";context.eventId=payload.at("channel_request");context.channelIdentity=payload.at("identity");context.channelInputId=payload.value("input_source_id",std::string{});context.stage=get("ha.stage","current").value.at("id");
             for(const auto& source:payload.at("sources")){Source s{source.at("id"),source.at("revision"),source.at("kind"),source.at("scope")};context.sources[s.id]=s;}
             try{output=performTool(payload.at("tool"),payload.at("args"),context,trace,[token]{return token.requested();});}catch(...){output=toolFailure("tool_execution_failed");}
         }

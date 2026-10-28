@@ -6,6 +6,7 @@ const browser=await chromium.launch({executablePath:process.env.HIBERNATION_TEST
 try{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(origin+'/#session='+session);await page.locator('[data-page="workspace"]').click();
+ const fold=page.locator('#skill-settings > .fold-head > .fold-toggle');await fold.waitFor();if(await fold.getAttribute('aria-expanded')!=='true')await fold.click();
  const skill=page.locator('#skill-settings article.card').filter({hasText:'Notes'});await skill.getByText('内容已变化，待重新授权',{exact:true}).waitFor();
  await skill.locator('summary').click();await skill.locator('label').filter({hasText:'workspace.read · '}).locator('input').check();
  await skill.getByRole('button',{name:'授权选中的工具并保存',exact:true}).click();

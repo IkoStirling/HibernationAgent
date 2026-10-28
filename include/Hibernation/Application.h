@@ -23,6 +23,9 @@ struct ProposalContext {
     std::map<std::string,Source> sources;
     // Provenance of private views, never authority for memory/stage proposals.
     std::map<std::string,Source> narrativeSources;
+    std::string taskId,createdTaskId,channelInputId; int taskStep=0;
+    Json channelIdentity=Json::object();
+    std::set<std::string> taskTools;
     std::string skillId,skillDigest;
     std::set<std::string> skillTools;
 };
@@ -57,6 +60,7 @@ struct Config {
     Json frontend={{"startupAnimation",true},{"reducedMotion",false}};
     Json memoryWorkshop={{"enabled",true},{"backupRoot",""}},dashboardLayout=Json::object();
     Json contextControl=Json::object();
+    Json continuousTasks={{"enabled",true},{"maxActive",3},{"maxSteps",24}};
     std::size_t maxToolRounds=6;
     bool reviewEnabled=false;
     bool retainConversationFocus=false;

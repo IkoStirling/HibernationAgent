@@ -19,7 +19,7 @@ std::string contentDigest(std::string_view text){
     std::transform(value.begin(),value.end(),value.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});return value;
 }
 bool validSkillId(std::string_view id){return !id.empty()&&id.size()<=48&&id.front()!='-'&&std::all_of(id.begin(),id.end(),[](unsigned char c){return (c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='-';});}
-bool skillGrantableTool(const std::string& name){return std::regex_match(name,std::regex("[A-Za-z][A-Za-z0-9_.-]{0,95}"))&&!name.starts_with("skills.")&&name!="mentor.execute"&&name!="activity.enqueue"&&name!="schedule.create";}
+bool skillGrantableTool(const std::string& name){return std::regex_match(name,std::regex("[A-Za-z][A-Za-z0-9_.-]{0,95}"))&&!name.starts_with("skills.")&&name!="mentor.execute"&&name!="activity.enqueue"&&name!="schedule.create"&&(!name.starts_with("task.")||name=="task.status");}
 void validateSkillSettings(const Json& settings){
     if(!settings.is_object()||settings.dump().size()>16384)throw std::runtime_error("skills_config");
     for(const auto& [key,value]:settings.items())if(key!="enabled"&&key!="root"&&key!="useBuiltins"&&key!="grants")throw std::runtime_error("skills_field");
