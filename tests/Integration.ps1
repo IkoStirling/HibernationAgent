@@ -26,7 +26,7 @@ try{
  $config.profiles=@($config.profiles[0],[pscustomobject]@{id='fixture';label='Fixture compatible model';protocol='chat-completions';enabled=$true;origin="http://127.0.0.1:$providerPort";basePath='/v1';model='fixture-model';credentialEnvironment='HIBERNATION_TEST_PROVIDER_KEY';supportsJsonSchema=$false;timeoutMs=10000;maxOutputTokens=2048})
  $config|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $configPath -Encoding utf8
  Start-ServiceProcess
- Status '/' 200 @{};Status '/api/state' 401 @{};Status '/api/state' 403 @{Authorization=$headers.Authorization;Origin='http://attacker.invalid'}
+ Status '/' 200 @{};Status '/ui/dashboard-order.js' 200 @{};Status '/ui/dashboard-panels.js' 200 @{};Status '/ui/memory-workshop.js' 200 @{};Status '/api/memory-workshop' 401 @{};Status '/api/state' 401 @{};Status '/api/state' 403 @{Authorization=$headers.Authorization;Origin='http://attacker.invalid'}
  Status '/api/state' 200 @{Authorization=$headers.Authorization;Origin=$script:origin}
  $first=Message '一颗恒星如何理解等待？';$second=Message '故事里有两次不同的相遇，时间差仍然未解。'
  $state=Call '/api/state';Check ($state.messages.Count-eq4) 'two persisted conversations';Check ($state.stage.id-eq'initial') 'stage is separate from attention state'

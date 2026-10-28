@@ -7,9 +7,16 @@ using namespace hibernation;
 int main(int argc,char** argv){
     try{
         if(argc!=3)return 2;const auto root=std::filesystem::weakly_canonical(std::filesystem::u8path(argv[1]));const std::string mode=argv[2];
-        if(mode!="low-energy"&&mode!="withdrawn"&&mode!="engaged"&&mode!="legacy-world")return 2;
+        if(mode!="low-energy"&&mode!="withdrawn"&&mode!="engaged"&&mode!="legacy-world"&&mode!="long-memory")return 2;
         std::ifstream marker(root/".synthetic-ai-evaluation");std::string purpose;std::getline(marker,purpose);if(purpose!="hibernation.dialogue-evaluation.v1")return 2;
         const auto data=root/"data";if(std::filesystem::exists(data/"archive/records.sqlite")||std::filesystem::exists(data/"runtime/memory-key.dpapi"))return 3;
+        if(mode=="long-memory"){
+            std::filesystem::create_directories(data/"archive");ayt::storage::RecordStore store;if(!store.open(data/"archive/records.sqlite",{openVaultCodec(data),false}))return 4;
+            std::string text="LONG_MEMORY_ORIGINAL ";for(int i=0;i<1200;++i)text+="合成故事中的说法尚未确认，后来的纠正必须保留。";
+            const Json raw={{"kind","user_message"},{"text",text},{"created_at",ayt::app::services::serviceNowMs()}};
+            if(!store.commit({{"ha.archive","long-memory",0,1,raw.dump(),"synthetic-long-memory"}},"synthetic-long-memory",ayt::app::services::serviceNowMs()))return 5;
+            std::cout<<Json{{"synthetic",true},{"bytes",text.size()}}.dump()<<'\n';return 0;
+        }
         if(mode=="legacy-world"){
             std::filesystem::create_directories(data/"archive");ayt::storage::RecordStore store;if(!store.open(data/"archive/records.sqlite",{openVaultCodec(data),false}))return 4;
             const auto now=ayt::app::services::serviceNowMs();Json applied={{"kind","tool_intent"},{"tool","pocket.press"},{"created_at",now},{"result",{{"applied",true},{"completed",false},{"game",{{"id","legacy-board"},{"revision",2},{"status","active"},{"moves",1},{"lit_count",4}}}}}};

@@ -12,6 +12,7 @@
 #include <Hibernation/TextPlayback.h>
 #include <Hibernation/MemoryContext.h>
 #include <Hibernation/MemoryLibrary.h>
+#include <Hibernation/MemoryWorkshop.h>
 #include <Hibernation/ActivityPlan.h>
 #include <Hibernation/ActivityPruning.h>
 #include <Hibernation/AttemptObservation.h>
@@ -55,6 +56,14 @@ Json valid(){return {{"visible_reply","允许没有固定结论。"},{"actions",
 ProposalContext context(){ProposalContext c;c.eventKind="user_message";c.eventId="e1";c.stage="initial";c.nextStage="exploring";c.sources={{"e1",{"e1",1,"user_message"}},{"e2",{"e2",1,"story_end"}}};return c;}
 }
 TEST_SUITE(RolePolicy)
+TEST_CASE(workshop_configuration_preserves_protected_paths_and_bounded_orders){
+    workshop::validateSettings({{"enabled",true},{"backupRoot",""}});workshop::validateDashboard({{"pluginOrder",Json::array({"widget","tts"})},{"sections",{{"models",Json::array({"profiles","review"})}}}});
+    bool denied=false;try{workshop::validateDashboard({{"pluginOrder",Json::array({"widget","widget"})}});}catch(...){denied=true;}CHECK(denied);
+    denied=false;try{workshop::validateSettings({{"enabled","true"}});}catch(...){denied=true;}CHECK(denied);
+    denied=false;try{workshop::validateSettings({{"backupRoot","relative/path"}});}catch(...){denied=true;}CHECK(denied);
+    Config c;c.dataRoot="E:/synthetic-workshop/data";c.characterRoot="D:/synthetic-app/character";c.uiRoot="D:/synthetic-app/ui";c.pluginRoot="D:/synthetic-app/plugins";c.draftsRoot=c.dataRoot/"drafts";c.materialsRoot=c.dataRoot/"materials";c.skillsRoot="D:/synthetic-app/skills";CHECK(workshop::validateRoots(c));c.memoryWorkshop["backupRoot"]="E:/synthetic-workshop/data/backup";CHECK(!workshop::validateRoots(c));c.memoryWorkshop["backupRoot"]="E:/synthetic-backups";c.computer["readRoots"]=Json::array({{{"id","exposed"},{"path","E:/synthetic-backups"}}});CHECK(!workshop::validateRoots(c));
+}
+
 TEST_CASE(conversation_focus_is_sourced_bounded_and_retry_safe_without_changing_persona){
     const Json proposal={{"subject","character"},{"advice","avoid"},{"questions","avoid_repeated"},{"source_quote","我想听你自己的话，先别给建议"}};std::string issue;
     auto state=proposeConversationFocus(Json::object(),proposal,"这会儿我想听你自己的话，先别给建议，就随便聊聊。","u0",1,100,issue);CHECK(state.has_value());CHECK(issue.empty());CHECK(validConversationFocus(*state));

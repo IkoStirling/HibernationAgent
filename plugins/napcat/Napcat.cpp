@@ -121,6 +121,7 @@ class Napcat final:public BasePlugin {
             }
             return dispatch(name,args,context,stop);
         };
+        policy->providerUsage=[this](const std::string& profile,const std::string& purpose,const Json& usage){host_.emit({{"kind","napcat.model.usage"},{"plugin","napcat"},{"profile_id",profile},{"purpose",purpose},{"usage",usage}});};
         policy->providerFailure=[this](const std::string& id,const std::string& signature,int status){host_.emit({{"kind","napcat.balance.failure"},{"plugin","napcat"},{"request_id",activeRequest_},{"profile_id",id},{"signature",signature},{"http_status",status}});};
         auto budgetIssue=std::make_shared<Json>(Json::object());policy->budgetFailure=[budgetIssue]{return *budgetIssue;};
         policy->reserveModelCalls=[this,budgetIssue](int amount){if(cancelled()){*budgetIssue={{"code","channel_session_unavailable"},{"message","QQ 后台任务已暂停。"},{"http_status",0}};return false;}const auto result=mailbox("napcat.budget.request",{{"amount",amount}});const bool allowed=result.value("allowed",false)&&!cancelled();*budgetIssue=allowed?Json::object():result.value("mailbox_timeout",false)?Json{{"code","channel_host_timeout"},{"message","等待桌面后台授权超时，请重试。"},{"http_status",0}}:result.value("failure",Json{{"code","channel_session_unavailable"},{"message","QQ 会话与桌面后台的连接已失效，请重试。"},{"http_status",0}});return allowed;};cfg.channel=policy;

@@ -37,23 +37,24 @@ int main(int argc,char** argv){
         }
         if(delay)std::this_thread::sleep_for(std::chrono::milliseconds(std::clamp(delay,0,30000)));
         if(httpStatus!=200){response.status=httpStatus;response.set_content(R"({"error":{"code":"fixture_transient"}})","application/json");return;}
+        const auto usage=Json::parse(read(root/"usage.json"),nullptr,false);const auto usageEvent=usage.is_object()?"data: "+Json{{"choices",Json::array()},{"usage",usage}}.dump()+"\n\n":std::string{};
         const auto parsed=Json::parse(output,nullptr,false);const bool native=parsed.is_object()&&parsed.contains("fixture_native_calls");Json callsOut=Json::array();
         if(native)for(const auto& call:parsed.at("fixture_native_calls")){const auto args=call.at("arguments").is_string()?call.at("arguments").get<std::string>():call.at("arguments").dump();if(responses)callsOut.push_back({{"type","function_call"},{"id","fc_"+call.at("id").get<std::string>()},{"call_id",call.at("id")},{"name",call.at("name")},{"arguments",args},{"status","completed"}});else callsOut.push_back({{"id",call.at("id")},{"type","function"},{"function",{{"name",call.at("name")},{"arguments",args}}}});}
         if(responses){
             Json outputItems=native?callsOut:Json::array({{{"type","message"},{"role","assistant"},{"status","completed"},{"content",Json::array({{{"type","output_text"},{"text",output}}})}}});
             if(native&&parsed.contains("fixture_native_text"))outputItems.push_back({{"type","message"},{"role","assistant"},{"status","completed"},{"content",Json::array({{{"type","output_text"},{"text",parsed.at("fixture_native_text")}}})}});
-            const Json envelope={{"id","fixture-request"},{"object","response"},{"model","fixture-model"},{"status","completed"},{"output",outputItems}};
+            Json envelope={{"id","fixture-request"},{"object","response"},{"model","fixture-model"},{"status","completed"},{"output",outputItems}};if(usage.is_object())envelope["usage"]=usage;
             if(Json::parse(request.body).value("stream",false)){const Json done={{"type","response.completed"},{"response",envelope}};response.set_content("event: response.completed\ndata: "+done.dump()+"\n\n","text/event-stream");}else response.set_content(envelope.dump(),"application/json");return;
         }
         if(Json::parse(request.body).value("stream",false)){
-            if(native){auto fragments=callsOut;for(size_t i=0;i<fragments.size();++i)fragments[i]["index"]=i;const Json delta={{"choices",Json::array({{{"index",0},{"delta",{{"tool_calls",fragments},{"content",parsed.value("fixture_native_text",std::string{})}}},{"finish_reason",nullptr}}})}};const Json finish={{"choices",Json::array({{{"index",0},{"delta",Json::object()},{"finish_reason","tool_calls"}}})}};response.set_content("data: "+delta.dump()+"\n\ndata: "+finish.dump()+"\n\ndata: [DONE]\n\n","text/event-stream");return;}
+            if(native){auto fragments=callsOut;for(size_t i=0;i<fragments.size();++i)fragments[i]["index"]=i;const Json delta={{"choices",Json::array({{{"index",0},{"delta",{{"tool_calls",fragments},{"content",parsed.value("fixture_native_text",std::string{})}}},{"finish_reason",nullptr}}})}};const Json finish={{"choices",Json::array({{{"index",0},{"delta",Json::object()},{"finish_reason","tool_calls"}}})}};response.set_content("data: "+delta.dump()+"\n\ndata: "+finish.dump()+"\n\n"+usageEvent+"data: [DONE]\n\n","text/event-stream");return;}
             const Json delta={{"id","fixture-request"},{"model","fixture-model"},{"choices",Json::array({{{"index",0},{"delta",{{"content",output}}},{"finish_reason",nullptr}}})}};
             const Json finish={{"choices",Json::array({{{"index",0},{"delta",Json::object()},{"finish_reason","stop"}}})}};
-            response.set_content("data: "+delta.dump()+"\n\ndata: "+finish.dump()+"\n\ndata: [DONE]\n\n","text/event-stream");return;
+            response.set_content("data: "+delta.dump()+"\n\ndata: "+finish.dump()+"\n\n"+usageEvent+"data: [DONE]\n\n","text/event-stream");return;
         }
         const Json message=native?Json{{"role","assistant"},{"content",parsed.contains("fixture_native_text")?parsed.at("fixture_native_text"):Json(nullptr)},{"tool_calls",callsOut}}:Json{{"role","assistant"},{"content",output}};
         auto envelope=nlohmann::json{{"id","fixture-request"},{"model","fixture-model"},{"choices",nlohmann::json::array({{{"message",message},{"finish_reason",native?"tool_calls":"stop"}}})}};
-        response.set_content(envelope.dump(),"application/json");
+        if(usage.is_object())envelope["usage"]=usage;response.set_content(envelope.dump(),"application/json");
     };
     server.Post("/v1/chat/completions",[&](const auto& request,auto& response){serve(request,response,false);});
     server.Post("/v1/responses",[&](const auto& request,auto& response){serve(request,response,true);});

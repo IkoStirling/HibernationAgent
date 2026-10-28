@@ -1,5 +1,5 @@
     bool foregroundAvailable()const{
-        if(napcatActive())return false;
+        if(workshopBusy()||napcatActive())return false;
         if(!journalHealthy)return false;
         for(const auto& job:jobs()){
             if(job.spec.kind=="role.solitude")continue;

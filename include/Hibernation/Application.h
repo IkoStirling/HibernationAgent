@@ -42,6 +42,7 @@ struct ChannelPolicy {
     std::function<Json(const std::string&,const Json&,const ProposalContext&,const std::string&,const std::function<bool()>&)> invokeDesktop;
     std::function<Json()> budgetFailure;
     std::function<void(const std::string&,const std::string&,int)> providerFailure;
+    std::function<void(const std::string&,const std::string&,const Json&)> providerUsage;
 };
 struct Config {
     std::shared_ptr<const ChannelPolicy> channel;
@@ -52,6 +53,7 @@ struct Config {
     Json computer={{"enabled",true},{"allowScreenCapture",false},{"readRoots",Json::array()}};
     Json plugins=Json::object(),remoteStorage={{"kind","none"},{"url",""},{"enabled",false}};
     Json frontend={{"startupAnimation",true},{"reducedMotion",false}};
+    Json memoryWorkshop={{"enabled",true},{"backupRoot",""}},dashboardLayout=Json::object();
     Json contextControl=Json::object();
     std::size_t maxToolRounds=6;
     bool reviewEnabled=false;

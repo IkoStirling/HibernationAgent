@@ -10,7 +10,7 @@ function Plan($Items){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Items
 function Silent{@{version=1;kind='silence';text=$null;calls=@()}}
 function Call($Id,$Tool,$Arguments){@{version=1;kind='call';text=$null;calls=@(@{id=$Id;tool=$Tool;args=$Arguments})}}
 function Capture{Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 65}
-function CapabilityContext{$text=(Capture).messages[0].content;$marker="`n可用能力：";$at=$text.IndexOf($marker);if($at-lt0){throw 'capability context missing'};$begin=$at+$marker.Length;$end=$text.IndexOf("`nSkill只提供",$begin);if($end-le$begin){throw 'capability context end missing'};$text.Substring($begin,$end-$begin)|ConvertFrom-Json -Depth 60}
+function CapabilityContext{((Capture).messages[1].content|ConvertFrom-Json -Depth 65).current_capabilities}
 function Requests{if(Test-Path -LiteralPath (Join-Path $root provider/requests.jsonl)){return @(Get-Content -LiteralPath (Join-Path $root provider/requests.jsonl)).Count};0}
 function Message($Items){Plan $Items;$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='独立私下活动检查'};Await {!(Api '/api/chat').busy} 'message';Check (!(Api '/api/chat').call_failed) 'fixture dialogue completes'}
 function Alone($Items){Plan $Items;$before=@((Api '/api/state').jobs|Where-Object id -eq solitude.once);$token=if($before.Count){$before[0].run_token}else{0};$null=Api '/api/solitude' @{};Await {$script:last=@((Api '/api/state').jobs|Where-Object id -eq solitude.once)[0];$script:last.state-eq'succeeded'-and$script:last.run_token-gt$token} 'solitude';$script:last.result|ConvertFrom-Json}

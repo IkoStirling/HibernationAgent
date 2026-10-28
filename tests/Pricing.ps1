@@ -36,7 +36,7 @@ try{
  $last=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 70
  Check ($last.tools.Count-gt2) 'two actions do not consume the third peak action slot'
  $capped=Message 3;$last=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 70
- Check ($capped.turns.Count-eq4-and$last.tools.Count-eq2) 'after three actions peak final stage advertises only reply and silence functions'
+ Check ($capped.turns.Count-eq4-and$last.tools.Count-gt2-and$capped.turns[0].request_footprint.tool_schema_bytes-eq$capped.turns[-1].request_footprint.tool_schema_bytes) 'final stage retains stable tool declarations while the program enforces the action limit'
  $s=(Api '/api/dashboard').settings;Check ($s.maxToolRounds-eq6-and$s.contextControl.preset-eq'full'-and$s.review.maxRewrites-eq2) 'pricing overlay never overwrites baseline settings'
  Policy 'force-normal';$restored=Message;Check ($restored.reviews.Count-eq3-and$restored.pricing_policy.effective_max_tool_rounds-eq6) 'manual normal restores original limits without restart'
  Policy 'off';Check (!(Api '/api/dashboard').deepseek_pricing.applied) 'manual off disables adjustment'

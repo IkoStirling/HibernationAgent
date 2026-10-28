@@ -85,6 +85,7 @@
         return true;
     }
     bool foregroundAvailableForNapcat()const{
+        if(workshopBusy())return false;
         for(const auto& job:jobs())if(job.state==JobState::Running||job.state==JobState::Pending&&(job.spec.id=="chat"||job.spec.id=="event"||job.spec.id=="operator.tool"||job.spec.id=="qq.tool"))return false;return true;
     }
     JobOutcome runNapcatTool(const JobClaim& claim,ayt::task::CancellationToken token){

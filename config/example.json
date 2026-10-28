@@ -152,5 +152,7 @@
     "retainConversationFocus": false,
     "profileId": "",
     "maxRewrites": 2
-  }
+  },
+  "memoryWorkshop": {"enabled": true, "backupRoot": ""},
+  "dashboard": {}
 }

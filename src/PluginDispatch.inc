@@ -1,4 +1,5 @@
     void processPluginEvents(std::int64_t now){for(auto event:plugins->takeEvents()){
+            if(event.value("plugin",std::string{})=="napcat"&&event.value("kind",std::string{})=="napcat.model.usage"){recordModelUsage(event.value("profile_id",std::string{}),"qq_"+event.value("purpose",std::string{}),event.value("usage",Json::object()));continue;}
             if(napcatControl(event))continue;
             if(event.value("kind","")=="ui.chat.open"){
                 if(cfg.desktopEnabled&&event.value("plugin","")=="widget"&&event.contains("x")&&event.contains("y")&&event.at("x").is_number_integer()&&event.at("y").is_number_integer()&&std::abs(event.at("x").get<double>())<=100000&&std::abs(event.at("y").get<double>())<=100000){desktopRequests=Json::array({{{"x",event.at("x")},{"y",event.at("y")},{"mode",event.value("mode",std::string("floating"))}}});}
