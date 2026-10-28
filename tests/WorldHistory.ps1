@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
+param([Parameter(Mandatory)][string]$FixtureExecutable,[Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
 $ErrorActionPreference='Stop';$service=$null;$provider=$null;$checks=0
 $root=Join-Path $ScratchRoot ('world-history-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='world-history-fixture'
@@ -11,6 +11,7 @@ function Message($Items){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($It
 function Start-Backend{$script:service=Start-Process -FilePath $Executable -ArgumentList ('--config "'+$configPath+'" --ready-file "'+$ready+'"') -WindowStyle Hidden -PassThru;Await {if($service.HasExited){throw 'history host exited'};if(Test-Path -LiteralPath $ready){return (Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).pid-eq$service.Id};$false} 'backend';$script:origin='http://127.0.0.1:'+((Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).port)}
 function Stop-Backend{$null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)-and$service.ExitCode-eq0) 'clean process exit'}
 try{
+ [IO.File]::WriteAllText((Join-Path $root .synthetic-ai-evaluation),'hibernation.dialogue-evaluation.v1',[Text.UTF8Encoding]::new($false));$seed=& $FixtureExecutable $root legacy-world;Check ($LASTEXITCODE-eq0) 'fresh marked archive seeds actual and pending legacy classifications'
  $providerRoot=Join-Path $root provider;New-Item -ItemType Directory -Force $providerRoot|Out-Null
  $provider=Start-Process -FilePath $ProviderExecutable -ArgumentList ('"'+$providerRoot+'"') -WindowStyle Hidden -PassThru;Await {Test-Path -LiteralPath (Join-Path $providerRoot port)} 'provider';$fixture='http://127.0.0.1:'+(Get-Content -LiteralPath (Join-Path $providerRoot port))
  $cfg=Get-Content -LiteralPath (Join-Path $ProjectRoot config/example.json) -Raw|ConvertFrom-Json -AsHashtable
@@ -18,6 +19,12 @@ try{
  $cfg.plugins=@{atelier=@{enabled=$true};pocket=@{enabled=$true;scrambleSteps=3;maximumMoves=24}};$cfg.computer=@{enabled=$false};$cfg.solitudeIntervalMs=604800000;$cfg.idleBeforeSolitudeMs=86400000;$cfg.reflectOnActivities=$false;$cfg.maxStartsPerHour=1000
  $cfg.profiles=@($cfg.profiles[0],@{id='actor';label='history fixture';enabled=$true;protocol='chat-completions';origin=$fixture;model='fixture-model';supportsJsonObject=$true});$cfg.review=@{enabled=$false}
  $configPath=Join-Path $root config.json;$ready=Join-Path $root ready.json;$cfg|ConvertTo-Json -Depth 65|Set-Content -LiteralPath $configPath -Encoding utf8;Start-Backend;$null=Api '/api/model' @{id='actor'}
+ $r=Message @((Call legacy memory.archive_read @{id='legacy-applied'}),(Silent));$old=$r[0].result.records[0]
+ Check ($r[0].ok-and$old.legacy_applied_puzzle-and$old.recorded_kind-eq'tool_intent'-and$old.result.applied-and!$old.result.completed-and$old.result.game.moves-eq1) 'legacy applied action is readable without turning an unfinished game into a win'
+ $r=Message @((Call legacyfind memory.archive_search @{query='legacy-board';limit=8}),(Silent));Check (@($r[0].result.records|Where-Object id -eq legacy-applied).Count-eq1-and@($r[0].result.records|Where-Object {$_.id-in@('legacy-pending','legacy-unrelated')}).Count-eq0) 'legacy applied history is searchable without exposing pending or unrelated intents'
+ $raw=Api '/api/archive' @{id='legacy-applied'};Check ($raw.records[0].data.kind-eq'tool_intent'-and$raw.records[0].data.result.applied-and$raw.records[0].revision-eq1) 'legacy projection does not rewrite original encrypted history'
+ foreach($blocked in @('legacy-pending','legacy-unrelated')){$r=Message @((Call blocked memory.archive_read @{id=$blocked}),(Silent));Check ($r[0].ok-and$r[0].result.records.Count-eq0) 'pending and unrelated intents remain outside readable world history'}
+ $r=Message @((Call legacysource memory.archive_read @{id='legacy-applied'}),(Call notice self.notice @{id='legacy-attention';expected_revision=0;kind='interest';topic='以前试过的一格';note='记得当时确实按过，并没有解完';stance='curious';source_ids=@('legacy-applied')}),(Silent));Check ($r[0].ok-and$r[0].result.thread.experience_contexts[0].id-eq'legacy-board') 'retrieved legacy source keeps its raw kind and remains valid evidence for personal interpretation'
  $piece=@{id='old-corner';expected_revision=0;title='留下的角落';kind='story';stage='draft';content='WORLD_HISTORY_PRIVATE 原来这里有半个圆。'}
  $r=Message @((Call write atelier.write $piece),(Silent));$written=$r[0].source_id;Check ($r[0].ok-and$written) 'a real authored piece has its original write receipt'
  $r=Message @((Call keep self.notice @{id='a-small-start';expected_revision=0;kind='intention';topic='留一个故事开头';note='想先留下一小段';stance='want';source_ids=@($written)}),(Silent));Check ($r[0].result.thread.experience_contexts[0].id-eq$piece.id) 'personal concern identifies its actual authored experience'

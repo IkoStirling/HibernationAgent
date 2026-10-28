@@ -12,11 +12,15 @@ inline std::string experienceExcerpt(const std::string& text,std::size_t limit){
 }
 inline nlohmann::json archiveWorldExperience(const nlohmann::json& record){
     using Json=nlohmann::json;
-    if(record.value("kind",std::string{})!="tool_observation"||!record.contains("result")||!record.at("result").is_object())return nullptr;
+    if(!record.contains("result")||!record.at("result").is_object())return nullptr;
     const auto tool=record.value("tool",std::string{});
+    const auto& data=record.at("result");const auto kind=record.value("kind",std::string{});
+    const auto game=data.value("game",Json::object());
+    const bool legacyApplied=kind=="tool_intent"&&(tool=="pocket.start"||tool=="pocket.press"||tool=="pocket.leave")&&data.contains("applied")&&data.at("applied").is_boolean()&&data.at("applied")==true&&game.is_object()&&game.contains("id")&&game.at("id").is_string()&&!game.at("id").get_ref<const std::string&>().empty()&&game.at("id").get_ref<const std::string&>().size()<=32&&game.contains("revision")&&game.at("revision").is_number_integer()&&game.at("revision").get<std::int64_t>()>0;
+    if(kind!="tool_observation"&&!legacyApplied)return nullptr;
     static const std::set<std::string> concrete={"pocket.start","pocket.press","pocket.leave","pocket.observe","atelier.write","atelier.append","atelier.read","reading.open","workspace.read","workspace.write","workspace.edit","habitat.create","habitat.act","habitat.arrange","habitat.observe","workspace.view_image","computer.screenshot","television.observe","television.observe_sequence"};
     if(!concrete.contains(tool))return nullptr;
-    const auto& data=record.at("result");Json facts=Json::object();
+    Json facts=Json::object();
     const auto copy=[&](Json& into,const Json& from,std::initializer_list<const char*> fields){for(const auto* field:fields)if(from.contains(field)&&from.at(field).is_primitive()){
         const auto& value=from.at(field);into[field]=value.is_string()?Json(experienceExcerpt(value.get_ref<const std::string&>(),512)):value;
     }};
@@ -43,7 +47,8 @@ inline nlohmann::json archiveWorldExperience(const nlohmann::json& record){
     else if((tool=="atelier.write"||tool=="atelier.append")&&data.value("written",false)&&record.contains("written_content")&&record.at("written_content").is_string()){
         text=record.at("written_content").get<std::string>();scope=tool=="atelier.append"?"applied_append_fragment":"applied_whole_piece";
     }
-    Json view={{"kind","tool_observation"},{"tool",tool},{"created_at",record.value("created_at",std::int64_t(0))},{"context_role","historical_world_receipt"},{"result",facts},{"text",tool+"\n"+facts.dump()}};
+    Json view={{"kind",kind},{"tool",tool},{"created_at",record.value("created_at",std::int64_t(0))},{"context_role","historical_world_receipt"},{"result",facts},{"text",tool+"\n"+facts.dump()}};
+    if(legacyApplied){view["recorded_kind"]="tool_intent";view["legacy_applied_puzzle"]=true;view["text"]=view.at("text").get<std::string>()+"\nLegacy classification: applied=true confirms the individual operation happened; completed indicates whether the whole puzzle was solved. The original record is unchanged.";}
     if(!scope.empty()){view["observed_text_scope"]=scope;view["observed_text_bytes"]=text.size();view["observed_text_clipped"]=text.size()>60000;view["text"]=view.at("text").get<std::string>()+"\n"+experienceExcerpt(text,60000);}
     view["historical_only"]=true;return view;
 }

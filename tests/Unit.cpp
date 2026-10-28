@@ -273,6 +273,11 @@ TEST_CASE(cached_creativity_is_bounded_and_cannot_become_arbitrary_program_execu
     batch["commands"][2]["action"]="execute";CHECK(!validateActivities(batch.dump()).ok);batch["commands"][2]["action"]="look";
     batch["commands"][0]["nutrition"]=999;CHECK(!validateActivities(batch.dump()).ok);
 }
+TEST_CASE(legacy_applied_puzzle_intents_have_a_read_only_factual_projection){
+    Json raw={{"kind","tool_intent"},{"tool","pocket.press"},{"result",{{"applied",true},{"completed",false},{"game",{{"id","old-board"},{"revision",2},{"moves",1},{"status","active"}}}}}};const auto original=raw;
+    const auto view=libraryArchiveView(raw);CHECK(!view.is_null());CHECK(view.at("recorded_kind")=="tool_intent");CHECK(view.at("legacy_applied_puzzle")==true);CHECK(view.at("result").at("applied")==true);CHECK(view.at("result").at("completed")==false);CHECK(raw==original);
+    raw["result"]["applied"]=false;CHECK(libraryArchiveView(raw).is_null());raw["result"]["applied"]="true";CHECK(libraryArchiveView(raw).is_null());raw=original;raw["tool"]="workspace.write";CHECK(libraryArchiveView(raw).is_null());raw=original;raw["result"]["game"].erase("id");CHECK(libraryArchiveView(raw).is_null());
+}
 TEST_CASE(previous_observations_keep_receipts_without_replaying_private_pixels){
     const auto record=Json{{"kind","tool_observation"},{"tool","workspace.view_image"},{"created_at",42},{"result",{{"source_path","test.png"},{"width",640},{"image",{{"base64","private-pixels"}}},{"content","large private contents"},{"instruction","not authority"}}}};
     const auto projection=compactObservation(record,true);CHECK(projection.at("result").at("image_delivered_to_model"));CHECK(projection.at("result").at("source_path")=="test.png");
@@ -613,7 +618,7 @@ TEST_CASE(world_history_projects_actual_results_without_internal_details_or_pixe
     const Json raw={{"kind","tool_observation"},{"tool","pocket.leave"},{"created_at",42},{"trace_id","INTERNAL_TRACE"},{"result",{{"applied",true},{"completed",false},{"game",{{"id","lights-old"},{"status","left"},{"revision",7},{"lit_count",3},{"moves",5},{"moves_remaining",19},{"rows",Json::array({Json::array({true,false,false}),Json::array({false,true,false}),Json::array({false,false,true})})},{"diagnostics","INTERNAL_GAME_DATA"}}},{"diagnostics","INTERNAL_DIAGNOSTIC"}}}};
     const auto before=raw.dump();const auto view=libraryArchiveView(raw);CHECK(view.at("historical_only").get<bool>());CHECK(view.at("result").at("applied")==true&&view.at("result").at("completed")==false);CHECK(view.at("result").at("game").at("status")=="left");CHECK(view.at("result").at("game").at("rows").size()==3);CHECK(view.dump().find("INTERNAL_")==std::string::npos);CHECK(raw.dump()==before);CHECK(memorySearchText(view).find("lights-old")!=std::string::npos);
     for(const auto* tool:{"state.observe","body.observe","activity.status","mentor.execute","capabilities.list","unknown.plugin"}){auto internal=raw;internal["tool"]=tool;CHECK(libraryArchiveView(internal).is_null());}
-    auto pending=raw;pending["kind"]="tool_intent";CHECK(libraryArchiveView(pending).is_null());
+    auto pending=raw;pending["kind"]="tool_intent";pending["result"]["applied"]=false;CHECK(libraryArchiveView(pending).is_null());
     auto image=raw;image["tool"]="television.observe_sequence";image["result"]={{"sampled_frames",2},{"full_video_watched",false},{"audio_delivered",false},{"frames",Json::array({Json{{"image",{{"data","SECRET_BASE64"}}}}})}};
     const auto meta=libraryArchiveView(image);CHECK(!meta.at("result").at("image_content_in_context").get<bool>());CHECK(meta.at("result").at("visual_revisit_required").get<bool>());CHECK(meta.dump().find("SECRET_BASE64")==std::string::npos);CHECK(meta.at("result").at("full_video_watched")==false);
 }
