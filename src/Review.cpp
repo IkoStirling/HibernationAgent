@@ -1,4 +1,5 @@
 #include <Hibernation/Review.h>
+#include <Hibernation/OwnerContinuity.h>
 #include <Hibernation/ModelJson.h>
 #include <AYSerializer/JsonSchema.h>
 namespace hibernation {
@@ -58,7 +59,7 @@ bool isLegacyMetaReply(const Json& record){
     for(const auto* marker:{"实验代称","小说正式设定","状态和记忆由程序","记忆由程序维护"})if(text.find(marker)!=std::string::npos)return true;
     return false;
 }
-std::string reviewSchema(bool withFocus){
+std::string reviewSchema(bool withFocus,bool withContinuity){
     auto schema=Json::parse(R"({"type":"object","additionalProperties":false,"required":["decision","reason","guidance"],"properties":{"decision":{"type":"string","enum":["approve","rewrite","reset","deny"]},"reason":{"type":"string","enum":["ok","meta_leak","persona","continuity","unsupported_claim","tool_intent","other"]},"guidance":{"type":"string","maxLength":800}}})");
     if(withFocus){
         const Json update={{"type","object"},{"additionalProperties",false},{"required",Json::array({"subject","advice","questions","source_quote"})},{"properties",{
@@ -68,12 +69,13 @@ std::string reviewSchema(bool withFocus){
             {"source_quote",{{"type","string"},{"minLength",4},{"maxLength",160}}}
         }}};
         schema["required"].push_back("focus_update");schema["properties"]["focus_update"]={{"anyOf",Json::array({Json{{"type","null"}},update})}};
-    }return schema.dump();
+    }if(withContinuity){schema["properties"]["continuity_updates"]={{"type","array"},{"maxItems",8},{"items",continuity::noteParameters()}};}
+    return schema.dump();
 }
-ValidatedOutput validateReview(std::string_view text,bool withFocus){
+ValidatedOutput validateReview(std::string_view text,bool withFocus,bool withContinuity){
     const auto envelope=modelJsonEnvelope(text);if(!envelope)return {false,"invalid_review",{}};text=*envelope;
-    if(!ayt::serializer::validateJsonDocument(text,reviewSchema(withFocus)))return {false,"invalid_review",{}};
-    auto value=Json::parse(text);if((value.at("decision")=="approve")!=(value.at("reason")=="ok"))return {false,"review_decision_conflict",{}};
+    auto value=Json::parse(text,nullptr,false);if(value.is_discarded())return {false,"invalid_review",{}};if(withContinuity&&value.is_object()&&!value.contains("continuity_updates"))value["continuity_updates"]=Json::array();
+    if(!ayt::serializer::validateJsonDocument(value.dump(),reviewSchema(withFocus,withContinuity)))return {false,"invalid_review",{}};if((value.at("decision")=="approve")!=(value.at("reason")=="ok"))return {false,"review_decision_conflict",{}};
     return {true,"ok",std::move(value)};
 }
 }

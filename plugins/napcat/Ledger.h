@@ -23,7 +23,7 @@ public:
         auto index=read("index");std::vector<ayt::storage::RecordMutation> changes;auto& active=index.value["active"];const auto scope=conversationScope(root.value);
         std::string text=root.value.at("text");PluginJson members=PluginJson::array({root.value.at("message_id")});auto last=root.value.at("created_ms").get<std::int64_t>();
         for(auto it=active.begin();it!=active.end();){if(*it==id){++it;continue;}auto child=read(*it);const auto stamp=child.value.at("created_ms").get<std::int64_t>();
-            if(windowMs<=0||conversationScope(child.value)!=scope||child.value.value("status",std::string{})!="queued"||stamp<root.value.at("created_ms").get<std::int64_t>()||stamp>root.value.at("created_ms").get<std::int64_t>()+windowMs||members.size()>=8||text.size()+1+child.value.at("text").get_ref<const std::string&>().size()>12000){++it;continue;}
+            if(windowMs<=0||conversationScope(child.value)!=scope||child.value.value("status",std::string{})!="queued"||stamp<root.value.at("created_ms").get<std::int64_t>()||stamp>root.value.at("created_ms").get<std::int64_t>()+windowMs||members.size()>=8||text.size()+1+child.value.at("text").get_ref<const std::string&>().size()>65536){++it;continue;}
             text+="\n"+child.value.at("text").get<std::string>();members.push_back(child.value.at("message_id"));last=std::max(last,stamp);child.value["status"]="batched";child.value["batch_parent"]=id;changes.push_back(put(*it,child,child.value));it=active.erase(it);
         }
         root.value["input_text"]=text;root.value["input_message_ids"]=members;root.value["input_last_ms"]=last;changes.push_back(put(id,root,root.value));changes.push_back(put("index",index,index.value));commit(std::move(changes));return root.value;

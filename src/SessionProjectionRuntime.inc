@@ -12,7 +12,7 @@
         const auto add=[&](const Source& s,const char* access){const auto key=s.scope+":"+s.id;if(seen.insert(key).second)refs.push_back({{"scope",s.scope},{"id",s.id},{"revision",s.revision},{"kind",s.kind},{"access",access}});};
         for(const auto& [key,s]:context.sources)add(s,"content");for(const auto& [key,s]:context.narrativeSources)add(s,"narrative");return refs;
     }
-    Json projectionFence()const{return {{"access",get("ha.access","current").revision},{"dialogue",get("ha.context","dialogue").revision},{"stage",get("ha.stage","current").revision}};}
+    Json projectionFence()const{return {{"owner_access",ownerAccessFence()},{"access",get("ha.access","current").revision},{"dialogue",get("ha.context","dialogue").revision},{"stage",get("ha.stage","current").revision}};}
     bool projectionSourcesAllowed(const Json& refs,bool retained=true)const{
         if(!refs.is_array()||refs.size()>256)return false;
         const auto policy=visibility();const auto dialogue=get("ha.context","dialogue").value;

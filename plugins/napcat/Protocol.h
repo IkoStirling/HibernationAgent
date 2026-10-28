@@ -113,7 +113,7 @@ inline std::optional<PluginJson> parseEvent(const PluginJson& event,const Settin
         else text+="[未读取的"+kind.substr(0,24)+"消息]";
     }
     if(type=="group"&&s.mentionOnly&&!mentioned)return {};
-    if(text.empty()||text.size()>12000||text.find_first_not_of(" \r\n\t")==std::string::npos)return {};
+    if(text.empty()||text.size()>65536||text.find_first_not_of(" \r\n\t")==std::string::npos)return {};
     const auto key="qq-"+digest(s.bot+":"+type+":"+group+":"+sender+":"+mid).substr(0,48);
     const auto contentSignature=digest(text+attachments.dump());
     for(size_t i=0;i<attachments.size();++i){attachments[i]["id"]="qqimage-"+digest(key+":"+std::to_string(i)).substr(0,40);attachments[i]["message_id"]=mid;attachments[i]["received_ms"]=now;}

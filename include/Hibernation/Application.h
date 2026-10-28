@@ -41,6 +41,8 @@ struct ChannelPolicy {
     Json identity=Json::object(),roleState=Json::object(),stage=Json::object();
     std::function<bool(int)> reserveModelCalls;
     Json desktopTools=Json::array(),desktopCapabilities=Json::object(),body=Json::object();
+    bool sharedOwner=false;
+    Json sharedUnderstanding=Json::object(),sharedPersonal=Json::object(),sharedFocus=Json::object(),sharedFocusSource=Json::object(),sharedQuestions=Json::array(),sharedHiddenSources=Json::array(),sharedDialogueExcluded=Json::array();
     std::filesystem::path sharedMemoryRoot;
     std::function<Json(const std::string&,const Json&,const ProposalContext&,const std::string&,const std::function<bool()>&)> invokeDesktop;
     std::function<Json()> budgetFailure;

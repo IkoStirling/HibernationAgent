@@ -14,7 +14,7 @@ function Idle{Wait-For {!(Call '/api/chat').busy} 'turn complete'}
 function Plan($Responses){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Responses|ForEach-Object{if($_ -is [hashtable] -and $_.ContainsKey('fixture_status')){@{response='';http_status=$_.fixture_status}}else{@{response=$_}}})}|ConvertTo-Json -Depth 40|Set-Content -LiteralPath (Join-Path $providerRoot 'plan.json') -Encoding utf8}
 function Reply([string]$Text){@{version=1;kind='reply';text=$Text;calls=@();presentation=@{speech=$false;bubble=$true};carry_forward=$null;appraisal=$null}}
 function ReviewPlan($Responses){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Responses|ForEach-Object{if($_ -is [hashtable] -and $_.ContainsKey('fixture_status')){@{response='';http_status=$_.fixture_status}}else{@{response=$_}}})}|ConvertTo-Json -Depth 40|Set-Content -LiteralPath (Join-Path $providerRoot 'review-plan.json') -Encoding utf8}
-function Verdict([string]$Decision='approve',[string]$Reason='ok'){@{decision=$Decision;reason=$Reason;guidance=if($Decision-eq'approve'){''}else{'保留自身判断，用自然的角色话语重新表达。'}}}
+function Verdict([string]$Decision='approve',[string]$Reason='ok'){@{decision=$Decision;reason=$Reason;continuity_updates=@();guidance=if($Decision-eq'approve'){''}else{'保留自身判断，用自然的角色话语重新表达。'}}}
 function Tool([string]$Id,[string]$Name,$ToolArguments){@{id=$Id;tool=$Name;args=$ToolArguments}}
 function Calls($Items){@{version=1;kind='call';text=$null;calls=@($Items);presentation=@{speech=$false;bubble=$false};carry_forward=$null;appraisal=$null}}
 function Message([string]$Text){$r=Call '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$Text};Idle;return $r}

@@ -6,12 +6,12 @@
 namespace hibernation {
 struct MemoryVisibility {
     std::set<std::string> memories,archives;
-    bool source(const Source& s)const{return !(s.scope=="ha.memory"?memories:archives).contains(s.id);}
-    bool allows(const Json& memory)const{for(const auto& s:memory.at("sources"))if((s.at("scope")=="ha.memory"?memories:archives).contains(s.at("id").get<std::string>()))return false;return true;}
+    bool source(const Source& s)const{return !(s.scope.ends_with("ha.memory")?memories:archives).contains(s.id);}
+    bool allows(const Json& memory)const{for(const auto& s:memory.at("sources"))if((s.at("scope").get<std::string>().ends_with("ha.memory")?memories:archives).contains(s.at("id").get<std::string>()))return false;return true;}
 };
 inline MemoryVisibility memoryVisibility(const std::vector<ayt::storage::VersionedRecord>& rows,const Json& hidden){
     MemoryVisibility result;for(const auto& id:hidden)result.memories.insert(id.get<std::string>());
-    bool changed=true;while(changed){changed=false;for(const auto& r:rows){const auto value=Json::parse(r.payload);if(result.memories.contains(r.id)){for(const auto& s:value.at("sources"))if(s.at("scope")=="ha.archive")changed=result.archives.insert(s.at("id").get<std::string>()).second||changed;}else if(!result.allows(value))changed=result.memories.insert(r.id).second||changed;}}
+    bool changed=true;while(changed){changed=false;for(const auto& r:rows){const auto value=Json::parse(r.payload);if(result.memories.contains(r.id)){for(const auto& s:value.at("sources"))if(s.at("scope").get<std::string>().ends_with("ha.archive"))changed=result.archives.insert(s.at("id").get<std::string>()).second||changed;}else if(!result.allows(value))changed=result.memories.insert(r.id).second||changed;}}
     return result;
 }
 inline bool memoryCjkLetter(std::string_view scalar){

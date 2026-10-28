@@ -27,10 +27,10 @@
         const std::function<void(const Json&,unsigned)> visit=[&](const Json& ref,unsigned depth){
             if(depth>8||visited.size()>=64)return;
             const auto scope=ref.at("scope").get<std::string>(),key=ref.at("id").get<std::string>();
-            if((scope!=archiveScope&&scope!=memoryScope)||!visited.insert(scope+":"+key).second)return;
+            if((!scope.ends_with(archiveScope)&&!scope.ends_with(memoryScope))||!visited.insert(scope+":"+key).second)return;
             const Source source{key,ref.at("revision"),ref.at("kind"),scope};if(!policy.source(source))return;
             const auto row=get(scope,key);if(!row.revision||row.revision!=source.revision)return;
-            if(scope==memoryScope){if(!policy.allows(row.value))return;for(const auto& parent:row.value.at("sources"))visit(parent,depth+1);return;}
+            if(scope.ends_with(memoryScope)){if(!policy.allows(row.value))return;for(const auto& parent:row.value.at("sources"))visit(parent,depth+1);return;}
             if(row.value.value("kind",std::string{})=="assistant_message"){
                 const auto trace=get("ha.trace",row.value.value("trace_id",std::string{}));
                 if(trace.revision){
@@ -126,7 +126,7 @@
         return {{"threads",values},{"matching_count",matches.size()},{"omitted_count",matches.size()-values.size()},{"guide","这里是有来源的兴趣、偏好和未完打算，不是待完成的作业。stance/note是最近感受，leaning/basis是缓慢积累的倾向；recent_changes保留不同看法。experience_contexts是这些看法曾基于的实际游戏、作品或材料，不表示它们仍在当前场景，也不把它们硬定为下一步目标；旧局的步数不能套到新局。需要过去实际结果时可用memory.archive_search按对象id查阅，只在相关时再接续。self.observe可按query找旧关注，status=closed能找做完或放下的缘由，查询不会恢复旧任务。"}};
     }
     Json personalDialogueContext(const std::string& input,bool privateTime,const Json& bodyAtInput=Json::object())const{
-        auto view=personalContext();if(privateTime)return view;
+        auto view=cfg.channel&&cfg.channel->sharedOwner?cfg.channel->sharedPersonal:personalContext();if(privateTime)return view;
         const auto plan=activityQueue(),previous=bodyAtInput.value("activity_queue",Json::object());
         for(auto& thread:view["threads"]){
             const auto text=thread.value("topic",std::string{})+" "+thread.value("note",std::string{});

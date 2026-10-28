@@ -1,5 +1,5 @@
 param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
-$ErrorActionPreference='Stop';$checks=0;$service=$null;$provider=$null
+$ErrorActionPreference='Stop';. (Join-Path $PSScriptRoot ProjectedRequest.ps1);$checks=0;$service=$null;$provider=$null
 $root=Join-Path $ScratchRoot ('conversation-focus-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='conversation-focus-fixture'
 function Check($Value,$Name){if(!$Value){throw "CHECK FAILED: $Name"};$script:checks++;Write-Host "PASS $Name"}
@@ -13,7 +13,12 @@ function Message($Text,$ReviewPlan=@()){
  $job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$info=$job.result|ConvertFrom-Json;Api '/api/trace' @{id=$info.trace_id}
 }
 function Capture{Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 65}
-function ActorFocus{((Capture).messages[1].content|ConvertFrom-Json -Depth 60).conversation_focus}
+function ActorFocus{
+ $focus=@{};foreach($message in (Capture).messages){$frame=Model-Event $message;if(!$frame){continue}
+  foreach($op in $frame.projection_patch){if($op.path-eq'/conversation_focus'){$focus=if($op.op-eq'remove'){@{}}else{$op.value|ConvertTo-Json -Depth 20|ConvertFrom-Json -AsHashtable};continue};if($op.path.StartsWith('/conversation_focus/')){$key=$op.path.Substring(20).Replace('~1','/').Replace('~0','~');if($op.op-eq'remove'){$focus.Remove($key)}else{$focus[$key]=$op.value}}}
+  if($frame.PSObject.Properties['conversation_focus']){$focus=$frame.conversation_focus|ConvertTo-Json -Depth 20|ConvertFrom-Json -AsHashtable}
+ };[pscustomobject]$focus
+}
 function Start-Backend{
  $script:service=Start-Process -FilePath $Executable -ArgumentList ('--config "'+$configPath+'" --ready-file "'+$ready+'"') -WindowStyle Hidden -PassThru
  Await {if($service.HasExited){throw 'Focus backend exited'};if(Test-Path -LiteralPath $ready){return (Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).pid-eq$service.Id};return $false} 'backend';$script:origin='http://127.0.0.1:'+((Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).port)

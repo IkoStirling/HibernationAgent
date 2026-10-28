@@ -1,5 +1,5 @@
 param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
-$ErrorActionPreference='Stop';$service=$null;$provider=$null;$checks=0
+$ErrorActionPreference='Stop';. (Join-Path $PSScriptRoot ProjectedRequest.ps1);$service=$null;$provider=$null;$checks=0
 $root=Join-Path $ScratchRoot ('personal-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='personal-fixture-only'
 function Check($Condition,$Name){if(!$Condition){throw "CHECK FAILED: $Name"};$script:checks++;Write-Host "PASS $Name"}
@@ -61,7 +61,7 @@ try{
  $repeat=$like.Clone();$known=@()
  for($i=0;$i-lt3;$i++){
   $repeat.expected_revision=2+$i;$r=Message @((Calls @((Tool conversation self.notice $repeat))),(Reply))
-  $capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 65;$known+=($capture.messages[1].content|ConvertFrom-Json).event_id
+  $capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 65;$known+=(Model-Event @(Model-CurrentMessages $capture)[0]).event_id
  }
  Check ($r[0].result.thread.basis.independent_experiences-eq1-and$r[0].result.thread.familiarity-eq'tentative') 'several remarks in one encounter remain one tentative experience'
  $repeat.expected_revision=5;$repeat.source_ids=@($known[1],$known[2]);$r=Message @((Calls @((Tool recombine self.notice $repeat))),(Reply));Check ($r[0].result.deduplicated-and$r[0].result.revision-eq5) 'combining already known sources cannot reinforce a preference again'

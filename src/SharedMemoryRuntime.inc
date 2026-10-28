@@ -1,9 +1,4 @@
-    std::vector<SharedMemoryRoot> sharedRoots()const{
-        if(cfg.channel)return sharedMemoryRoots(cfg.channel->sharedMemoryRoot,cfg.dataRoot);
-        const auto options=cfg.plugins.value("napcat",Json::object());
-        if(!options.value("enabled",false)||ChannelAccess::read(options).isolateMemory)return {};
-        return sharedMemoryRoots(cfg.dataRoot,cfg.dataRoot);
-    }
+    std::vector<SharedMemoryRoot> sharedRoots()const{return ownerRoots();}
     void sharedSources(const Json& rows,ProposalContext& context)const{
         for(const auto& row:rows)context.sources[row.at("id").get<std::string>()]={row.at("id"),row.at("revision"),row.at("kind"),row.at("scope")};
     }

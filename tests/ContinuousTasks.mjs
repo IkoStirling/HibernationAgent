@@ -1,3 +1,4 @@
+import {eventOf,currentMessages} from './ProjectedEvent.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -21,8 +22,8 @@ const tool=(name,args,id)=>({version:1,kind:'call',text:null,calls:[{id,tool:nam
 const reply=text=>({version:1,kind:'reply',text,calls:[]});
 const silence=()=>({version:1,kind:'silence',text:null,calls:[]});
 function actor(body){
- const parsed=body.messages.map(m=>({role:m.role,value:decode(m.content),nativeId:m.tool_call_id}));
- const event=parsed.find(m=>m.role==='user'&&m.value?.event_kind)?.value;
+ const parsed=currentMessages(body).map(m=>({role:m.role,value:decode(m.content),nativeId:m.tool_call_id}));
+ const event=eventOf(body);
  if(!event)throw Error('Missing actual event context');
  const receipts=parsed.flatMap(m=>m.role==='tool'&&m.value?[{...m.value,fixture_call_id:m.nativeId}]:m.value?.tool_results||[]);
  const receipt=id=>receipts.find(r=>(r.fixture_call_id||r.call_id)===id);
