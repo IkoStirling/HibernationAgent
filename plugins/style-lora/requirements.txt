@@ -1,0 +1,4 @@
+# PyTorch is installed separately: CPU or a user-selected official CUDA wheel.
+transformers>=4.51,<5
+peft>=0.15,<0.19
+safetensors>=0.5,<1

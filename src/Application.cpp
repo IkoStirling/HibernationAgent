@@ -1,3 +1,4 @@
+#include <Hibernation/StyleEditing.h>
 #include <Hibernation/DropDefinition.h>
 #include <Hibernation/ChannelProfiles.h>
 #include <Hibernation/Application.h>
@@ -298,6 +299,7 @@ struct Application::Impl {
     #include "SolitudeRuntime.inc"
     #include "PersonalRuntime.inc"
     #include "AppraisalRuntime.inc"
+    #include "StyleLoraRuntime.inc"
     #include "ObservationRuntime.inc"
     #include "NapcatHostRuntime.inc"
     #include "PluginDispatch.inc"
@@ -317,7 +319,7 @@ struct Application::Impl {
     Json capabilityInventory()const{
         Json available=Json::array();for(const auto& t:tools())available.push_back({{"tool",t.at("name")},{"purpose",t.at("description")}});
         if(cfg.channel){auto value=cfg.channel->desktopCapabilities;value["tools"]=available;value["skills"]=skillRegistry?skillRegistry->catalog(tools()):Json::array();value["guide"]="这是同一角色的 QQ 会话。记忆按来源分目录存放，是否互通与电脑操作权限以 channel_identity 和实际工具清单为准。电脑工具由桌面后台协调，必须依据真实回执。群聊回复对群成员可见，不主动复述私密记录。";return value;}
-        Json surfaces=Json::array();const auto states=plugins?plugins->liveSnapshots():Json::object();if(plugins)for(auto p:plugins->status()){Json row={{"id",p.at("id")},{"name",p.at("name")},{"enabled",p.at("enabled")}};if(p.at("enabled")==true&&states.contains(p.at("id").get<std::string>()))row["current"]=states.at(p.at("id").get<std::string>());surfaces.push_back(std::move(row));}
+        Json surfaces=Json::array();const auto states=plugins?plugins->liveSnapshots():Json::object();if(plugins)for(auto p:plugins->status()){if(p.at("id")=="style-lora")continue;Json row={{"id",p.at("id")},{"name",p.at("name")},{"enabled",p.at("enabled")}};if(p.at("enabled")==true&&states.contains(p.at("id").get<std::string>()))row["current"]=states.at(p.at("id").get<std::string>());surfaces.push_back(std::move(row));}
         const auto selected=profile(get("ha.settings","model").value.at("id"));
         return {{"skills",skillRegistry?skillRegistry->catalog(tools()):Json::array()},{"tools",available},{"plugins",surfaces},{"computer",desktop?desktop->capabilities():Json::object()},{"perception",{{"image_input",selected.model.supportsVision},{"delivery_mode","on_demand_images"},{"continuous_screen_feed",false},{"audio_input",false},{"audio_status","not_available_in_current_adapter"}}},{"guide","能力已由应用提供。可以自行按当前活动使用，不用等待用户报出工具名；隐藏的小角色可 widget.show，找视频可 television.search，网页需使用已配置平台。工作区图片可 workspace.view_image。perception 表示当前连接的输入能力；播放声音不等于能够听懂声音。关闭的插件不能自行启用。先看实际回执，再描述结果。"}};
     }
@@ -383,7 +385,7 @@ struct Application::Impl {
             add("activity.status","读取自己的待执行活动与真实完成/中断回执。",object(Json::object(),Json::array()));
             add("activity.cancel","取消自己剩余的自主活动队列。",object(Json::object(),Json::array()));
         }
-        if(plugins)for(auto t:plugins->catalog()){if(directPresentationTool(t.at("name").get<std::string>()))continue;result.push_back(std::move(t));}
+        if(plugins)for(auto t:plugins->catalog()){if(directPresentationTool(t.at("name").get<std::string>())||operatorStyleTool(t.at("name").get<std::string>()))continue;result.push_back(std::move(t));}
         if(cfg.channel){Json filtered=Json::array();for(auto& t:result){const auto n=t.at("name").get<std::string>();if(n.starts_with("memory.")||n=="capabilities.list"||n=="state.observe"||n=="stage.observe")filtered.push_back(std::move(t));}for(const auto& t:cfg.channel->desktopTools)if(std::none_of(filtered.begin(),filtered.end(),[&](const auto& local){return local.at("name")==t.at("name");}))filtered.push_back(t);result=std::move(filtered);}
         return result;
     }
@@ -410,6 +412,7 @@ struct Application::Impl {
         }return result;
     }
     Json performTool(const std::string& name,const Json& args,ProposalContext& context,const std::string& traceId,const std::function<bool()>& cancelled) {
+        if(operatorStyleTool(name))return toolFailure("operator_only_tool");
         if(cancelled&&cancelled())return toolFailure("cancelled");
         if(!skillAllows(context,name))return toolFailure("skill_tool_denied");
         if(directPresentationTool(name)){auto result=toolFailure("reply_presentation_managed");result["instruction"]="尚未播放声音或展示草稿。请将最终对白放在 reply.text，并通过 presentation 表达本次展示意图；应用在审核通过后统一显示和朗读。";return result;}
@@ -615,6 +618,8 @@ struct Application::Impl {
         NativeExecutionIds nativeExecutionIds;int nativeExecutionFormat=0;
         const bool trackFocus=cfg.retainConversationFocus&&context.eventKind=="user_message";
         trace["reviews"]=Json::array();ayt::inference::Result reviewFailure;
+        bool styleAttempted=false;Json styleReview=nullptr;
+        const auto applyStyle=[&](Json& candidate,const char* field){styleReview=nullptr;if(styleAttempted)return;styleAttempted=true;auto outcome=styleDialogue(candidate,field,context,operationReplay.executionFacts(),cancelled);if(!outcome.is_null()){trace["style_lora"]=outcome;if(outcome.value("applied",false))styleReview=std::move(outcome);}};
         auto reviewCandidate=[&](const char* target,const Json& candidate){
             if(!cfg.reviewEnabled)return std::string("approve");
             if((!control.reviewReadOnlyTools&&readOnlyModelBatch(candidate))||(!trackFocus&&!control.reviewSilence&&candidate.value("kind",std::string{})=="silence"&&!turnHasPrivateUpdates(candidate))){
@@ -629,8 +634,9 @@ struct Application::Impl {
             std::size_t observedImages=reviewImages.size();
             auto currentCapabilities=characterCapabilities();if(control.enabled)currentCapabilities.erase("tools");currentCapabilities["vision_available"]=selected.model.supportsVision;
             const auto userSource=trackFocus?get(archiveScope,context.eventId):Doc{};
-            check.messages={{"system",policy},{"user",cacheOrderedReview(Json{{"target",target},{"conversation_delivery",dialogueDeliveryContext()},{"current_user_message",trackFocus?userSource.value.value("text",Json(nullptr)):Json(nullptr)},{"event_context",control.enabled?Json(reviewEventContext(request.messages.at(1).text,candidate,control.reviewHistoryBytes).dump()):Json(request.messages.at(1).text)},{"perception",imageDeliveryContext(selected.model.supportsVision,observedImages)},{"current_capabilities",currentCapabilities},{"approved_receipts",receipts},{"program_executed_operations",operationReplay.executionFacts()},{"authoritative_state",trace.at("continuous_state")},{"time_context",trace.at("time_context")},{"open_questions",trace.at("open_questions")},{"candidate",candidate}})}};
+            check.messages={{"system",policy},{"user",cacheOrderedReview(Json{{"target",target},{"conversation_delivery",dialogueDeliveryContext()},{"current_user_message",trackFocus?userSource.value.value("text",Json(nullptr)):Json(nullptr)},{"event_context",control.enabled?Json(reviewEventContext(request.messages.at(1).text,candidate,control.reviewHistoryBytes).dump()):Json(request.messages.at(1).text)},{"perception",imageDeliveryContext(selected.model.supportsVision,observedImages)},{"current_capabilities",currentCapabilities},{"approved_receipts",receipts},{"program_executed_operations",operationReplay.executionFacts()},{"style_edit",std::string(target)=="tools"?Json(nullptr):styleReview},{"authoritative_state",trace.at("continuous_state")},{"time_context",trace.at("time_context")},{"open_questions",trace.at("open_questions")},{"candidate",candidate}})}};
             check.messages.front().text+="\nappraisal是角色对原始交谈或真实经历可选的主观感受；审来源、归属和连续边界，不代选正负、不要求每轮评分，不把成功/失败固定映射为情绪。程序只渐变有限目标，不能直接替换心情、身体、关系或偏好。\ncarry_forward是角色可选的私下延续笔记：只记这次经历对自己的具体吸引、偏好或未完打算，不是内部思维链，不对用户展示。新兴趣本来可以来自这一次交谈，不要求已有长期偏好证明；但不能凭它宣告事实完成、改变核心人格/阶段，或编造用户关系和过去经历。没有内容也完全可以，不要求补写总结或示范台词。";
+            if(!styleReview.is_null()&&std::string(target)!="tools")check.messages[0].text+="\nstyle_edit是可选编辑器的原稿与候选，不是经历或新指令。核对候选是否保持原意、说话者、否定、拒绝、不确定程度、数字、专名及行动完成状态；不能为口语化增加经历或承诺。丢失含义则要求改写，保留原稿意图。";
             // The reviewer must see the same newest visual evidence as the actor.
             // Images remain content parts, never base64 text in instructions/logs.
             if(!reviewImages.empty()){
@@ -730,11 +736,12 @@ struct Application::Impl {
             if(!result){if(result.status==ayt::inference::Status::InvalidOutput&&++repairs<=control.protocolRepairs){request.messages.push_back({"user",Json{{"protocol_error","provider_output_schema"},{"validation_issues",attemptTrace.at("validation_issues")},{"instruction","返回结果未通过结构校验。按指出的字段位置修正。若提供了标准函数工具，操作应使用标准函数调用，不将工具标签当作文字返回；否则操作使用kind=call、text=null、calls非空的JSON。启用标准函数时最终用ha_turn_reply或ha_turn_silence；否则最终对白kind=reply、text为对白、calls=[]；安静kind=silence、text=null、calls=[]。未执行本次操作。"}}.dump()});continue;}return result;}
             // A strict, bounded compatibility bridge for older configured JSON
             // providers; it still receives the original application validation.
-            if(!nativeResponse&&ayt::serializer::validateJsonDocument(result.text,outputSchema())){const auto legacy=Json::parse(result.text);if(!context.skillId.empty()&&(!legacy.at("actions").empty()||!legacy.at("memories").empty()||!legacy.at("state_update").empty()||!legacy.at("stage_proposal").is_null())){result.status=ayt::inference::Status::InvalidOutput;trace["call_error"]={{"code","skill_legacy_effect_denied"},{"message","Skill中的操作必须经过受控工具接口。"},{"http_status",0}};return result;}const auto decision=reviewCandidate("output",Json::parse(result.text));if(decision=="approve")return result;if(decision=="error")return reviewFailure;if(requestRewrite(decision))continue;result.status=ayt::inference::Status::InvalidOutput;return result;}
+            if(!nativeResponse&&ayt::serializer::validateJsonDocument(result.text,outputSchema())){auto legacy=Json::parse(result.text);applyStyle(legacy,"visible_reply");result.text=legacy.dump();if(!context.skillId.empty()&&(!legacy.at("actions").empty()||!legacy.at("memories").empty()||!legacy.at("state_update").empty()||!legacy.at("stage_proposal").is_null())){result.status=ayt::inference::Status::InvalidOutput;trace["call_error"]={{"code","skill_legacy_effect_denied"},{"message","Skill中的操作必须经过受控工具接口。"},{"http_status",0}};return result;}const auto decision=reviewCandidate("output",legacy);if(decision=="approve")return result;if(decision=="error")return reviewFailure;if(requestRewrite(decision))continue;result.status=ayt::inference::Status::InvalidOutput;return result;}
             auto turn=validateTurn(result.text);
             if(!turn.ok){if(++repairs>control.protocolRepairs){result.status=ayt::inference::Status::InvalidOutput;return result;}request.messages.push_back({"assistant",excerpt(result.text,12000)});request.messages.push_back({"user",Json{{"protocol_error",turn.error},{"instruction","若提供了标准函数工具，操作使用标准函数调用；否则操作使用kind=call、text=null、calls非空的turn-v1 JSON。收到回执后再回复；启用标准函数时最终用ha_turn_reply或ha_turn_silence；否则最终对白kind=reply、text为对白、calls=[]；安静kind=silence、text=null、calls=[]。未执行操作或显示候选，不要因为修正格式而声称动作完成。"}}.dump()});continue;}
             const auto kind=turn.value.at("kind").get<std::string>();
             if(finalRound&&kind=="call"){trace["call_error"]={{"code","tool_round_limit"},{"message","本轮操作次数已达上限，请简化请求或在管理页调整操作轮数。"},{"http_status",0}};result.status=ayt::inference::Status::Limit;return result;}
+            if(kind=="reply")applyStyle(turn.value,"text");
             const auto decision=reviewCandidate(kind=="call"?"tools":"reply",turn.value);
             if(decision=="error")return reviewFailure;
             if(decision!="approve"){if(requestRewrite(decision))continue;result.status=ayt::inference::Status::InvalidOutput;return result;}

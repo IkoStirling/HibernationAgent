@@ -6,6 +6,7 @@ namespace hibernation {
 // cache counters remain in the unchanged operator diagnostics, not its attention.
 inline nlohmann::json pluginCharacterContext(std::string_view id,const nlohmann::json& saved){
     using Json=nlohmann::json;if(!saved.is_object())return saved;
+    if(id=="style-lora")return Json::object();
     if(id=="widget")return widgetBodyContext(saved);
     Json view=Json::object();const auto take=[&](std::initializer_list<const char*> fields){for(const auto* field:fields)if(saved.contains(field))view[field]=saved.at(field);};
     if(id=="habitat")take({"objects","pending","appetite","visible","desktop","creation_policy"});

@@ -1,0 +1,16 @@
+    Json styleDialogue(Json& candidate,const char* field,const ProposalContext& context,const Json& facts,const std::function<bool()>& cancelled){
+        if(context.eventKind!="user_message"||!candidate.contains(field)||!candidate.at(field).is_string()||candidate.at(field).get_ref<const std::string&>().empty())return Json(nullptr);
+        const auto settings=cfg.plugins.value("style-lora",Json::object());const bool channel=cfg.channel&&static_cast<bool>(cfg.channel->editStyle);
+        if(!channel&&(!plugins||!plugins->enabled("style-lora")||!settings.value("applyEnabled",false)||settings.value("adapterScale",1.0)==0))return Json(nullptr);
+        if(!cfg.reviewEnabled)return {{"applied",false},{"reason","independent_review_required"}};
+        const auto original=candidate.at(field).get<std::string>();if(original.size()>12000||facts.dump().size()>6000)return {{"applied",false},{"reason","style_context_limit"}};
+        const auto event=get(archiveScope,context.eventId);Json dialogue=Json::array();
+        if(event.revision&&event.value.value("kind",std::string{})=="user_message")dialogue.push_back({{"role","user"},{"text",excerpt(event.value.value("text",std::string{}),3000)}});
+        const Json arguments={{"text",original},{"context",dialogue},{"facts",facts.dump()}};
+        auto receipt=channel?cfg.channel->editStyle(arguments,cancelled):plugins->invoke("style_lora.preview",arguments,cancelled);
+        if(!receipt.value("ok",false))return {{"applied",false},{"error",receipt.value("error",Json::object())}};
+        const auto value=receipt.value("result",Json::object());if(!value.contains("text")||!value.at("text").is_string())return {{"applied",false},{"reason","invalid_style_candidate"}};
+        const auto proposed=value.at("text").get<std::string>();if(!styleLiteralIntegrity(original,proposed))return {{"applied",false},{"reason","protected_literals_changed"}};
+        if(proposed==original)return {{"applied",false},{"reason","unchanged"}};
+        candidate[field]=proposed;return {{"applied",true},{"original_text",original},{"proposed_text",proposed},{"adapter_id",value.value("adapter_id",settings.value("adapterId",std::string{}))},{"requires_semantic_review",true}};
+    }

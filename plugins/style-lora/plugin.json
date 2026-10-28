@@ -1,0 +1,22 @@
+{
+  "id":"style-lora", "name":"对白提炼 · 薄 LoRA", "icon":"✎",
+  "description":"用明确认可的表达对照训练独立风格模型。训练、选择版本和实际启用分别控制，原始记忆不参与自动训练。",
+  "version":"0.1.0", "api_version":2, "library":"Hibernation_StyleLora.dll",
+  "dependencies":[], "capabilities":["style.local-training","style.reviewed-editing"],
+  "settings_ui":[
+    {"key":"applyEnabled","label":"启用 LoRA 对白编辑（需要独立审核连接）","type":"toggle","default":false},
+    {"key":"pythonExecutable","label":"训练环境 Python 完整路径","type":"text","default":"","maxLength":2048},
+    {"key":"baseModelPath","label":"本地基座模型目录（safetensors）","type":"text","default":"","maxLength":2048},
+    {"key":"adapterId","label":"使用的训练版本 ID","type":"text","default":"","maxLength":96},
+    {"key":"adapterScale","label":"LoRA 强度（0 为旁路）","type":"number","default":1,"min":0,"max":2,"step":0.1},
+    {"key":"device","label":"计算设备","type":"select","default":"auto","options":[["auto","自动"],["cpu","CPU"],["cuda","CUDA（需对应 PyTorch）"]]},
+    {"key":"rank","label":"训练秩（参数容量）","type":"number","default":8,"min":1,"max":32,"step":1},
+    {"key":"maxSteps","label":"每批最多训练步数","type":"number","default":100,"min":1,"max":5000,"step":1},
+    {"key":"learningRate","label":"训练学习率","type":"number","default":0.0002,"min":0.000001,"max":0.05,"step":0.00001},
+    {"key":"maxSequenceLength","label":"输入与训练序列上限","type":"number","default":512,"min":64,"max":2048,"step":64},
+    {"key":"generationLimit","label":"编辑输出 token 上限","type":"number","default":192,"min":16,"max":1024,"step":16},
+    {"key":"timeoutMs","label":"每次编辑最长等待（毫秒）","type":"number","default":12000,"min":1000,"max":60000,"step":1000},
+    {"key":"trainingTimeoutSeconds","label":"每批训练时间上限（秒）","type":"number","default":1800,"min":10,"max":43200,"step":10}
+  ],
+  "settings_note":"只加载本地模型，不自动下载或训练。语料和适配器用当前 Windows 用户的 DPAPI 加密；需随档案备份并保留此用户的解密能力。低秩不保证只改变语气，编辑结果仍需核对原意。"
+}

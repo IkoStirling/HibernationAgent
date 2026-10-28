@@ -43,6 +43,8 @@ struct ChannelPolicy {
     std::function<Json()> budgetFailure;
     std::function<void(const std::string&,const std::string&,int)> providerFailure;
     std::function<void(const std::string&,const std::string&,const Json&)> providerUsage;
+    // Native channel plumbing only; never a character tool or user-configured callback.
+    std::function<Json(const Json&,const std::function<bool()>&)> editStyle;
 };
 struct Config {
     std::shared_ptr<const ChannelPolicy> channel;

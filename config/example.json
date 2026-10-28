@@ -60,6 +60,7 @@
   ],
   "maxToolRounds": 6,
   "plugins": {
+    "style-lora": {"enabled": false, "applyEnabled": false, "pythonExecutable": "", "baseModelPath": "", "adapterId": "", "adapterScale": 1, "rank": 8, "maxSteps": 100, "maxSequenceLength": 512, "learningRate": 0.0002, "device": "auto"},
     "mentor": {"enabled":true,"allowExecution":true,"backend":"chatgpt","codexExecutable":"","model":"","useSystemProxy":true,"proxyOrigin":"","maxRequestsPerHour":12,"cooldownSeconds":60,"timeoutSeconds":35},
     "pocket": {"enabled":false,"scrambleSteps":4,"maximumMoves":24},
     "atelier": {

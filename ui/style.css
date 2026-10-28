@@ -20,3 +20,7 @@ button:active{transform:translateY(1px)}
 @media(max-width:800px){.settings-index{grid-template-columns:repeat(2,minmax(0,1fr))}.directory-tools{flex-wrap:wrap}.directory-search{flex-basis:100%}.fold-kind{display:none}.fold-head{gap:5px}.fold-head .section-order .order-buttons button{padding:4px;min-width:24px}.fold-toggle{font-size:15px}.fold-head .pill{max-width:115px;white-space:normal}}
 
 #profiles[hidden],#plugin-list[hidden]{display:none!important}
+
+.plugin[data-plugin-id="style-lora"]{grid-column:1/-1}.style-lora-controls textarea{box-sizing:border-box;width:100%;resize:vertical;line-height:1.6;margin:10px 0}.style-lora-controls .test-row{flex-wrap:wrap}.style-lora-controls select{max-width:100%;margin-right:8px}
+
+.style-lora-controls .style-lora-consent{display:flex;align-items:center;gap:8px}.style-lora-controls .style-lora-consent input{width:auto;flex:0 0 auto;margin:0}

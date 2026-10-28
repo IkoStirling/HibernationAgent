@@ -209,6 +209,7 @@ void mediaTests(const std::filesystem::path& scratch){
 }
 #include "IncomingTests.inc"
 #include "OfflineTests.inc"
+#include "StyleTests.inc"
 void authorityTests(const std::filesystem::path& scratch){
     httplib::Server provider;std::atomic<int> calls=0;int mode=0;Json captured=Json::array();
     provider.Post("/v1/chat/completions",[&](const auto& req,auto& res){const auto count=++calls;captured.push_back(Json::parse(req.body));Json output;
@@ -238,4 +239,4 @@ void authorityTests(const std::filesystem::path& scratch){
     std::cout<<"PASS tool denial even for owner, legacy bypass denial, shared state, silence, model budget\n";
 }
 }
-int main(int argc,char** argv){try{check(argc==2,"scratch directory required");const auto root=std::filesystem::u8path(argv[1])/std::to_string(nowMs());std::filesystem::create_directories(root);protocolTests(root/"protocol");configurationTests(root/"configuration");pluginTests(root);sharedLibraryTests(root/"shared-library");bridgeTests(root/"bridge");mediaTests(root/"media");incomingTests(root/"incoming");offlineTests(root/"offline");authorityTests(root/"authority");return 0;}catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{check(argc==2||argc==3,"scratch directory required");const auto root=std::filesystem::u8path(argv[1])/std::to_string(nowMs());std::filesystem::create_directories(root);if(argc==3&&std::string(argv[2])=="style"){channelStyleTests(root/"style");return 0;}protocolTests(root/"protocol");configurationTests(root/"configuration");pluginTests(root);sharedLibraryTests(root/"shared-library");bridgeTests(root/"bridge");mediaTests(root/"media");incomingTests(root/"incoming");offlineTests(root/"offline");authorityTests(root/"authority");return 0;}catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;}}

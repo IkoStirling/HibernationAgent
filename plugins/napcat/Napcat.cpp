@@ -102,7 +102,7 @@ class Napcat final:public BasePlugin {
             // Read-only snapshots need fresh pixels/layout even with identical
             // arguments. Side effects keep their stable recovery identity.
             const auto call=desktopOperationKey(requestId,name,hostArgs,std::to_string(nowMs())+":"+std::to_string(++observationSequence_));
-            const Json operation={{"tool",name},{"args",hostArgs},{"sources",sources},{"call_key",call}};
+            const Json operation={{"tool",name},{"args",hostArgs},{"sources",sources},{"call_key",call},{"style_internal",name=="style_lora.preview"}};
             auto result=mailbox("napcat.tool.request",operation);
             const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(110);
             while(result.is_object()&&!result.value("done",false)&&!cancelled()&&!(stop&&stop())&&std::chrono::steady_clock::now()<deadline){std::this_thread::sleep_for(std::chrono::milliseconds(40));result=result.value("retry",false)?mailbox("napcat.tool.request",operation):mailbox("napcat.tool.result",{{"call_key",call}});}
@@ -121,6 +121,7 @@ class Napcat final:public BasePlugin {
             }
             return dispatch(name,args,context,stop);
         };
+        if(hostConfig.value("styleEditingAvailable",false))policy->editStyle=[dispatch](const Json& args,const std::function<bool()>& stop){return dispatch("style_lora.preview",args,ProposalContext{},stop);};
         policy->providerUsage=[this](const std::string& profile,const std::string& purpose,const Json& usage){host_.emit({{"kind","napcat.model.usage"},{"plugin","napcat"},{"profile_id",profile},{"purpose",purpose},{"usage",usage}});};
         policy->providerFailure=[this](const std::string& id,const std::string& signature,int status){host_.emit({{"kind","napcat.balance.failure"},{"plugin","napcat"},{"request_id",activeRequest_},{"profile_id",id},{"signature",signature},{"http_status",status}});};
         auto budgetIssue=std::make_shared<Json>(Json::object());policy->budgetFailure=[budgetIssue]{return *budgetIssue;};

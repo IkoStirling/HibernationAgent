@@ -28,6 +28,12 @@ ha_role_plugin(atelier Hibernation_Atelier atelier/Atelier.cpp)
 ha_role_plugin(pocket Hibernation_Pocket pocket/Pocket.cpp)
 ha_role_plugin(reading Hibernation_Reading reading/Reading.cpp)
 ha_role_plugin(mentor Hibernation_Mentor mentor/Mentor.cpp)
+ha_role_plugin(style-lora Hibernation_StyleLora style-lora/StyleLora.cpp)
+target_link_libraries(Hibernation_StyleLora PRIVATE AYPlatform ole32)
+add_custom_target(Hibernation_StyleLoraAssets
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/style-lora/worker.py" "${CMAKE_BINARY_DIR}/plugins/style-lora/worker.py"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/style-lora/requirements.txt" "${CMAKE_BINARY_DIR}/plugins/style-lora/requirements.txt")
+add_dependencies(Hibernation_StyleLora Hibernation_StyleLoraAssets)
 target_link_libraries(Hibernation_Mentor PRIVATE AYPlatform AYIO AYSerializer winhttp)
 target_link_libraries(Hibernation_Atelier PRIVATE AYIO)
 ha_role_plugin(tts Hibernation_Speech tts/Speech.cpp)

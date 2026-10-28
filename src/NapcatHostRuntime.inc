@@ -54,7 +54,7 @@
                     {"characterRoot",utf8(cfg.characterRoot)},{"projectRoot",utf8(cfg.projectRoot)},{"uiRoot",utf8(cfg.uiRoot)},
                     {"contextBytes",cfg.contextBytes},{"contextControl",cfg.contextControl},{"pricing",pricingAttachment()},{"maxToolRounds",cfg.maxToolRounds},{"maxStartsPerHour",cfg.maxStartsPerHour},
                     {"sharedMemoryRoot",access.isolateMemory?"":utf8(cfg.dataRoot)},{"desktopTools",catalog},{"desktopCapabilities",capabilities},{"body",controls?bodyState():Json::object()},
-                    {"state",state},{"stage",development}};
+                    {"state",state},{"stage",development},{"styleEditingAvailable",plugins&&plugins->enabled("style-lora")&&cfg.plugins.value("style-lora",Json::object()).value("applyEnabled",false)&&cfg.plugins.value("style-lora",Json::object()).value("adapterScale",1.0)>0}};
             }
             respond("runtime.napcat.context",response);
         }else if(kind=="napcat.budget.request"){
@@ -63,14 +63,15 @@
             respond("runtime.napcat.budget",{{"allowed",allowed},{"failure",allowed?Json::object():session?modelBudgetFailure():Json{{"code","channel_session_unavailable"},{"message","QQ 会话与桌面后台的连接已暂停或失效，请重试。"},{"http_status",0}}}});
         }else if(kind=="napcat.tool.request"){
             const auto name=event.value("tool",std::string{}),key=event.value("call_key",std::string{});
-            if(runtimePaused||request!=napcatSession||!napcatActive()||!napcatCanControl(napcatIdentity)||!validRequestId(key)){
+            const bool styleInternal=event.value("style_internal",false)&&name=="style_lora.preview"&&plugins&&plugins->enabled("style-lora")&&cfg.plugins.value("style-lora",Json::object()).value("applyEnabled",false)&&napcatIdentityAllowed(napcatIdentity);
+            if(runtimePaused||request!=napcatSession||!napcatActive()||(!styleInternal&&!napcatCanControl(napcatIdentity))||!validRequestId(key)){
                 respond("runtime.napcat.tool",{{"done",true},{"output",toolFailure("qq_desktop_control_denied")}});return true;}
             const auto before=get("ha.channel-calls",key);
             if(before.revision){respond("runtime.napcat.tool",{{"done",true},{"output",before.value.value("output",toolFailure("previous_outcome_unknown"))}});return true;}
             if(worker->running()||!foregroundAvailableForNapcat()){nextWorkerPoll=0;respond("runtime.napcat.tool",{{"done",false},{"retry",true}});return true;}
-            const auto catalog=tools();if(name.starts_with("memory.")||name=="capabilities.list"||std::none_of(catalog.begin(),catalog.end(),[&](const auto& t){return t.at("name")==name;})){
+            const auto catalog=styleInternal?plugins->catalog():tools();if(name.starts_with("memory.")||name=="capabilities.list"||std::none_of(catalog.begin(),catalog.end(),[&](const auto& t){return t.at("name")==name;})){
                 respond("runtime.napcat.tool",{{"done",true},{"output",toolFailure("tool_not_available")}});return true;}
-            Json payload={{"tool",name},{"args",event.value("args",Json::object())},{"call_key",key},{"identity",napcatIdentity},{"sources",event.value("sources",Json::array())},{"channel_request",request}};
+            Json payload={{"tool",name},{"args",event.value("args",Json::object())},{"call_key",key},{"identity",napcatIdentity},{"sources",event.value("sources",Json::array())},{"channel_request",request},{"style_internal",styleInternal}};
             // A persisted start without completion is never blindly reexecuted.
             commit({{"ha.channel-calls",key,0,1,Json{{"status","started"},{"channel_request",request},{"tool",name}}.dump(),request}},request);
             auto job=spec("qq.tool","napcat.tool",payload,serviceNowMs());job.maxAttempts=1;
@@ -95,7 +96,9 @@
         if(status!="started"){auto unknown=before.value;unknown["status"]="completed";unknown["output"]=toolFailure("previous_outcome_unknown");unknown["channel_request"]=payload.at("channel_request");commit({mutation("ha.channel-calls",key,before,unknown,trace)},trace);return {true,false,Json{{"status","outcome_unknown"},{"tool",payload.at("tool")}}.dump(),{}};}
         auto executing=before.value;executing["status"]="executing";commit({mutation("ha.channel-calls",key,before,executing,trace)},trace);
         Json output=toolFailure("qq_desktop_control_denied");
-        if(napcatCanControl(payload.at("identity"))&&!token.requested()){
+        if(payload.value("style_internal",false)&&payload.at("tool")=="style_lora.preview"&&napcatIdentityAllowed(payload.at("identity"))&&!token.requested()&&plugins&&plugins->enabled("style-lora")&&cfg.plugins.value("style-lora",Json::object()).value("applyEnabled",false)){
+            output=plugins->invoke("style_lora.preview",payload.at("args"),[token]{return token.requested();});
+        }else if(!payload.value("style_internal",false)&&napcatCanControl(payload.at("identity"))&&!token.requested()){
             ProposalContext context;context.eventKind="user_message";context.eventId=payload.at("channel_request");context.stage=get("ha.stage","current").value.at("id");
             for(const auto& source:payload.at("sources")){Source s{source.at("id"),source.at("revision"),source.at("kind"),source.at("scope")};context.sources[s.id]=s;}
             try{output=performTool(payload.at("tool"),payload.at("args"),context,trace,[token]{return token.requested();});}catch(...){output=toolFailure("tool_execution_failed");}
