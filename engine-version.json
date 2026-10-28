@@ -1,5 +1,5 @@
 {
-  "testedEngineRootCommit": "a01f88079f42e297e1a071bfdc248653e9748b3c",
+  "testedEngineRootCommit": "d9d0f69997cd5387bd4ca48695de50f1d23019d3",
   "engineRelativePath": "../AliyatEngine",
   "modules": {
     "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",
@@ -17,9 +17,10 @@
     "AYRuntime/AYCore": "4fe6b582a8edbc6855aeba59188487c69bca6ab5",
     "AYFoundation/AYMath": "ee4580b114ae719b3416204661607411cba7a107",
     "AYFoundation/AYTime": "7e7108d0fe31d43ce87cba011d7fd228bfad0306",
-    "AYFoundation/AYPlatform": "c7d7a75e003978e1c7e2cf2ee3ed9182f27fd191",
+    "AYFoundation/AYPlatform": "b6a3a251b0b7498596cd6d57ab73de413d201355",
     "AYFoundation/AYLog": "d4c717cd8afd2ed8ac92a3a6c1300810144b4f7a",
-    "AYRuntime/AY2D": "0aa31f77b8df9ea5a6f424d18defef01facb67cb"
+    "AYRuntime/AY2D": "0aa31f77b8df9ea5a6f424d18defef01facb67cb",
+    "AYFoundation/AYString": "fb39b01526901aa00163f686dff470140b360d61"
   },
   "recordStorageFormats": {
     "plain": 1,
@@ -28,10 +29,10 @@
   },
   "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "63CDEC75D8DD7522D1C6EB49C757430B8F8E2FEF3CA03EBEF83D963607997AC0",
+  "validatedExecutableSha256": "e725cd145414807b606504cf6ff0de43afdacf4b66cb6734f4522bad182ed5ee",
   "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
   "applicationVersion": "0.7.0",
-  "validatedApplicationSourceCommit": "8dc8208d47257aa8a32f4e4c82fbaec9a340837a",
+  "validatedApplicationSourceCommit": "e815e7d9e22fce53dc3c39069798ed0796ee6b99",
   "engineWorktreeDirty": false,
-  "validationScope": "Merged memory workshop/dashboard and model-cache changes. Local Windows runtime; existing FFmpeg SDK requires development CRT. Not a portable distribution certification."
+  "validationScope": "Pixel workshop, desktop artwork lifecycle, ManagedProcess and strict UTF-8 reuse. Verified frozen source; installed Integration, PixelCanvasProcess, ConfigurationCheck and RuntimeTools. Existing Windows FFmpeg development CRT dependency remains; not a portable distribution certification."
 }
