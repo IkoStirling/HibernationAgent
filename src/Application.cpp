@@ -385,7 +385,7 @@ struct Application::Impl {
             add("activity.status","读取自己的待执行活动与真实完成/中断回执。",object(Json::object(),Json::array()));
             add("activity.cancel","取消自己剩余的自主活动队列。",object(Json::object(),Json::array()));
         }
-        if(plugins)for(auto t:plugins->catalog()){if(directPresentationTool(t.at("name").get<std::string>())||operatorStyleTool(t.at("name").get<std::string>()))continue;result.push_back(std::move(t));}
+        if(plugins)for(auto t:plugins->catalog()){if(directPresentationTool(t.at("name").get<std::string>())||operatorStyleTool(t.at("name").get<std::string>()))continue;if(t.at("name")=="pixel.read")t["description"]="读取已有像素作品的标识、尺寸、版本、调色板和帧时长；角色上下文不重复携带完整像素数组。用pixel.preview查看实际图像，再以当前版本批量修改。这是创作资料，不是外部事实。";result.push_back(std::move(t));}
         if(cfg.channel){Json filtered=Json::array();for(auto& t:result){const auto n=t.at("name").get<std::string>();if(n.starts_with("memory.")||n=="capabilities.list"||n=="state.observe"||n=="stage.observe")filtered.push_back(std::move(t));}for(const auto& t:cfg.channel->desktopTools)if(std::none_of(filtered.begin(),filtered.end(),[&](const auto& local){return local.at("name")==t.at("name");}))filtered.push_back(t);result=std::move(filtered);}
         return result;
     }
@@ -446,7 +446,7 @@ struct Application::Impl {
             auto value=original.value.at("result");bool image=value.contains("image");if(value.contains("frames")&&value.at("frames").is_array())for(const auto& frame:value.at("frames"))if(frame.is_object()&&frame.contains("image"))image=true;
             if(image&&!profile(get("ha.settings","model").value.at("id")).model.supportsVision)return toolFailure("vision_not_enabled");
             value["original_tool"]=original.value.at("tool");value["original_observed_at_ms"]=original.value.value("created_at",std::int64_t(0));value["revisited_at_ms"]=serviceNowMs();value["context_role"]="revisited_past_observation";value["perception_note"]="这是原始观察的内容，保留当时的时间与性质；回看不是重新观察当前文件、屏幕或播放位置，也不表示未完成的动作后来完成了。";
-            auto output=toolSuccess(value);output["source_id"]=key;return output;
+            auto output=toolSuccess(value);output["source_id"]=key;return original.value.value("tool",std::string{}).starts_with("pixel.")?pixelCharacterReceipt(std::move(output)):output;
         }
         if(name.starts_with("computer."))return desktop?observedTool(name,desktop->invoke(name,args,cancelled),context,traceId):toolFailure("desktop_unavailable");
         if(name=="workspace.list"){std::vector<std::string> names;std::string issue;if(!workspace.list("character",args.at("mount").get<std::string>(),args.value("path",std::string{}),names,issue))return toolFailure("workspace_list_denied");return observedTool(name,toolSuccess({{"entries",names},{"source_mount",args.at("mount")},{"source_path",args.value("path",std::string{})}}),context,traceId);}
@@ -529,7 +529,8 @@ struct Application::Impl {
         // Host-authored, one-use operational catalogue. No persona, transcript,
         // archive payloads or credentials are forwarded to the mentor plugin.
         if(name=="mentor.ask"&&plugins)plugins->event({{"kind","mentor.context"},{"turn_id",context.eventId.empty()?traceId:context.eventId},{"tools",tools()}});
-        return observedTool(name,plugins?plugins->invoke(name,args,cancelled):toolFailure("tool_not_available"),context,traceId,&args);
+        auto result=observedTool(name,plugins?plugins->invoke(name,args,cancelled):toolFailure("tool_not_available"),context,traceId,&args);
+        return name.starts_with("pixel.")?pixelCharacterReceipt(std::move(result)):result;
     }
     Json modelBudgetStatus() const {
         std::lock_guard lock(modelBudgetMutex);const auto now=serviceNowMs();const auto value=get("ha.budget","models",{{"started_ms",now},{"count",0}}).value;
@@ -589,7 +590,7 @@ struct Application::Impl {
         const auto channelIssue=plugins&&plugins->enabled("napcat")?plugins->invoke("napcat.status",Json::object(),{}).value("result",Json::object()).value("issue",std::string{}):std::string{};
         Json settings=cfg.configPath.empty()?Json::object():Json::parse(readFile(cfg.configPath));
         for(auto& profile:settings["profiles"]){const auto key=profile.value("credentialEnvironment","");profile["credentialConfigured"]=!key.empty()&&(!ayt::net::http::environmentCredential(key).empty()||std::filesystem::exists(cfg.dataRoot/"runtime"/"secrets"/(profile.at("id").get<std::string>()+".dpapi")));}
-        return {{"version",HA_APPLICATION_VERSION},{"health",health},{"last_call_error",lastChatFailure()},{"qq_issue",channelIssue},{"balance_control",balanceStatus()},{"plugin_issue",pluginIssue},{"plugin_failures",pluginFailures},{"busy",busy()},{"paused",get("ha.control","current").value.at("paused")},{"offline",runtimeOffline.load()},{"settings",settings},{"plugins",plugins?plugins->status():Json::array()},{"data_root",utf8(cfg.dataRoot)},{"memory_encrypted",true},{"dialogue_rebuild_available",true},{"review_focus_available",true},{"activity_reflection_available",true},{"remote_sync_status","deferred"},{"selected_profile",get("ha.settings","model").value.at("id")},{"model_budget",modelBudgetStatus()},{"model_cache",modelCacheStatus()},{"memory_workshop",workshopView()},{"context_control_available",true},{"context_control",callsFor(profile(get("ha.settings","model").value.at("id"))).pricing.at("effective_context")},{"deepseek_pricing",callsFor(profile(get("ha.settings","model").value.at("id"))).pricing}};
+        return {{"version",HA_APPLICATION_VERSION},{"health",health},{"last_call_error",lastChatFailure()},{"qq_issue",channelIssue},{"balance_control",balanceStatus()},{"plugin_issue",pluginIssue},{"plugin_failures",pluginFailures},{"busy",busy()},{"paused",get("ha.control","current").value.at("paused")},{"offline",runtimeOffline.load()},{"settings",settings},{"plugins",plugins?plugins->status():Json::array()},{"data_root",utf8(cfg.dataRoot)},{"workspace_context",{{"drafts_root",utf8(cfg.draftsRoot)},{"materials_root",utf8(cfg.materialsRoot)}}},{"memory_encrypted",true},{"dialogue_rebuild_available",true},{"review_focus_available",true},{"activity_reflection_available",true},{"remote_sync_status","deferred"},{"selected_profile",get("ha.settings","model").value.at("id")},{"model_budget",modelBudgetStatus()},{"model_cache",modelCacheStatus()},{"memory_workshop",workshopView()},{"context_control_available",true},{"context_control",callsFor(profile(get("ha.settings","model").value.at("id"))).pricing.at("effective_context")},{"deepseek_pricing",callsFor(profile(get("ha.settings","model").value.at("id"))).pricing}};
     }
     LocalReply saveSettings(const Json& body) {
         if(busy())return error(409,"busy");if(cfg.configPath.empty())return error(409,"configuration_not_file_backed");
@@ -1131,9 +1132,9 @@ struct Application::Impl {
         if(req.method=="GET"&&req.path=="/api/state")return reply(200,state());
         if(req.method=="GET"&&req.path=="/api/capabilities")return reply(200,capabilityInventory());
         if(req.method=="POST"&&req.path=="/api/surfaces/show"){
-            const auto surface=Json::parse(req.body).value("id",std::string{});if(surface!="widget"&&surface!="television"&&surface!="habitat")return error(400,"surface_unknown");if(!cfg.desktopEnabled||!plugins)return error(409,"desktop_unavailable");
+            const auto surface=Json::parse(req.body).value("id",std::string{});if(surface!="widget"&&surface!="television"&&surface!="habitat"&&surface!="pixel-canvas")return error(400,"surface_unknown");if(!cfg.desktopEnabled||!plugins)return error(409,"desktop_unavailable");
             if(!cfg.plugins.value(surface,Json::object()).value("enabled",false)){auto settings=Json::parse(readFile(cfg.configPath));settings["plugins"][surface]["enabled"]=true;if(surface=="habitat")settings["plugins"]["widget"]["enabled"]=true;const auto saved=saveSettings({{"settings",settings}});if(saved.status!=200)return saved;}
-            plugins->event({{"kind","surface.show"},{"surface",surface}});saveRuntime();return reply(200,{{"shown",true},{"id",surface}});
+            plugins->event({{"kind","surface.show"},{"surface",surface}});saveRuntime();if(surface=="pixel-canvas")return reply(200,{{"accepted",true},{"completed",false},{"id",surface}});return reply(200,{{"shown",true},{"id",surface}});
         }
         if(req.method=="GET"&&req.path=="/api/activities/status")return reply(200,activityStatus());
         if(req.method=="GET"&&req.path=="/api/reactions/status")return reply(200,reactionStatus());
@@ -1209,7 +1210,9 @@ struct Application::Impl {
         if(req.method=="POST"&&req.path=="/api/plugin/test"){
             if(runtimeOffline)return error(409,"offline");
             if(runtimePaused)return error(409,"paused");
-            if(busy())return error(409,"busy");if(!plugins)return error(409,"plugins_unavailable");const auto name=body.at("tool").get<std::string>();const auto catalog=plugins->catalog();if(std::none_of(catalog.begin(),catalog.end(),[&](const auto& t){return t.at("name")==name;}))return error(400,"plugin_tool_missing");
+            if(busy())return error(409,"busy");if(!plugins)return error(409,"plugins_unavailable");const auto name=body.at("tool").get<std::string>();
+            if(name.starts_with("pixel.")&&body.contains("expected_workspace")){const auto& expected=body.at("expected_workspace");if(!expected.is_string()||expected.get_ref<const std::string&>().size()>32768||expected.get_ref<const std::string&>()!=utf8(cfg.draftsRoot))return error(409,"workspace_changed");}
+            const auto catalog=plugins->catalog();if(std::none_of(catalog.begin(),catalog.end(),[&](const auto& t){return t.at("name")==name;}))return error(400,"plugin_tool_missing");
             const auto requestId=body.value("request_id",id("operator"));if(!validRequestId(requestId))return error(400,"operator_request_id");if(!schedule(spec("operator.tool","operator.tool",{{"tool",name},{"args",body.value("args",Json::object())},{"request_id",requestId}},serviceNowMs())))return error(409,"operator_tool_busy");return reply(202,{{"queued",true},{"request_id",requestId}});
         }
         if(req.method=="GET"&&req.path=="/api/plugin/result"){for(const auto& job:jobs())if(job.spec.id=="operator.tool"){const auto payload=Json::parse(job.spec.payload);auto result=job.result.empty()?Json():Json::parse(job.result,nullptr,false);if(result.is_discarded())result=toolFailure(job.state==JobState::Paused?"operator_paused":"operator_execution_failed");return reply(200,{{"state",stateName(job.state)},{"request_id",payload.value("request_id",std::string{})},{"tool",payload.value("tool",std::string{})},{"run_token",job.runToken},{"result",result}});}return reply(200,{{"state","none"}});}
@@ -1361,6 +1364,8 @@ bool Application::initialize() {
     a.ensureChatHistory(true);
     for(const auto& messageId:a.get("ha.index","recent",Json::array()).value)a.historicalMessages.insert(messageId.get<std::string>());
     a.ensure("ha.life","current",Json::object());const auto savedLife=a.get("ha.life","current").value;a.offlineMs=std::max<std::int64_t>(0,serviceNowMs()-savedLife.value("updated_ms",serviceNowMs()));a.life.restore(savedLife,serviceNowMs());
+    // Explicit new workspace roots must exist before desktop services mount them.
+    std::string workspaceIssue;if(!a.configureWorkspace(a.cfg,workspaceIssue))return false;
     a.desktop=std::make_unique<DesktopServices>(a.cfg,[&a]{if(!a.plugins)return Json::object();const auto snapshots=a.plugins->liveSnapshots();return snapshots.contains("widget")?snapshots.at("widget").value("screen_geometry",Json::object()):Json::object();});std::string desktopIssue;if(!a.desktop->configure(desktopIssue))throw std::runtime_error(desktopIssue);
     PluginHostContext host{a.cfg.dataRoot,a.cfg.projectRoot,a.cfg.desktopEnabled,{}};host.browser=[&a](const std::string& op,const Json& args,const std::function<bool()>& cancelled){return a.desktop->browser(op,args,cancelled);};
     a.plugins=std::make_shared<PluginRuntime>(a.cfg.pluginRoot,std::move(host));
@@ -1384,7 +1389,6 @@ bool Application::initialize() {
     if(a.cfg.skillsRoot.empty())a.cfg.skillsRoot=a.cfg.projectRoot/"skills";
     a.skillRegistry=std::make_unique<SkillRegistry>(a.cfg.skillsRoot,a.cfg.skills);
     a.initializeWorkshop();
-    std::string issue;if(!a.configureWorkspace(a.cfg,issue))return false;
     if(a.cfg.materialsRoot==a.cfg.dataRoot/"materials"&&!std::filesystem::exists(a.cfg.dataRoot/"materials"/"welcome.md")) {
         std::ofstream sample(a.cfg.dataRoot/"materials"/"welcome.md",std::ios::binary);sample<<"# 实验素材\n\n这里放入可供角色读取的素材。推测、摘要与正式设定保持区分。\n";if(!sample)return false;
     }

@@ -40,6 +40,12 @@ try{
  $actor=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 65
  Check (!(($actor.tools|ConvertTo-Json -Depth 65).Contains('style_lora'))) 'operator training and editing tools are absent from character catalog'
  Check (!((Api '/api/chat').messages|ConvertTo-Json -Depth 20).Contains('style-fixture')) 'adapter internals stay out of visible dialogue'
+ $beforePause=Get-Content -LiteralPath (Join-Path $cfg.dataRoot runtime/style-lora/service-ready.json) -Raw|ConvertFrom-Json
+ $null=Api '/api/control' @{paused=$true};Await {!(Get-Process -Id $beforePause.pid -ErrorAction SilentlyContinue)} 'paused style worker exit'
+ Check (!(Get-Process -Id $beforePause.pid -ErrorAction SilentlyContinue)) 'pausing cancels the actual owned style worker'
+ $null=Api '/api/control' @{paused=$false};Plan @((Reply '我不清楚，不敢瞎说。'));$trace=Message
+ $afterPause=Get-Content -LiteralPath (Join-Path $cfg.dataRoot runtime/style-lora/service-ready.json) -Raw|ConvertFrom-Json
+ Check ($trace.style_lora.applied-and$afterPause.instance-ne$beforePause.instance-and(Api '/api/chat').messages[-1].text-eq'我不清楚。') 'resume starts a fresh service generation and preserves reviewed editing'
  Plan @((Reply '还要2分钟。'));$trace=Message
  Check (!$trace.style_lora.applied-and$trace.style_lora.reason-eq'protected_literals_changed'-and(Api '/api/chat').messages[-1].text-eq'还要2分钟。') 'numeric mutation is rejected before semantic review'
  $before=PreviewCount;Settings $true $false;Plan @((Reply '我不清楚，不敢瞎说。'));$trace=Message

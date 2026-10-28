@@ -1,5 +1,6 @@
 #pragma once
 #include <nlohmann/json.hpp>
+#include <Hibernation/PixelContext.h>
 #include <string>
 #include <set>
 #include <cstdint>
@@ -21,11 +22,11 @@ inline std::string toolObservationKind(const std::string& tool,const nlohmann::j
     return pending?"tool_intent":"tool_observation";
 }
 inline bool revisitableObservationTool(const std::string& tool){
-    static const std::set<std::string> concrete={"workspace.list","workspace.read","workspace.view_image","computer.screenshot","computer.list_directory","television.observe","television.observe_sequence","television.search","reading.search","reading.open","atelier.read","napcat.view_image"};return concrete.contains(tool);
+    static const std::set<std::string> concrete={"workspace.list","workspace.read","workspace.view_image","computer.screenshot","computer.list_directory","television.observe","television.observe_sequence","television.search","reading.search","reading.open","atelier.read","napcat.view_image"};return concrete.contains(tool)||tool=="pixel.read"||tool=="pixel.preview";
 }
 inline bool continuityObservationTool(const std::string& tool){
     static const std::set<std::string> effects={"workspace.write","workspace.edit","computer.open_application","television.open","television.open_page","television.play","television.pause","television.stop","atelier.write","atelier.append","habitat.create","habitat.act","habitat.arrange","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel"};
-    return revisitableObservationTool(tool)||effects.contains(tool);
+    return revisitableObservationTool(tool)||pixelObservationTool(tool)||pixelMutationTool(tool)||effects.contains(tool);
 }
 inline bool appraisalExperienceRecord(const nlohmann::json& record){
     const auto kind=record.value("kind",std::string{});
@@ -62,6 +63,7 @@ inline nlohmann::json referencedObservationContext(nlohmann::json record){
     using Json=nlohmann::json;const auto kind=record.value("kind",std::string{});
     if((kind!="tool_observation"&&kind!="tool_intent")||!record.contains("result")||!record.at("result").is_object())return record;
     bool removed=false;auto& result=record["result"];
+    if(record.value("tool",std::string{}).starts_with("pixel.")&&result.contains("document"))result["document"]=pixelDocumentContext(result.at("document"));
     const auto strip=[&](Json& holder){if(!holder.is_object()||!holder.contains("image"))return;holder.erase("image");holder["image_available_in_source"]=true;holder["image_content_in_context"]=false;removed=true;};
     strip(result);if(result.contains("frames")&&result.at("frames").is_array())for(auto& frame:result["frames"])strip(frame);
     if(removed)record["context_representation"]="observation_metadata_without_pixels";
@@ -80,6 +82,9 @@ inline nlohmann::json compactObservation(const nlohmann::json& record,bool image
     for(const auto* field:{"source_mount","source_path","width","height","original_width","original_height","frame_index","source_frame_count","written","completed","accepted","queued","opened","state","mode","frame_time_seconds","position_seconds","title","path","id","phase","changed","scope","source_url","article_url","provider","revision","retrieved_ms","full_article_read","text_truncated","cache_hit","language","detail","content_model","offset","next_offset","total_bytes","eof","source_total_bytes","source_truncated","reading_identity"})if(data.contains(field)&&data.at(field).is_primitive()){
         const auto& value=data.at(field);if(value.is_string()&&value.get_ref<const std::string&>().size()>512)continue;summary[field]=value;
     }
+    if(data.contains("document")&&data.at("document").is_object())summary["document"]=pixelDocumentContext(data.at("document"));
+    if(data.contains("document_id")&&data.at("document_id").is_string())summary["document_id"]=data.at("document_id");
+    if(data.contains("exported")&&data.at("exported").is_boolean())summary["exported"]=data.at("exported");
     if(data.contains("piece")&&data.at("piece").is_object()){summary["piece"]=Json::object();for(const auto* field:{"id","title","revision","kind","stage"})if(data.at("piece").contains(field))summary["piece"][field]=data.at("piece").at(field);}
     if(data.contains("game")&&data.at("game").is_object()){summary["game"]=Json::object();for(const auto* field:{"id","revision","status","lit_count","moves","moves_remaining"})if(data.at("game").contains(field))summary["game"][field]=data.at("game").at(field);}
     if(data.contains("applied")&&data.at("applied").is_boolean())summary["applied"]=data.at("applied");

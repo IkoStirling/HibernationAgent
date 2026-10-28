@@ -1,0 +1,19 @@
+{
+  "id":"pixel-canvas",
+  "name":"像素创作台",
+  "icon":"▦",
+  "description":"画一件自己的小作品，制作短动画，再把它摆到桌面。画布、版本和序列帧保存在允许的草稿区，与内部记忆分开。",
+  "version":"0.1.0",
+  "api_version":2,
+  "library":"Hibernation_PixelCanvas.dll",
+  "dependencies":[],
+  "capabilities":["creative.pixel-art","creative.frame-animation","creative.desktop-artwork"],
+  "settings_ui":[
+    {"key":"maximumDocuments","label":"最多保留的像素作品","type":"number","default":32,"min":1,"max":64,"step":1},
+    {"key":"defaultScale","label":"桌面作品的默认像素放大倍数","type":"number","default":3,"min":1,"max":8,"step":1},
+    {"key":"topmost","label":"桌面作品保持在上层","type":"toggle","default":true},
+    {"key":"restoreDesktopArtwork","label":"启动时恢复上次实际展示的作品","type":"toggle","default":true},
+    {"key":"reducedMotion","label":"减少作品动画","type":"toggle","default":false}
+  ],
+  "settings_note":"支持16、32、64像素画布、最多8帧和32色，可修改与追加颜色。作品是可见的创作资料，不是私人记忆；导出只写入草稿pixel-canvas目录。关闭插件保留作品。启动恢复只读取同一工作区、同一实际展示版本；不补做尚未展示的请求。"
+}

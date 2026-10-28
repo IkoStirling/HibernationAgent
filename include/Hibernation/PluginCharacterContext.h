@@ -1,5 +1,6 @@
 #pragma once
 #include <Hibernation/ModelEmbodiment.h>
+#include <Hibernation/PixelContext.h>
 #include <string_view>
 namespace hibernation {
 // Model context describes the character's usable world. Rendering telemetry and
@@ -9,6 +10,13 @@ inline nlohmann::json pluginCharacterContext(std::string_view id,const nlohmann:
     if(id=="style-lora")return Json::object();
     if(id=="widget")return widgetBodyContext(saved);
     Json view=Json::object();const auto take=[&](std::initializer_list<const char*> fields){for(const auto* field:fields)if(saved.contains(field))view[field]=saved.at(field);};
+    if(id=="pixel-canvas"){
+        take({"document_count","maximum","can_create","content_kind","guide"});
+        const auto surface=saved.value("surface",Json::object());view["surface"]=Json::object();
+        for(const auto* field:{"desktop","visible","pending","document_id","revision","frame","scale","paused","reduced_motion"})if(surface.contains(field))view["surface"][field]=surface.at(field);
+        view["documents"]=Json::array();for(const auto& document:saved.value("documents",Json::array())){if(view["documents"].size()>=6)break;view["documents"].push_back(document);}
+        view["authorship_note"]="目录中的作品也可能由用户编辑；自己实际调用工具后的成功写入回执才证明自己完成了相应版本。";return view;
+    }
     if(id=="habitat")take({"objects","pending","appetite","visible","desktop","creation_policy"});
     else if(id=="television")take({"mode","title","source","state","position_seconds","duration_seconds","visible","audio_available","page_platform","page_url","observation","error"});
     else if(id=="tts")take({"active","synthesizing","queued_replies"});
@@ -27,6 +35,8 @@ inline nlohmann::json pluginDialogueContext(std::string_view id,const nlohmann::
     if(id=="habitat"){
         take({"pending","appetite","visible","desktop","creation_policy"});
         view["object_count"]=current.value("objects",Json::array()).size();view["details_tool"]="habitat.observe";
+    }else if(id=="pixel-canvas"){
+        take({"document_count","maximum","can_create","surface"});view["details_tool"]="pixel.list";view["preview_tool"]="pixel.preview";
     }else if(id=="atelier"){
         take({"piece_count","can_create","maximum","content_kind"});view["details_tool"]="atelier.list";view["read_tool"]="atelier.read";
     }else if(id=="pocket"){

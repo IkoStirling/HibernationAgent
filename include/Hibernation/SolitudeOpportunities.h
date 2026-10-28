@@ -14,6 +14,12 @@ inline std::string activityConsiderationKey(const SolitudeJson& record){
     try{
     if(!record.is_object()||record.value("kind",std::string{})!="tool_observation"||!record.contains("result")||!record.at("result").is_object())return {};
     const auto& result=record.at("result");const auto tool=record.value("tool",std::string{});
+    if(tool=="pixel.edit"||tool=="pixel.palette"||tool=="pixel.frame"||tool=="pixel.undo"||tool=="pixel.redo"){
+        const auto document=result.value("document",SolitudeJson::object());
+        if(result.value("written",false)&&result.value("completed",false)&&document.is_object()&&document.contains("id")&&document.contains("revision")){
+            const auto key=SolitudeJson::array({"authored_pixel_version",document.at("id"),document.at("revision")}).dump();return key.size()<=800?key:std::string{};
+        }
+    }
     if(tool=="habitat.create"){
         const auto object=result.value("object",SolitudeJson::object());
         if(object.is_object()&&object.value("creator",std::string{})=="model"&&object.contains("id")){const auto key=SolitudeJson::array({"created_desk_object",object.at("id")}).dump();return key.size()<=800?key:std::string{};}

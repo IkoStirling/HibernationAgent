@@ -19,12 +19,13 @@ inline nlohmann::json archiveWorldExperience(const nlohmann::json& record){
     const bool legacyApplied=legacyAppliedPuzzleRecord(record);
     if(kind!="tool_observation"&&!legacyApplied)return nullptr;
     static const std::set<std::string> concrete={"pocket.start","pocket.press","pocket.leave","pocket.observe","atelier.write","atelier.append","atelier.read","reading.open","workspace.read","workspace.write","workspace.edit","habitat.create","habitat.act","habitat.arrange","habitat.observe","workspace.view_image","computer.screenshot","television.observe","television.observe_sequence"};
-    if(!concrete.contains(tool))return nullptr;
+    if(!concrete.contains(tool)&&!pixelMutationTool(tool)&&!pixelObservationTool(tool))return nullptr;
     Json facts=Json::object();
+    if(data.contains("document")&&data.at("document").is_object())facts["document"]=pixelDocumentContext(data.at("document"));
     const auto copy=[&](Json& into,const Json& from,std::initializer_list<const char*> fields){for(const auto* field:fields)if(from.contains(field)&&from.at(field).is_primitive()){
         const auto& value=from.at(field);into[field]=value.is_string()?Json(experienceExcerpt(value.get_ref<const std::string&>(),512)):value;
     }};
-    copy(facts,data,{"written","applied","completed","accepted","queued","opened","scope","source_mount","source_path","path","title","source_url","article_url","revision","retrieved_ms","full_article_read","text_truncated","content_kind","detail","content_model","source_total_bytes","source_truncated","reading_identity","offset","next_offset","total_bytes","eof","content_sha256","sampled_frames","span_seconds","full_video_watched","audio_delivered","frame_index","source_frame_count","position_seconds","frame_time_seconds"});
+    copy(facts,data,{"written","applied","exported","completed","accepted","queued","opened","scope","source_mount","source_path","path","title","source_url","article_url","revision","retrieved_ms","full_article_read","text_truncated","content_kind","detail","content_model","source_total_bytes","source_truncated","reading_identity","offset","next_offset","total_bytes","eof","content_sha256","sampled_frames","span_seconds","full_video_watched","audio_delivered","frame_index","source_frame_count","position_seconds","frame_time_seconds"});
     for(const auto* field:{"piece","game","object"})if(data.contains(field)&&data.at(field).is_object()){
         Json value=Json::object();copy(value,data.at(field),{"id","title","revision","kind","stage","status","lit_count","moves","moves_remaining","limit","name","phase","action","x","y"});
         if(std::string_view(field)=="game"&&data.at(field).contains("rows")){
