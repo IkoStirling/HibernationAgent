@@ -1,5 +1,5 @@
 {
-  "testedEngineRootCommit": "9470dde282e3126c49fe0c228aa41239c1dbfdc2",
+  "testedEngineRootCommit": "46e3ad692cf871e02183b024b1865247672ac8aa",
   "engineRelativePath": "../AliyatEngine",
   "modules": {
     "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",
@@ -7,7 +7,7 @@
     "AYFoundation/AYStorage": "462af90c9f2bb8446c01b8ae04511d4d77cf34b1",
     "AYFoundation/AYTask": "1ab1e4bbfb38a4ac5e12ef52fd09ecb4fca58549",
     "AYRuntime/AYInference": "8339cf6dd0b33259e5eb8274095362c873d51760",
-    "AYRuntime/AYNetwork": "a731b7e1bea6b8be99349a238ab8489c7405b87c",
+    "AYRuntime/AYNetwork": "6a18a14f0e6c684fa9ac1b7a2f7522a6a954e10a",
     "AYRuntime/AYApplication": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
     "AYRuntime/AYEventSystem": "d7296137684e2d6f8c9b859dcd317b8b72629e3f",
     "AYFoundation/AYCrypto": "1ba2f3918a5892a1d9ccc2fdab2ce1fe7dddfdbd",
@@ -18,7 +18,8 @@
     "AYFoundation/AYMath": "ee4580b114ae719b3416204661607411cba7a107",
     "AYFoundation/AYTime": "7e7108d0fe31d43ce87cba011d7fd228bfad0306",
     "AYFoundation/AYPlatform": "c7d7a75e003978e1c7e2cf2ee3ed9182f27fd191",
-    "AYFoundation/AYLog": "d4c717cd8afd2ed8ac92a3a6c1300810144b4f7a"
+    "AYFoundation/AYLog": "d4c717cd8afd2ed8ac92a3a6c1300810144b4f7a",
+    "AYRuntime/AY2D": "0aa31f77b8df9ea5a6f424d18defef01facb67cb"
   },
   "recordStorageFormats": {
     "plain": 1,
@@ -27,7 +28,10 @@
   },
   "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "679860701BC5EC9BB3F663B3BD9D1F7C58D6F183F87E294802C359027B7D05B4",
+  "validatedExecutableSha256": "FFADBC7AD69034B1B90F7966B29FC1829EB4C9CB23C590A3FA5269C4A85E2944",
   "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
-  "applicationVersion": "0.7.0"
+  "applicationVersion": "0.7.0",
+  "validatedApplicationSourceCommit": "f99a5283a835b43bc42fa1db88f516ebbc4a458e",
+  "engineWorktreeDirty": false,
+  "validationScope": "Local Windows runtime; unchanged local FFmpeg SDK requires existing development CRT. Not a portable distribution certification."
 }
