@@ -1,5 +1,5 @@
 param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
-$ErrorActionPreference='Stop';$service=$null;$provider=$null;$checks=0
+$ErrorActionPreference='Stop';. (Join-Path $PSScriptRoot ProjectedRequest.ps1);$service=$null;$provider=$null;$checks=0
 $root=Join-Path $ScratchRoot ('vision-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='vision-fixture-only'
 function Check($Condition,$Name){if(!$Condition){throw "CHECK FAILED: $Name"};$script:checks++;Write-Output "PASS $Name"}
@@ -59,7 +59,7 @@ try{
  $null=Api '/api/access' @{id=$memoryId;accessible=$false};Plan @($revisit,(Reply));$trace=Message;Check ((Feedback).error.code-eq'observation_not_accessible'-and$trace.visual_inputs.Count-eq0) 'hidden observation source cannot be recalled into actual image parts'
  $null=Api '/api/access' @{id=$memoryId;accessible=$true};Plan @($revisit,(Reply));$null=Message;Check ((Feedback).ok-and(Feedback).result.image_attached) 'restored source permission enables an explicit new revisit'
  $forged=@{version=1;kind='call';text=$null;calls=@(@{id='unknown-source';tool='observation.revisit';args=@{source_id='not-authorized-by-context'}})};Plan @($forged,(Reply));$null=Message;Check ((Feedback).error.code-eq'observation_not_accessible') 'revisit cannot enumerate arbitrary archived observations'
- $internal=@{version=1;kind='call';text=$null;calls=@(@{id='private-state';tool='self.observe';args=@{}})};$privateRead=@{version=1;kind='call';text=$null;calls=@(@{id='private-revisit';tool='observation.revisit';args=@{source_id='${last_source_id}'}})};Plan @($internal,$privateRead,(Reply));$null=Message;Check ((Feedback).error.code-eq'observation_not_revisitable') 'concrete observation recall cannot expose old internal personal-state snapshots'
+ $internal=@{version=1;kind='call';text=$null;calls=@(@{id='private-state';tool='self.observe';args=@{}})};$privateRead=@{version=1;kind='call';text=$null;calls=@(@{id='private-revisit';tool='observation.revisit';args=@{source_id='${last_source_id}'}})};Plan @($internal,$privateRead,(Reply));$null=Message;$privateResult=Feedback;$currentWire=Get-Content (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 80;$privateReceipt=@(Model-CurrentMessages $currentWire|ForEach-Object {if($_.content-is[string]){try{($_.content|ConvertFrom-Json -Depth 70).tool_results}catch{}}}|Where-Object call_id -eq 'private-state')[0];Check ($privateResult.error.code-eq'observation_not_revisitable'-or($privateResult.error.code-eq'invalid_tool_arguments'-and$privateReceipt.ok-and!$privateReceipt.source_id)) 'private-state views supply no reusable observation handle; legacy private snapshots remain non-revisitable'
  $wrapped='```json'+"`n"+((Reply)|ConvertTo-Json -Compress)+"`n"+'```'
  Plan @($wrapped);$trace=Message
  Check ($trace.turns.Count-eq1-and$trace.turns[0].envelope_normalized) 'a complete fenced JSON envelope is normalized without another model call'
@@ -68,7 +68,7 @@ try{
   Plan @($candidate);$trace=Message;Check ($trace.turns.Count-eq1-and$trace.turns[0].envelope_normalized) 'complete BOM or CRLF JSON wrappers do not need a paid repair'
  }
  $capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json
- $context=$capture.messages[1].content|ConvertFrom-Json;$past=@($context.authorized_context|Where-Object id -eq $pictureSource)
+ $context=$capture.messages[1].content|ConvertFrom-Json;$past=@((Model-AuthorizedRows $capture)|Where-Object id -eq $pictureSource)
  Check ($past.Count-eq1-and$past[0].data.result.image_delivered_to_model-and!$past[0].data.result.image) 'a following turn retains a real image-delivery receipt without replaying pixels'
  Plan @('看到了，左边是红色方块，右边是蓝色圆。');$trace=Message
  Check ($trace.turns.Count-eq1-and$trace.turns[0].plain_reply_wrapped-and$trace.reviews.Count-eq1) 'plain dialogue can become a reply-only candidate and still requires the final reviewer'
@@ -80,24 +80,24 @@ try{
  $messageCount=@((Api '/api/chat').messages|Where-Object role -eq assistant).Count
  Plan @((Calls 'quiet.png'),@{version=1;kind='silence';text=$null;calls=@()});$quietTrace=Message;$quietSource=$quietTrace.tool_results[0].source_id
  Check ($quietTrace.silent-and$quietSource-and@((Api '/api/chat').messages|Where-Object role -eq assistant).Count-eq$messageCount) 'successful image observation may finish silently without an empty chat bubble'
- Plan @((Reply));$null=Message;$capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json;$quietReceipt=@($context.authorized_context|Where-Object id -eq $quietSource)
+ Plan @((Reply));$null=Message;$capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json;$quietReceipt=@((Model-AuthorizedRows $capture)|Where-Object id -eq $quietSource)
  Check ($quietReceipt.Count-eq1-and$quietReceipt[0].data.result.source_path-eq'quiet.png'-and$quietReceipt[0].data.result.image_delivered_to_model-and!$quietReceipt[0].data.result.image) 'next conversation retains a silent real observation and its actual image delivery receipt without pixels'
  $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)) 'silent observation host stops cleanly';Remove-Item -LiteralPath $ready
  $service=Start-Process -FilePath $Executable -ArgumentList ('--config "'+$configPath+'" --ready-file "'+$ready+'"') -WindowStyle Hidden -PassThru;Await {Test-Path -LiteralPath $ready} 'silent observation restart';$script:origin='http://127.0.0.1:'+((Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).port)
  Plan @((Reply));$null=Message;$capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json
- Check (@($context.authorized_context|Where-Object id -eq $quietSource).Count-eq1) 'silent observation continuity survives a normal restart without replaying the tool'
+ Check (@((Model-AuthorizedRows $capture)|Where-Object id -eq $quietSource).Count-eq1) 'silent observation continuity survives a normal restart without replaying the tool'
  $remember.calls[0].args.source_ids=@($quietSource);Plan @($remember,(Reply));$null=Message;$quietMemory=(Feedback).result.id;$null=Api '/api/access' @{id=$quietMemory;accessible=$false}
  Plan @((Reply));$null=Message;$capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json
- Check (@($context.authorized_context|Where-Object id -eq $quietSource).Count-eq0) 'independent observation index respects withdrawn source access after restart'
+ Check (@((Model-AuthorizedRows $capture)|Where-Object id -eq $quietSource).Count-eq0) 'independent observation index respects withdrawn source access after restart'
  # A read-only capture no longer consumes a separate semantic-review call.
  $settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 50|ConvertFrom-Json -AsHashtable;$settings.maxStartsPerHour=(Api '/api/dashboard').model_budget.used+1;$null=Api '/api/settings' @{settings=$settings}
  Plan @((Calls 'quiet.png'),(Reply));$blocked=Message;$blockedSource=$blocked.tool_results[0].source_id
  Check ((Api '/api/chat').call_error.code-eq'local_hourly_budget'-and$blockedSource-and$blocked.visual_inputs[0].delivery_state-eq'prepared') 'budget exhausted after capture leaves a prepared image rather than a false delivered receipt'
- $settings.maxStartsPerHour=600;$null=Api '/api/settings' @{settings=$settings};Plan @((Reply));$null=Message;$capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json;$prepared=@($context.authorized_context|Where-Object id -eq $blockedSource)
+ $settings.maxStartsPerHour=600;$null=Api '/api/settings' @{settings=$settings};Plan @((Reply));$null=Message;$capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json;$prepared=@((Model-AuthorizedRows $capture)|Where-Object id -eq $blockedSource)
  Check ($prepared.Count-eq1-and$prepared[0].data.result.image_delivery_status-eq'prepared_only'-and!$prepared[0].data.result.image_delivered_to_model) 'later context distinguishes saved pixels from a request that was never made'
  $originalBlocked=Api '/api/archive' @{id=$blockedSource};$silentRevisit=@{version=1;kind='call';text=$null;calls=@(@{id='silent-revisit';tool='observation.revisit';args=@{source_id=$blockedSource}})}
  Plan @($silentRevisit,@{version=1;kind='silence';text=$null;calls=@()});$recalled=Message;Check ($recalled.silent-and$recalled.visual_inputs[0].delivery_state-eq'acknowledged') 'later successful original-image delivery may end silently'
- Plan @((Reply));$null=Message;$capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json;$delivered=@($context.authorized_context|Where-Object id -eq $blockedSource)
+ Plan @((Reply));$null=Message;$capture=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json;$delivered=@((Model-AuthorizedRows $capture)|Where-Object id -eq $blockedSource)
  Check ($delivered.Count-eq1-and$delivered[0].data.result.image_delivery_status-eq'acknowledged'-and$delivered[0].data.result.image_delivered_to_model) 'a silent successful revisit upgrades delivery evidence without depending on a spoken reply'
  $stillOriginal=Api '/api/archive' @{id=$blockedSource};Check (($stillOriginal|ConvertTo-Json -Depth 50 -Compress)-eq($originalBlocked|ConvertTo-Json -Depth 50 -Compress)) 'delivery ledger and renewed relevance never rewrite the original observation'
  $settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 50|ConvertFrom-Json -AsHashtable;$settings.profiles[1].supportsVision=$false;$null=Api '/api/settings' @{settings=$settings}

@@ -731,3 +731,13 @@
 - 功能源提交8dc8208d47257aa8a32f4e4c82fbaec9a340837a；引擎根a01f8807、AYInference1523900a，实际测试时引擎工作区干净。engine-version.json记录实际安装的Release指纹63CDEC75D8DD7522D1C6EB49C757430B8F8E2FEF3CA03EBEF83D963607997AC0。
 - 2026-10-28 11:29:03（Asia/Shanghai）完成统一安装：先备份619256663字节到E:/Aliyat/Backups/HibernationAgent/workshop-deployment-20261028-112539-4812ab4e，再校验并更新677个运行文件。安装位置Integration42项、ConfigurationCheck和便携Git/7-Zip实际回环检查通过。388个正式数据文件（不含持有的临时服务锁）、人设、配置逐字节不变，正式后台保持停止。实际付费调用0。
 - 完成记录见artifacts/workshop-deployment.json；旧V0.7标签仍指向ab89121f，未移动。发布协调脚本默认只检查，执行时绑定本轮封存源码/文件指纹与功能提交，防止用旧证据部署新代码。
+
+
+## 2026-10-28：跨轮有界上下文投影
+
+- 用户“继续下一步”后实现跨轮追加式会话：普通桌面/QQ用户消息按连接、模型和通道分隔，保留已发送前缀，追加新事件、来源视图与RFC6902状态差异；审核仍取得程序还原的完整当前事件。容量/轮数、规则/模型、来源版本/访问策略或对白重建变化会重新建立基线。后台活动、持续任务和图片轮次暂不发布可复用文本段，不宣称所有调用均能达到98%。
+- 投影段与索引使用现有加密记录库；不复制每轮整份历史，不删除原始交谈，不把仅供连续性判断的引用提升为内容读取授权。中途撤销后停止下一次模型调用；同轮批准的记忆修订凭对应真实回执更新版本检查，其他变更不能绕过授权。协议修复/审核重写后仍检查保留来源权限。新增开关、容量及轮数设置，保存后生效。
+- 验证发现并修正：旧测试将messages[1]及首个工具回执误当本轮资料；叙事来源和内容来源需要分别恢复；新鲜来源不能套用缓存历史的软排除规则；批准修订不应拦住后续遗忘。增加独立会话测试、来源权限单元检查和测试请求还原器。Windows WMI进程枚举卡住协议测试，改为按父PID进行原生快照查询，完整协议重测59.77秒通过。
+- 独立源码构建out/sp-verify：单元、SessionProjection、ProcessIntegration、ConfigurationCheck通过；ContinuityIntegration在修正测试还原器对空event_id后台事件的识别后64.63秒通过。合并构建out/cache-20261028：SessionProjection、ProtocolIntegration、Vision、NativeTools通过；ContinuityIntegration最终63.78秒通过。此前ContextControl、CachePipeline、Napcat定向回归通过。浏览器6项开关/保存/重载/窄窗口检查通过，证据artifacts/session-projection-ui-1793197118059。
+- 隔离构建首次误用All配合仅构建三个目标，触发未构建的引擎测试Not Run；不将其计作通过。后续采用Build及明确的上述应用目标。早期失败和超时日志保留在artifacts/session-projection-*，不以反复付费请求或长稳测试填充验证。
+- 本轮实际付费模型调用0，不复制私人对白，未改正式配置、密钥、人设和档案。缓存生产代码已冻结；按另一聊天获用户授权的协调要求，不自行替换正式后台，由QQ/桌面共享记忆任务完成最终合并、备份及统一部署。冻结提交和验证清单见artifacts/session-projection-freeze.json；旧V0.7标签保持不变。

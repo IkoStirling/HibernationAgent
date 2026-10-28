@@ -34,9 +34,9 @@ inline std::string cacheOrderedBackground(const nlohmann::json& event){
 // Keep an already-sent tool receipt immutable while the turn remains within a
 // bounded receipt window. Rewriting it on every step destroys append-only reuse.
 // A real overflow starts a compacted prefix; authority/source checks are unchanged.
-inline bool compactCachedToolMessages(std::vector<ayt::inference::Message>& messages,std::size_t limit){
+inline bool compactCachedToolMessages(std::vector<ayt::inference::Message>& messages,std::size_t limit,std::size_t first=0){
     std::size_t bytes=0;
-    for(const auto& message:messages){
+    for(std::size_t i=first;i<messages.size();++i){const auto& message=messages[i];
         if(message.role=="tool")bytes+=message.text.size();
         else if(message.role=="user"){
             const auto value=nlohmann::json::parse(message.text,nullptr,false);
@@ -45,7 +45,7 @@ inline bool compactCachedToolMessages(std::vector<ayt::inference::Message>& mess
     }
     if(bytes<=std::max<std::size_t>(16384,limit*4))return false;
     bool changed=false;
-    for(auto& message:messages){
+    for(std::size_t i=first;i<messages.size();++i){auto& message=messages[i];
         if(message.role!="tool"&&message.role!="user")continue;
         auto value=nlohmann::json::parse(message.text,nullptr,false);if(!value.is_object())continue;
         if(message.role=="tool")value=priorReceiptContext(value,limit);

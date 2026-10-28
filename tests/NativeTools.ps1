@@ -1,5 +1,5 @@
 param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
-$ErrorActionPreference='Stop';$service=$null;$provider=$null;$checks=0
+$ErrorActionPreference='Stop';. (Join-Path $PSScriptRoot ProjectedRequest.ps1);$service=$null;$provider=$null;$checks=0
 $root=Join-Path $ScratchRoot ('native-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='native-fixture-only'
 function Check($Condition,$Name){if(!$Condition){throw "CHECK FAILED: $Name"};$script:checks++;Write-Output "PASS $Name"}
@@ -10,7 +10,7 @@ function Native($Id,$Name,$Arguments){@{fixture_native_calls=@(@{id=$Id;name=$Na
 function Reply{@{version=1;kind='reply';text='这一页先放在这里。';calls=@()}}
 function Message{$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='完成这次隔离工具验证'};Await {!(Api '/api/chat').busy} 'turn';$job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$info=$job.result|ConvertFrom-Json;Api '/api/trace' @{id=$info.trace_id}}
 function Capture{Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 70}
-function Receipts($Capture){if($script:protocol-eq'responses'){@($Capture.input|Where-Object type -eq function_call_output|ForEach-Object {$_.output|ConvertFrom-Json -Depth 50})}else{@($Capture.messages|Where-Object role -eq tool|ForEach-Object {$_.content|ConvertFrom-Json -Depth 50})}}
+function Receipts($Capture){if($script:protocol-eq'responses'){@((Model-CurrentMessages $Capture)|Where-Object type -eq function_call_output|ForEach-Object {$_.output|ConvertFrom-Json -Depth 50})}else{@((Model-CurrentMessages $Capture)|Where-Object role -eq tool|ForEach-Object {$_.content|ConvertFrom-Json -Depth 50})}}
 try{
  $providerRoot=Join-Path $root provider;New-Item -ItemType Directory -Force $providerRoot|Out-Null
  $provider=Start-Process -FilePath $ProviderExecutable -ArgumentList ('"'+$providerRoot+'"') -WindowStyle Hidden -PassThru

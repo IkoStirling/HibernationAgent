@@ -9,14 +9,15 @@ namespace hibernation {
 // Application policy, independent of providers/prices. A future pricing plugin
 // can choose a preset without replacing the actor/reviewer/tool pipeline.
 struct ContextControl {
-    bool enabled=true,reviewReadOnlyTools=false,reviewSilence=false,imageOnce=true;
+    bool enabled=true,reviewReadOnlyTools=false,reviewSilence=false,imageOnce=true,sessionProjection=true;
     std::string preset="balanced";
     std::size_t historyBytes=12000,reviewHistoryBytes=6000,oldReceiptBytes=4096;
     std::size_t protocolRepairs=1,reviewAttempts=2;
+    std::size_t sessionBytes=131072,sessionMaxTurns=16;
     static ContextControl read(const nlohmann::json& value){
         using Json=nlohmann::json;ContextControl out;
         if(!value.is_object())throw std::runtime_error("context_control_object");
-        const std::set<std::string> fields={"enabled","preset","historyBytes","reviewHistoryBytes","oldReceiptBytes","reviewReadOnlyTools","reviewSilence","imageOnce","protocolRepairs","reviewAttempts"};
+        const std::set<std::string> fields={"enabled","preset","historyBytes","reviewHistoryBytes","oldReceiptBytes","reviewReadOnlyTools","reviewSilence","imageOnce","protocolRepairs","reviewAttempts","sessionProjection","sessionBytes","sessionMaxTurns"};
         for(auto it=value.begin();it!=value.end();++it)if(!fields.contains(it.key()))throw std::runtime_error("context_control_field");
         auto boolean=[&](const char* key,bool fallback){if(!value.contains(key))return fallback;if(!value.at(key).is_boolean())throw std::runtime_error("context_control_boolean");return value.at(key).get<bool>();};
         if(value.contains("preset")){if(!value.at("preset").is_string())throw std::runtime_error("context_control_preset");out.preset=value.at("preset");}
@@ -27,12 +28,15 @@ struct ContextControl {
         out.historyBytes=number("historyBytes",out.historyBytes,2048,262144);
         out.reviewHistoryBytes=number("reviewHistoryBytes",out.reviewHistoryBytes,1024,262144);
         out.oldReceiptBytes=number("oldReceiptBytes",out.oldReceiptBytes,512,65536);
+        out.sessionProjection=boolean("sessionProjection",true)&&out.enabled;
+        out.sessionBytes=number("sessionBytes",out.preset=="economy"?65536:131072,16384,524288);
+        out.sessionMaxTurns=number("sessionMaxTurns",16,2,64);
         out.reviewReadOnlyTools=boolean("reviewReadOnlyTools",false);out.reviewSilence=boolean("reviewSilence",false);out.imageOnce=boolean("imageOnce",true);
         out.protocolRepairs=number("protocolRepairs",out.protocolRepairs,0,2);out.reviewAttempts=number("reviewAttempts",out.reviewAttempts,1,2);
         if(!out.enabled){out.reviewReadOnlyTools=true;out.reviewSilence=true;out.imageOnce=false;out.protocolRepairs=2;out.reviewAttempts=2;}
         return out;
     }
-    nlohmann::json describe()const{return {{"enabled",enabled},{"preset",preset},{"historyBytes",historyBytes},{"reviewHistoryBytes",reviewHistoryBytes},{"oldReceiptBytes",oldReceiptBytes},{"reviewReadOnlyTools",reviewReadOnlyTools},{"reviewSilence",reviewSilence},{"imageOnce",imageOnce},{"protocolRepairs",protocolRepairs},{"reviewAttempts",reviewAttempts}};}
+    nlohmann::json describe()const{return {{"sessionProjection",sessionProjection},{"sessionBytes",sessionBytes},{"sessionMaxTurns",sessionMaxTurns},{"enabled",enabled},{"preset",preset},{"historyBytes",historyBytes},{"reviewHistoryBytes",reviewHistoryBytes},{"oldReceiptBytes",oldReceiptBytes},{"reviewReadOnlyTools",reviewReadOnlyTools},{"reviewSilence",reviewSilence},{"imageOnce",imageOnce},{"protocolRepairs",protocolRepairs},{"reviewAttempts",reviewAttempts}};}
     std::size_t historyLimit(std::size_t legacy,std::size_t required)const{return enabled?std::min(legacy,std::max(historyBytes,required)):legacy;}
 };
 inline bool readOnlyModelTool(const std::string& name){
