@@ -1,12 +1,12 @@
 {
-  "testedEngineRootCommit": "46e3ad692cf871e02183b024b1865247672ac8aa",
+  "testedEngineRootCommit": "a01f88079f42e297e1a071bfdc248653e9748b3c",
   "engineRelativePath": "../AliyatEngine",
   "modules": {
     "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",
     "AYFoundation/AYSerializer": "c839aa10e419a47330ffcaa7020afff556de566b",
     "AYFoundation/AYStorage": "462af90c9f2bb8446c01b8ae04511d4d77cf34b1",
     "AYFoundation/AYTask": "1ab1e4bbfb38a4ac5e12ef52fd09ecb4fca58549",
-    "AYRuntime/AYInference": "8339cf6dd0b33259e5eb8274095362c873d51760",
+    "AYRuntime/AYInference": "1523900a76c4892ecaff1172f64bbe65d778f779",
     "AYRuntime/AYNetwork": "6a18a14f0e6c684fa9ac1b7a2f7522a6a954e10a",
     "AYRuntime/AYApplication": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
     "AYRuntime/AYEventSystem": "d7296137684e2d6f8c9b859dcd317b8b72629e3f",
@@ -28,10 +28,10 @@
   },
   "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "0001CB26E4F46C4C32FA2943AD6D7CAA9A8AA3D505F22D8FEEDE6EA90EE856FB",
+  "validatedExecutableSha256": "63CDEC75D8DD7522D1C6EB49C757430B8F8E2FEF3CA03EBEF83D963607997AC0",
   "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
   "applicationVersion": "0.7.0",
-  "validatedApplicationSourceCommit": "8f825b3b31df502188e6adcbc5196b7de5398a6e",
+  "validatedApplicationSourceCommit": "8dc8208d47257aa8a32f4e4c82fbaec9a340837a",
   "engineWorktreeDirty": false,
-  "validationScope": "Local Windows runtime; unchanged local FFmpeg SDK requires existing development CRT. Not a portable distribution certification."
+  "validationScope": "Merged memory workshop/dashboard and model-cache changes. Local Windows runtime; existing FFmpeg SDK requires development CRT. Not a portable distribution certification."
 }
