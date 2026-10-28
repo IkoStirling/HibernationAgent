@@ -48,6 +48,14 @@ assert.equal(recovered.totals().tokens,2058); // In-flight/crashed calls retain 
 recovered.close();
 assert.deepEqual(readUsage('{"usage":{"prompt_tokens":4,"completion_tokens":2}}','application/json'),{input:4,output:2});
 assert.equal(readUsage('broken','application/json'),null);
+const sse = value => 'data: '+JSON.stringify(value)+'\n\n';
+const created = sse({type:'response.created',response:{usage:{input_tokens:0,output_tokens:0}}});
+assert.equal(readUsage(created,'text/event-stream'),null);
+assert.equal(readUsage(created+'data: [DONE]\n\n','text/event-stream'),null);
+const finalUsage={input_tokens:45,output_tokens:12};
+assert.deepEqual(readUsage(created+sse({type:'response.completed',response:{usage:finalUsage}}),'text/event-stream'),{input:45,output:12});
+assert.deepEqual(readUsage(sse({usage:{prompt_tokens:20,completion_tokens:8}})+'data: [DONE]\n\n','text/event-stream'),{input:20,output:8});
+assert.equal(readUsage(sse({usage:{prompt_tokens:20,completion_tokens:8}}),'text/event-stream'),null);
 assert.throws(()=>createRelay({ledger,routes:{a:{origin:'http://example.com',basePath:'/v1'}},capability,deadline:'2099-01-01'}),/invalid_upstream/);
 const expiredLedger = new Ledger(path.join(root,'expired.json'));
 const expired = createRelay({ledger:expiredLedger,routes:{actor:{origin,basePath:'/v1'}},capability,deadline:'2000-01-01',allowLocalFixture:true});

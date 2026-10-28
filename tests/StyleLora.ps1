@@ -1,4 +1,5 @@
 param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot,[Parameter(Mandatory)][string]$Python)
+. (Join-Path $PSScriptRoot ProjectedRequest.ps1)
 $ErrorActionPreference='Stop';$service=$null;$provider=$null;$checks=0
 $root=Join-Path $ScratchRoot ('style-lora-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='style-lora-local-fixture'
@@ -35,7 +36,7 @@ try{
  Settings $true
  Plan @((Reply '我不清楚，不敢瞎说。'));$trace=Message
  Check ($trace.style_lora.applied-and(Api '/api/chat').messages[-1].text-eq'我不清楚。') 'enabled editor feeds final approved text to chat history'
- $review=Get-Content -LiteralPath (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 65;$reviewData=$review.messages[1].content|ConvertFrom-Json -Depth 65
+ $review=Get-Content -LiteralPath (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 65;$reviewData=Model-ReviewEvent $review
  Check ($reviewData.style_edit.original_text-eq'我不清楚，不敢瞎说。'-and$reviewData.style_edit.proposed_text-eq'我不清楚。') 'reviewer sees original and proposed wording before approval'
  $actor=Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 65
  Check (!(($actor.tools|ConvertTo-Json -Depth 65).Contains('style_lora'))) 'operator training and editing tools are absent from character catalog'

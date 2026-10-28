@@ -9,34 +9,37 @@ namespace hibernation {
 // Application policy, independent of providers/prices. A future pricing plugin
 // can choose a preset without replacing the actor/reviewer/tool pipeline.
 struct ContextControl {
-    bool enabled=true,reviewReadOnlyTools=false,reviewSilence=false,imageOnce=true,sessionProjection=true;
-    std::string preset="balanced";
+    bool enabled=true,reviewReadOnlyTools=false,reviewSilence=false,imageOnce=true,sessionProjection=true,backgroundProjection=false;
+    std::string preset="balanced",reviewLayout="direct";
     std::size_t historyBytes=12000,reviewHistoryBytes=6000,oldReceiptBytes=4096;
     std::size_t protocolRepairs=1,reviewAttempts=2;
     std::size_t sessionBytes=131072,sessionMaxTurns=16;
     static ContextControl read(const nlohmann::json& value){
         using Json=nlohmann::json;ContextControl out;
         if(!value.is_object())throw std::runtime_error("context_control_object");
-        const std::set<std::string> fields={"enabled","preset","historyBytes","reviewHistoryBytes","oldReceiptBytes","reviewReadOnlyTools","reviewSilence","imageOnce","protocolRepairs","reviewAttempts","sessionProjection","sessionBytes","sessionMaxTurns"};
+        const std::set<std::string> fields={"enabled","preset","historyBytes","reviewHistoryBytes","oldReceiptBytes","reviewReadOnlyTools","reviewSilence","imageOnce","protocolRepairs","reviewAttempts","sessionProjection","sessionBytes","sessionMaxTurns","backgroundProjection","reviewLayout"};
         for(auto it=value.begin();it!=value.end();++it)if(!fields.contains(it.key()))throw std::runtime_error("context_control_field");
         auto boolean=[&](const char* key,bool fallback){if(!value.contains(key))return fallback;if(!value.at(key).is_boolean())throw std::runtime_error("context_control_boolean");return value.at(key).get<bool>();};
         if(value.contains("preset")){if(!value.at("preset").is_string())throw std::runtime_error("context_control_preset");out.preset=value.at("preset");}
         if(out.preset=="economy"){out.historyBytes=7000;out.reviewHistoryBytes=3000;out.oldReceiptBytes=2048;out.reviewAttempts=1;}
         else if(out.preset!="balanced"&&out.preset!="full")throw std::runtime_error("context_control_preset");
+        if(value.contains("reviewLayout")){if(!value.at("reviewLayout").is_string())throw std::runtime_error("context_review_layout");out.reviewLayout=value.at("reviewLayout");}
+        if(out.reviewLayout!="direct"&&out.reviewLayout!="legacy"&&out.reviewLayout!="snapshots")throw std::runtime_error("context_review_layout");
         auto number=[&](const char* key,std::size_t fallback,std::size_t min,std::size_t max){if(!value.contains(key))return fallback;const auto& x=value.at(key);if(!x.is_number_integer()||x.get<double>()<static_cast<double>(min)||x.get<double>()>static_cast<double>(max))throw std::runtime_error("context_control_range");return x.get<std::size_t>();};
         out.enabled=boolean("enabled",true)&&out.preset!="full";
         out.historyBytes=number("historyBytes",out.historyBytes,2048,262144);
         out.reviewHistoryBytes=number("reviewHistoryBytes",out.reviewHistoryBytes,1024,262144);
         out.oldReceiptBytes=number("oldReceiptBytes",out.oldReceiptBytes,512,65536);
         out.sessionProjection=boolean("sessionProjection",true)&&out.enabled;
+        out.backgroundProjection=boolean("backgroundProjection",false)&&out.sessionProjection;
         out.sessionBytes=number("sessionBytes",out.preset=="economy"?65536:131072,16384,524288);
         out.sessionMaxTurns=number("sessionMaxTurns",16,2,64);
         out.reviewReadOnlyTools=boolean("reviewReadOnlyTools",false);out.reviewSilence=boolean("reviewSilence",false);out.imageOnce=boolean("imageOnce",true);
         out.protocolRepairs=number("protocolRepairs",out.protocolRepairs,0,2);out.reviewAttempts=number("reviewAttempts",out.reviewAttempts,1,2);
-        if(!out.enabled){out.reviewReadOnlyTools=true;out.reviewSilence=true;out.imageOnce=false;out.protocolRepairs=2;out.reviewAttempts=2;}
+        if(!out.enabled){out.reviewLayout="legacy";out.reviewReadOnlyTools=true;out.reviewSilence=true;out.imageOnce=false;out.protocolRepairs=2;out.reviewAttempts=2;}
         return out;
     }
-    nlohmann::json describe()const{return {{"sessionProjection",sessionProjection},{"sessionBytes",sessionBytes},{"sessionMaxTurns",sessionMaxTurns},{"enabled",enabled},{"preset",preset},{"historyBytes",historyBytes},{"reviewHistoryBytes",reviewHistoryBytes},{"oldReceiptBytes",oldReceiptBytes},{"reviewReadOnlyTools",reviewReadOnlyTools},{"reviewSilence",reviewSilence},{"imageOnce",imageOnce},{"protocolRepairs",protocolRepairs},{"reviewAttempts",reviewAttempts}};}
+    nlohmann::json describe()const{return {{"reviewLayout",reviewLayout},{"backgroundProjection",backgroundProjection},{"sessionProjection",sessionProjection},{"sessionBytes",sessionBytes},{"sessionMaxTurns",sessionMaxTurns},{"enabled",enabled},{"preset",preset},{"historyBytes",historyBytes},{"reviewHistoryBytes",reviewHistoryBytes},{"oldReceiptBytes",oldReceiptBytes},{"reviewReadOnlyTools",reviewReadOnlyTools},{"reviewSilence",reviewSilence},{"imageOnce",imageOnce},{"protocolRepairs",protocolRepairs},{"reviewAttempts",reviewAttempts}};}
     std::size_t historyLimit(std::size_t legacy,std::size_t required)const{return enabled?std::min(legacy,std::max(historyBytes,required)):legacy;}
 };
 inline bool readOnlyModelTool(const std::string& name){

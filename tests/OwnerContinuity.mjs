@@ -1,4 +1,4 @@
-import {decode,eventOf,currentMessages} from './ProjectedEvent.mjs';
+import {decode,eventOf,currentMessages,reviewOf} from './ProjectedEvent.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -48,7 +48,7 @@ function actor(body){const e=eventOf(body);assert(e);actorRequests.push(body);co
  }
  return reply(e.input.includes('称呼改成')?'好，榛子。':e.input.includes('撤回口令')?'那就不用这个口令了。':'我在听。');
 }
-function reviewer(body){const v=body.messages.map(m=>decode(m.content)).find(x=>x?.event_context);reviewRequests.push(body);if(!v)throw Error(JSON.stringify(body));const e=decode(v.event_context);assert(!e.projection,'review gets an expanded current frame');if(v.current_user_message!==null)assert.equal(e.input,v.current_user_message,'review cannot accidentally audit an earlier cached user event');const verdict={decision:'approve',reason:'ok',guidance:'',focus_update:null};if(JSON.stringify(body.messages[0]).includes('continuity_updates'))verdict.continuity_updates=[];if(v.target==='tools')return verdict;
+function reviewer(body){const v=reviewOf(body);reviewRequests.push(body);if(!v)throw Error(JSON.stringify(body));const e=decode(v.event_context);assert(!e.projection,'review gets an expanded current frame');if(v.current_user_message!==null)assert.equal(e.input,v.current_user_message,'review cannot accidentally audit an earlier cached user event');const verdict={decision:'approve',reason:'ok',guidance:'',focus_update:null};if(JSON.stringify(body.messages[0]).includes('continuity_updates'))verdict.continuity_updates=[];if(v.target==='tools')return verdict;
  const entries=v.shared_understanding?.entries||[],revision=id=>entries.find(n=>n.id===id)?.revision||0;const update=(id,kind,quote,meaning,status='active',source=v.current_user_source_id)=>({id,expected_revision:revision(id),kind,status,quote,meaning,source_id:source});
  if(v.current_user_message==='桌面接续检查'){
   const raw=e.authorized_context.find(r=>r.data.text?.includes('LEGACY_OWNER_LONG_CONTEXT'));assert(raw,'reviewer receives the original long user packet, not just its beginning');assert(raw.data.text.includes(quoteTrigger));verdict.continuity_updates=[update('address','preference',quoteName,'称呼使用松果。','active',raw.id),update('trigger','trigger',quoteTrigger,'口令与暂停小游戏的意思。','active',raw.id)];

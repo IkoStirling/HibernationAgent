@@ -51,16 +51,25 @@ export function readUsage(body, type) {
   }
   try {
     if (!type.includes('text/event-stream')) return extract(JSON.parse(body));
-    let usage = null;
+    let usage = null, completed = false;
     for (const line of body.split(/\r?\n/)) if (line.startsWith('data:')) {
-      const data = line.slice(5).trim(); if (!data || data === '[DONE]') continue;
-      try {usage = extract(JSON.parse(data)) ?? usage;} catch {}
+      const data = line.slice(5).trim(); if (!data) continue;
+      if (data === '[DONE]') {completed = true; continue;}
+      try {
+        const value = JSON.parse(data);
+        const terminal = ['response.completed','response.incomplete','response.failed'].includes(value.type);
+        const measured = extract(value);
+        // Responses may announce a zero-valued usage at creation. A truncated
+        // stream must retain its reservation instead of being counted as free.
+        if (terminal) {completed = true; usage = measured ?? usage;}
+        else if (measured && !value.type?.startsWith('response.')) usage = measured;
+      } catch {}
     }
-    return usage;
+    return completed ? usage : null;
   } catch {return null;}
 }
 
-export function createRelay({ledger, routes, capability, deadline, allowLocalFixture = false}) {
+export function createRelay({ledger, routes, capability, deadline, allowLocalFixture = false, observeRequest, observeResponse}) {
   if (!/^[a-f0-9]{48}$/.test(capability)) throw Error('invalid_relay_capability');
   const destinations = new Map();
   for (const [id, value] of Object.entries(routes)) {
@@ -90,6 +99,7 @@ export function createRelay({ledger, routes, capability, deadline, allowLocalFix
       if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 8192) return error(response,400,'lab_output_limit_required');
       const entry = ledger.reserve(route[2], body.length, maximum);
       if (!entry) return error(response,429,'lab_budget_exhausted');
+      if (observeRequest) try {observeRequest({id:entry.id, route:route[2], document});} catch {ledger.settle(entry,0,null);return error(response,500,'lab_observer_failed');}
       const destination = destinations.get(route[2]);
       const url = new URL(destination.base + '/' + route[3], destination.origin);
       // Redirects are intentionally not followed. No arbitrary destination/headers.
@@ -105,7 +115,7 @@ export function createRelay({ledger, routes, capability, deadline, allowLocalFix
           if (outputSize > 16*1024*1024) {incoming.destroy(); settle(incoming.statusCode ?? 502,null); response.destroy(); return;}
           output.push(chunk); response.write(chunk);
         });
-        incoming.on('end', () => {settle(incoming.statusCode ?? 502,readUsage(Buffer.concat(output).toString('utf8'),type)); response.end();});
+        incoming.on('end', () => {const received=Buffer.concat(output).toString('utf8');settle(incoming.statusCode ?? 502,readUsage(received,type));if(observeResponse)try{observeResponse({id:entry.id,route:route[2],status:incoming.statusCode??502,body:received,type});}catch{}response.end();});
         incoming.on('error', () => {settle(incoming.statusCode ?? 502,null); response.destroy();});
       });
       upstream.setTimeout(120000, () => upstream.destroy());

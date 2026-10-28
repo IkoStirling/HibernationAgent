@@ -76,8 +76,8 @@ try{
   Plan @((Native 'repair-first' 'ha_memory_DOT_remember' $repair),(Reply),(Native 'repair-second' 'ha_memory_DOT_remember' $repair),(Reply));$trace=Message
   Check (@((Api '/api/memories').memories|Where-Object text -eq $repair.text).Count-eq1-and$trace.tool_results[1].reused_after_review) "$protocol review repair reuses earlier memory effect despite a new call ID"
   $reviewRequest=Get-Content -LiteralPath (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 70
-  $reviewText=if($reviewRequest.messages){$reviewRequest.messages[1].content}else{$reviewRequest.input[1].content[0].text};if($reviewText-isnot[string]){$reviewText=$reviewText[0].text}
-  $facts=($reviewText|ConvertFrom-Json -Depth 65).program_executed_operations
+  $reviewText=Model-ReviewEvent $reviewRequest
+  $facts=($reviewText).program_executed_operations
   Check ($facts.Count-eq1-and$facts[0].tool-eq'memory.remember'-and$facts[0].result.id) "$protocol reviewer receives typed program facts instead of inferring execution from wording"
   $old=@((Api '/api/chat').messages|Where-Object role -eq assistant)[-1];$oldRecord=Api '/api/archive' @{id=$old.id}
   Plan @(@{decision='approve';reason='ok';guidance=''},@{decision='reset';reason='persona';guidance='重建旧对白的工作上下文，保留已完成的草稿。'},@{decision='approve';reason='ok';guidance=''}) $true

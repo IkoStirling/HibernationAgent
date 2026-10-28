@@ -1,4 +1,5 @@
 param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
+. (Join-Path $PSScriptRoot ProjectedRequest.ps1)
 $ErrorActionPreference='Stop';$service=$null;$provider=$null;$checks=0
 $root=Join-Path $ScratchRoot ('session-projection-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='session-projection-fixture'
@@ -27,7 +28,7 @@ try{
  $secondWire=Get-Content (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 90
  Check ($second.session_projection.mode-eq'append') 'next turn appends after the prior approved turn'
  Check (($firstWire.messages[0..1]|ConvertTo-Json -Depth 85 -Compress)-ceq($secondWire.messages[0..1]|ConvertTo-Json -Depth 85 -Compress)) 'previously sent provider messages remain byte equivalent across turns'
- $reviewWire=Get-Content (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 90;$review=($reviewWire.messages[1].content|ConvertFrom-Json -Depth 85).event_context|ConvertFrom-Json -Depth 85
+ $reviewWire=Get-Content (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 90;$review=(Model-ReviewEvent $reviewWire).event_context|ConvertFrom-Json -Depth 85
  Check ($review.input-eq'keep the first detail'-and$review.event_id-eq$second.source_event_id-and!$review.projection) 'reviewer receives the materialized current event instead of an unresolved delta or old input'
  Stop-Backend;Start-Backend
  Plan @((Native 'three' 'ha_turn_reply' @{text='three approved'}));$third=Message 'a third turn'
@@ -44,6 +45,8 @@ try{
  $sixthWire=Get-Content (Join-Path $providerRoot last-request.json) -Raw
  Check ($sixth.session_projection.mode-eq'baseline'-and$sixth.session_projection.reason-eq'authority_changed') 'revocation invalidates the retained prefix immediately'
  Check (!$sixthWire.Contains('PROJECTION_PRIVATE_FIRST_EVENT')) 'revoked raw content and old tool arguments are absent from the new provider request'
+ $sixthReview=Get-Content (Join-Path $providerRoot review-last-request.json) -Raw
+ Check (!$sixthReview.Contains('PROJECTION_PRIVATE_FIRST_EVENT')) 'source revocation also excludes the private content from reviewer inputs'
  $null=Api '/api/dialogue/rebuild' @{}
  Plan @((Native 'seven' 'ha_turn_reply' @{text='seven approved'}));$seventh=Message 'fresh dialogue view'
  Check ($seventh.session_projection.mode-eq'baseline'-and$seventh.session_projection.reason-eq'authority_changed') 'manual dialogue rebuild discards the previous projection'

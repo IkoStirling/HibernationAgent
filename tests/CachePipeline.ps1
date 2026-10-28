@@ -1,4 +1,5 @@
 param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
+. (Join-Path $PSScriptRoot ProjectedRequest.ps1)
 $ErrorActionPreference='Stop';$service=$null;$provider=$null;$checks=0
 $root=Join-Path $ScratchRoot ('cache-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='cache-pipeline-fixture'
@@ -25,7 +26,7 @@ try{
  Check (@($wire|Where-Object {($_.tools|ConvertTo-Json -Depth 75 -Compress)-cne$definitions}).Count-eq0) 'native tool definitions stay byte-equivalent through the final round'
  $receipt=$wire[1].messages|Where-Object role -eq tool|Select-Object -First 1;$laterReceipt=$wire[2].messages|Where-Object role -eq tool|Select-Object -First 1
  Check ($receipt.content.Length-gt8000-and$receipt.content-ceq$laterReceipt.content) 'an already sent eight-kilobyte receipt stays identical on the next action step'
- $reviewWire=Get-Content (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 80;$reviewFrame=$reviewWire.messages[1].content|ConvertFrom-Json -Depth 80
+ $reviewWire=Get-Content (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 80;$reviewFrame=Model-ReviewEvent $reviewWire
  Check ($reviewFrame.event_context.StartsWith('{"event_kind"')) 'review projection retains cache ordering inside the nested serialized event'
  Check ($trace.turns[0].usage.cached_input_tokens-eq80-and$trace.reviews[0].usage.uncached_input_tokens-eq20) 'actor streaming and reviewer usage reach encrypted traces'
  $system=$wire[0].messages[0].content;$frame=$wire[0].messages[1].content|ConvertFrom-Json -Depth 65

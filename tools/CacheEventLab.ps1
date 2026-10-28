@@ -1,0 +1,16 @@
+param([Parameter(Mandatory)][ValidateSet('ordinary','state-layouts','review-layouts','review-events','review-fixed-replay','review-context-replay','review-views-replay','review-confirm-1','review-confirm-2','review-confirm-3','review-direct-replay','review-direct-bare','review-direct-plugin')][string]$Phase,[string]$LabRoot=(Join-Path $PSScriptRoot '../artifacts/cache-event-20261029'))
+$ErrorActionPreference='Stop';Add-Type -AssemblyName System.Security
+$project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'));$LabRoot=[IO.Path]::GetFullPath($LabRoot)
+if(!$LabRoot.StartsWith((Join-Path $project 'artifacts')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Dedicated artifact lab required'}
+$source=Get-Content (Join-Path $project config/local.json) -Raw|ConvertFrom-Json
+$profile=if($Phase-in@('review-layouts','review-events','review-fixed-replay','review-context-replay','review-views-replay','review-confirm-1','review-confirm-2','review-confirm-3','review-direct-replay','review-direct-bare','review-direct-plugin')){@($source.profiles|Where-Object {$_.enabled-and$_.origin-eq'https://api.deepseek.com'-and$_.id-eq$source.review.profileId})[0]}else{@($source.profiles|Where-Object {$_.enabled-and$_.origin-eq'https://api.deepseek.com'-and$_.id-ne$source.review.profileId})[0]}
+if(!$profile-or$profile.protocol-ne'responses'){throw 'Expected explicitly configured Responses actor'}
+$protected=Join-Path $source.dataRoot ('runtime/secrets/'+$profile.id+'.dpapi');$saved=$env:HIBERNATION_CACHE_LAB_API_KEY;$secretBytes=$null
+try{
+ if(Test-Path -LiteralPath $protected){$secretBytes=[Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($protected),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);$env:HIBERNATION_CACHE_LAB_API_KEY=[Text.Encoding]::UTF8.GetString($secretBytes)}
+ else{$env:HIBERNATION_CACHE_LAB_API_KEY=[Environment]::GetEnvironmentVariable($profile.credentialEnvironment,'Process');if(!$env:HIBERNATION_CACHE_LAB_API_KEY){$env:HIBERNATION_CACHE_LAB_API_KEY=[Environment]::GetEnvironmentVariable($profile.credentialEnvironment,'User')}}
+ if(!$env:HIBERNATION_CACHE_LAB_API_KEY){throw 'Configured credential unavailable'}
+ @{profileId=$profile.id;origin=$profile.origin;basePath=$profile.basePath;protocol=$profile.protocol;model=$profile.model;persona=(Join-Path $project character/persona.json);buildRoot=(Join-Path $project out/cache-20261028)}|ConvertTo-Json|Set-Content (Join-Path $LabRoot connection.json) -Encoding utf8NoBOM
+ & 'C:/Users/lenovo/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' (Join-Path $PSScriptRoot $(if($Phase-in@('review-fixed-replay','review-context-replay','review-views-replay','review-confirm-1','review-confirm-2','review-confirm-3','review-direct-replay','review-direct-bare','review-direct-plugin')){'CacheReviewReplay.mjs'}elseif($Phase-in@('review-layouts','review-events')){'CacheReviewLab.mjs'}else{'CacheEventLab.mjs'})) (Join-Path $LabRoot connection.json) $Phase
+ if($LASTEXITCODE-ne0){throw 'Cache experiment stopped; inspect sanitized evidence before continuing'}
+}finally{$env:HIBERNATION_CACHE_LAB_API_KEY=$saved;if($secretBytes){[Array]::Clear($secretBytes,0,$secretBytes.Length)}}

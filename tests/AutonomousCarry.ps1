@@ -1,4 +1,5 @@
 param([Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$BuildRoot)
+. (Join-Path $PSScriptRoot ProjectedRequest.ps1)
 $ErrorActionPreference='Stop';$ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot);$BuildRoot=[IO.Path]::GetFullPath($BuildRoot)
 Add-Type -Path (Join-Path $PSScriptRoot PrivateDesktop.cs)
 $root=Join-Path $ProjectRoot ('artifacts/autonomous-carry-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
@@ -22,7 +23,7 @@ function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int
  Plan @($(if($Verdict){$Verdict}else{$script:approval})) -Review -HttpStatus $ReviewHttpStatus;Auto $true
  Await {(Requests)-gt$calls} 'background request';$context=(Capture).messages[1].content|ConvertFrom-Json -Depth 65
  if($During){&$During}
- Await {$s=Api '/api/activities/status';!$s.generating-and$(if($ExpectedError){$s.last_error-eq$ExpectedError}else{$s.personal_carry_feedback.generation-and$s.personal_carry_feedback.generation-ne$before})} 'background carry outcome'
+ Await {$s=Api '/api/activities/status';!$s.generating-and$(if($ExpectedError-eq'cancelled'){!$s.last_error}elseif($ExpectedError){$s.last_error-eq$ExpectedError}else{$s.personal_carry_feedback.generation-and$s.personal_carry_feedback.generation-ne$before})} 'background carry outcome'
  $status=Api '/api/activities/status';Auto $false
  return @{context=$context;feedback=$status.personal_carry_feedback;error=$status.last_error;actor_calls=(Requests)-$calls;review_calls=(Requests $true)-$reviews}
 }
@@ -46,7 +47,7 @@ try{
  $note=Note own-continuation;$first=Batch $note $null $null '' 200 $null @{source_id=$workSource;valence=.35} -Singleton
  Check ($first.feedback.results[0].ok-and$first.feedback.results[0].revision-eq1) 'background actor can save its own sourced intention'
  Check ($first.actor_calls-eq1-and$first.review_calls-eq1) 'private carry uses the existing actor and review calls without another model request'
- $reviewCapture=Get-Content -LiteralPath (Join-Path $root provider/review-last-request.json) -Raw|ConvertFrom-Json -Depth 70;$canonical=($reviewCapture.messages[1].content|ConvertFrom-Json -Depth 65).candidate
+ $reviewCapture=Get-Content -LiteralPath (Join-Path $root provider/review-last-request.json) -Raw|ConvertFrom-Json -Depth 70;$canonical=(Model-ReviewEvent $reviewCapture).candidate
  Check ($canonical.carry_forward-is[Array]-and$canonical.carry_forward.Count-eq1-and$canonical.carry_forward[0].id-eq$note.id) 'review sees the canonical single-item array before the actual private save'
  Check (@($first.feedback.results|Where-Object {$_.tool-eq'state.appraise'-and$_.ok}).Count-eq1-and(Api '/api/state').continuous_state.target_valence-eq.35) 'autonomous feeling uses its real experience and the same existing actor and review pass'
  Check (@($first.context.evidence|Where-Object {$_.id-eq$workSource-and$_.kind-eq'tool_observation'-and$_.data.result.written}).Count-eq1) 'planner receives a bounded real writing receipt rather than invented evidence'
@@ -58,8 +59,8 @@ try{
  $next=@($again.context.evidence|Where-Object {$_.kind-eq'user_message'-and$_.context_role-eq'earlier_encounter'})[0];Check ($next.id-and$next.id-ne$previous.id) 'successful accepted planning rotates to an earlier unoffered encounter without reinforcing the same one'
  $old=Batch $note;Check (!$old.feedback.results[0].ok-and$old.feedback.results[0].error.code-eq'personal_revision_conflict') 'stale personal versions remain rejected during background planning'
  $forged=Note forged;$forged.source_ids=@('activity-generation-invented');$bad=Batch $forged;Check (!$bad.feedback.results[0].ok-and$bad.feedback.results[0].error.code-eq'personal_source_not_available') 'a plan cannot serve as its own factual source'
- $hidden=Batch (Note hidden-after-start) {$null=Api '/api/access' @{id=$memory;accessible=$false}}
- Check (@($hidden.context.evidence|Where-Object id -eq $workSource).Count-eq1-and!$hidden.feedback.results[0].ok-and$hidden.feedback.results[0].error.code-eq'personal_source_not_available') 'source access is rechecked after the external actor and reviewer finish'
+ $hidden=Batch (Note hidden-after-start) {$null=Api '/api/access' @{id=$memory;accessible=$false}} $null 'cancelled'
+ Check (@($hidden.context.evidence|Where-Object id -eq $workSource).Count-eq1-and!$hidden.error-and$hidden.actor_calls-eq1-and$hidden.review_calls-eq0-and$hidden.feedback.generation-eq$bad.feedback.generation) 'revocation during generation stops before another external review or private save'
  $privateView=Batch $null $null @{decision='deny';reason='other';guidance='不执行这批候选。'}
  $viewText=$privateView.context|ConvertTo-Json -Depth 65
  Check (!$viewText.Contains('AUTONOMY_PRIVATE_PURPOSE')-and!$viewText.Contains('AUTONOMOUS_PRIVATE_MARKER')-and($privateView.context.previous_carry_forward_results|ConvertTo-Json -Compress)-eq'{}') 'background body, recent activity and carry feedback do not restore restricted narrative through derived views'

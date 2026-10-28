@@ -75,6 +75,9 @@ struct Prepared {
     std::size_t eventIndex=1,retainedBytes=0,maxBytes=131072,maxTurns=16;
     Json head=Json::object(),fullFrame=Json::object(),previousFrame=Json::object();
     std::vector<Message> capturedMessages;
+    // Updates approved after the last actor call follow its final reply in the
+    // next request. They were not retroactively part of that actor's input.
+    std::vector<Message> postlude;
     std::set<std::string> inheritedSourceIds;
 };
 inline void append(Prepared& prepared,std::vector<Message>& messages,const std::vector<Message>& history,const Json& previous,const std::string& epoch){

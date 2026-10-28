@@ -70,10 +70,11 @@
         const auto refs=projectionSources(context);if(!projectionSourcesAllowed(refs))return;
         std::vector<ayt::inference::Message> added(run.capturedMessages.begin()+run.eventIndex,run.capturedMessages.end());
         added.push_back({"assistant",Json{{"version",1},{"kind",output.at("visible_reply")==""?"silence":"reply"},{"text",output.at("visible_reply")==""?Json(nullptr):output.at("visible_reply")},{"calls",Json::array()}}.dump()});
+        added.insert(added.end(),run.postlude.begin(),run.postlude.end());
         if(run.retainedBytes+session::bytes(added)>run.maxBytes)return;
         auto head=run.reused?run.head:Json{{"version",2},{"epoch",run.epoch},{"segments",Json::array()}};
         auto sources=refs;if(!answerId.empty())sources.push_back({{"scope",archiveScope},{"id",answerId},{"revision",1},{"kind","assistant_message"},{"access","narrative"}});if(sources.size()>256)return;
-        const auto key="segment-"+traceId;auto frame=session::expand(run.fullFrame,run.capturedMessages.at(run.eventIndex).text);frame.erase("authorized_context");
+        const auto key="segment-"+traceId;auto frame=run.fullFrame;frame.erase("authorized_context");
         Json segment={{"epoch",run.epoch},{"messages",session::encode(added)},{"frame",frame}};
         head["segments"].push_back(key);head["sources"]=sources;head["compatibility"]=run.compatibility;head["fence"]=projectionFence();head["bytes"]=run.retainedBytes+session::bytes(added);head["updated_ms"]=serviceNowMs();
         const auto before=get("ha.prompt-sessions",run.key);updates.push_back(mutation("ha.prompt-sessions",run.key,before,head,traceId));updates.push_back({"ha.prompt-segments",key,0,1,segment.dump(),traceId});

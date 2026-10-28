@@ -13,12 +13,7 @@ function Message($Text,$ReviewPlan=@()){
  $job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$info=$job.result|ConvertFrom-Json;Api '/api/trace' @{id=$info.trace_id}
 }
 function Capture{Get-Content -LiteralPath (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 65}
-function ActorFocus{
- $focus=@{};foreach($message in (Capture).messages){$frame=Model-Event $message;if(!$frame){continue}
-  foreach($op in $frame.projection_patch){if($op.path-eq'/conversation_focus'){$focus=if($op.op-eq'remove'){@{}}else{$op.value|ConvertTo-Json -Depth 20|ConvertFrom-Json -AsHashtable};continue};if($op.path.StartsWith('/conversation_focus/')){$key=$op.path.Substring(20).Replace('~1','/').Replace('~0','~');if($op.op-eq'remove'){$focus.Remove($key)}else{$focus[$key]=$op.value}}}
-  if($frame.PSObject.Properties['conversation_focus']){$focus=$frame.conversation_focus|ConvertTo-Json -Depth 20|ConvertFrom-Json -AsHashtable}
- };[pscustomobject]$focus
-}
+function ActorFocus{(Model-CurrentEvent (Capture)).conversation_focus}
 function Start-Backend{
  $script:service=Start-Process -FilePath $Executable -ArgumentList ('--config "'+$configPath+'" --ready-file "'+$ready+'"') -WindowStyle Hidden -PassThru
  Await {if($service.HasExited){throw 'Focus backend exited'};if(Test-Path -LiteralPath $ready){return (Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).pid-eq$service.Id};return $false} 'backend';$script:origin='http://127.0.0.1:'+((Get-Content -LiteralPath $ready -Raw|ConvertFrom-Json).port)
@@ -33,7 +28,7 @@ try{
  $trace=Message ('我现在'+$quote+'。') @((Approval $focus));Check ($trace.reviews[0].focus_update_status-eq'applied'-and$trace.conversation_focus.subject-eq'character') 'reviewer can propose only a program-validated current user preference'
  $before=Api '/api/state';$null=Message '接着刚才的话题。';$view=ActorFocus
  Check ($view.subject-eq'character'-and$view.advice-eq'avoid'-and$view.questions-eq'avoid_repeated'-and$view.source_quote-eq$quote) 'next actor request receives the sourced short-lived preference'
- $check=Get-Content -LiteralPath (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 65;$reviewInput=$check.messages[1].content|ConvertFrom-Json -Depth 60
+ $check=Get-Content -LiteralPath (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 65;$reviewInput=Model-ReviewEvent $check
  Check ($reviewInput.current_user_message-eq'接着刚才的话题。'-and($reviewInput.event_context|ConvertFrom-Json).conversation_focus.subject-eq'character') 'reviewer sees the current user separately from preserved preference data'
  $actorDelivery=((Capture).messages[1].content|ConvertFrom-Json -Depth 60).conversation_delivery
  Check ($actorDelivery.mode-eq'direct_utterance'-and$reviewInput.conversation_delivery.mode-eq$actorDelivery.mode-and$actorDelivery.creative_format-eq'when_explicitly_requested') 'actor and reviewer share direct conversation delivery while retaining requested creative formats'

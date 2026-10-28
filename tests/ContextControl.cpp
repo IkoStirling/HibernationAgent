@@ -12,6 +12,11 @@ TEST_CASE(presets_are_bounded_and_legacy_can_be_restored){
     CHECK(!ContextControl::read({{"enabled",false}}).imageOnce);
     for(const auto& value:std::vector<Json>{{{"preset","unknown"}},{{"historyBytes",-1}},{{"historyBytes",1e10}},{{"reviewAttempts",0}},{{"imageOnce","false"}},{{"unknown",true}}}){bool rejected=false;try{ContextControl::read(value);}catch(...){rejected=true;}CHECK(rejected);}
 }
+TEST_CASE(review_layout_is_explicit_and_full_mode_restores_legacy_input){
+    CHECK(ContextControl::read(Json::object()).reviewLayout=="direct");CHECK(ContextControl::read({{"reviewLayout","snapshots"}}).reviewLayout=="snapshots");
+    CHECK(ContextControl::read({{"reviewLayout","direct"},{"preset","full"}}).reviewLayout=="legacy");
+    for(const auto& value:std::vector<Json>{{{"reviewLayout",true}},{{"reviewLayout","unknown"}}}){bool rejected=false;try{ContextControl::read(value);}catch(...){rejected=true;}CHECK(rejected);}
+}
 TEST_CASE(only_explicit_read_queries_skip_semantic_review){
     Json batch={{"kind","call"},{"calls",Json::array({{{"tool","computer.screenshot"}},{{"tool","memory.read"}}})}};CHECK(readOnlyModelBatch(batch));
     batch["calls"].push_back({{"tool","workspace.write"}});CHECK(!readOnlyModelBatch(batch));

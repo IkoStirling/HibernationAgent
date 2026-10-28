@@ -9,8 +9,8 @@ function Plan($Items,$Review=$false){$file=if($Review){'review-plan.json'}else{'
 function Native($Id,$Name,$Arguments){@{fixture_native_calls=@(@{id=$Id;name=$Name;arguments=$Arguments})}}
 function Policy($Mode,$Enabled=$true){$s=(Api '/api/dashboard').settings;$s.plugins.'deepseek-pricing'.mode=$Mode;$s.plugins.'deepseek-pricing'.enabled=$Enabled;$null=Api '/api/settings' @{settings=$s}}
 function Message([int]$Actions=2){
- $steps=@(for($i=1;$i-le$Actions;$i++){Native ('state'+$i) 'ha_state_DOT_observe' @{}});$steps+=Native 'final' 'ha_turn_reply' @{text='保留真实状态。'};Plan $steps
- $null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='本地价格策略验证'};Await {!(Api '/api/chat').busy} 'turn';Check (!(Api '/api/chat').call_failed) 'priced turn completes';$job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$info=$job.result|ConvertFrom-Json;Api '/api/trace' @{id=$info.trace_id}
+ $prefix=[Guid]::NewGuid().ToString('N');$steps=@(for($i=1;$i-le$Actions;$i++){Native ($prefix+'-state'+$i) 'ha_state_DOT_observe' @{}});$steps+=Native ($prefix+'-final') 'ha_turn_reply' @{text='保留真实状态。'};Plan $steps
+ $null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='本地价格策略验证'};Await {!(Api '/api/chat').busy} 'turn';$chat=Api '/api/chat';if($chat.call_failed){$job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$detail=$job.result|ConvertFrom-Json;@{error=$chat.call_error;trace=$(if($detail.trace_id){Api '/api/trace' @{id=$detail.trace_id}}else{$null})}|ConvertTo-Json -Depth 90|Set-Content (Join-Path $root pricing-failure.json) -Encoding utf8;Write-Output ('Failure evidence: '+$root)};Check (!$chat.call_failed) 'priced turn completes';$job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$info=$job.result|ConvertFrom-Json;Api '/api/trace' @{id=$info.trace_id}
 }
 try{
  $providerRoot=Join-Path $root provider;New-Item -ItemType Directory -Force $providerRoot|Out-Null
