@@ -1,8 +1,8 @@
 {
-  "testedEngineRootCommit": "d9d0f69997cd5387bd4ca48695de50f1d23019d3",
+  "testedEngineRootCommit": "e282b60733dce8d23fe90737d7b60077dd85cc97",
   "engineRelativePath": "../AliyatEngine",
   "modules": {
-    "AYFoundation/AYIO": "324f5264dbf65d4a7cd73fae035cf4564576a753",
+    "AYFoundation/AYIO": "884dbcbcfda28f6fc9ce89823bdd24ea5b6468d9",
     "AYFoundation/AYSerializer": "c839aa10e419a47330ffcaa7020afff556de566b",
     "AYFoundation/AYStorage": "462af90c9f2bb8446c01b8ae04511d4d77cf34b1",
     "AYFoundation/AYTask": "1ab1e4bbfb38a4ac5e12ef52fd09ecb4fca58549",
@@ -29,10 +29,14 @@
   },
   "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "e725cd145414807b606504cf6ff0de43afdacf4b66cb6734f4522bad182ed5ee",
+  "validatedExecutableSha256": "9ccfea891c749fe92c8d35d38ef6f10fe4fda6a89d94a1546b7f12208bb21918",
   "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
   "applicationVersion": "0.7.0",
-  "validatedApplicationSourceCommit": "e815e7d9e22fce53dc3c39069798ed0796ee6b99",
+  "validatedApplicationSourceCommit": null,
   "engineWorktreeDirty": false,
-  "validationScope": "Pixel workshop, desktop artwork lifecycle, ManagedProcess and strict UTF-8 reuse. Verified frozen source; installed Integration, PixelCanvasProcess, ConfigurationCheck and RuntimeTools. Existing Windows FFmpeg development CRT dependency remains; not a portable distribution certification."
+  "validationScope": "18 merged application regression groups passed; strict UTF-8 AYIO module tests plus three continuous-task process/browser groups passed after the engine fix; fresh real-model run completed two dependent draft files in two background steps (30 application-counted calls); deployment preserved all 54266 pre-existing encrypted record versions, configuration, persona and key. Not a portable-distribution certification.",
+  "validatedApplicationFeatureCommit": "bf1d36b15b6fbe9ef780532d8ecf4717912ee2ac",
+  "validatedApplicationSourceSnapshotSha256": "e77b5a713f17cb3f81badda27c5ad976ade7cffed02b4ec4520036c790d877d2",
+  "validatedApplicationSourceSnapshot": "artifacts/continuous-tasks/deployed-source.json",
+  "applicationSourceSnapshotNote": "Merged working snapshot preserves separately developed uncommitted mentor, runtime controls, budget, speech-style and vault code; it is not represented by the feature commit alone."
 }
