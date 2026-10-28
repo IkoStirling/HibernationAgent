@@ -28,10 +28,10 @@
   },
   "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "FFADBC7AD69034B1B90F7966B29FC1829EB4C9CB23C590A3FA5269C4A85E2944",
+  "validatedExecutableSha256": "0001CB26E4F46C4C32FA2943AD6D7CAA9A8AA3D505F22D8FEEDE6EA90EE856FB",
   "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
   "applicationVersion": "0.7.0",
-  "validatedApplicationSourceCommit": "f99a5283a835b43bc42fa1db88f516ebbc4a458e",
+  "validatedApplicationSourceCommit": "8f825b3b31df502188e6adcbc5196b7de5398a6e",
   "engineWorktreeDirty": false,
   "validationScope": "Local Windows runtime; unchanged local FFmpeg SDK requires existing development CRT. Not a portable distribution certification."
 }

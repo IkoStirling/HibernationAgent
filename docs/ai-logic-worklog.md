@@ -707,3 +707,11 @@
 
 - 源码复核发现旧已执行游戏回执虽可读、可形成关注，但state.appraise与完成依据仍只接受tool_observation。统一三处到legacyAppliedPuzzleRecord：仍仅三个已知游戏动作、布尔applied=true、有效游戏身份和正版本；没有放开所有tool_intent。完成依据只确认单步发生，语义审核仍须判断所说目标，不能以按过一步声称整局获胜。
 - 新单元同时覆盖读取/感受/完成依据的正例、待执行及缺身份拒绝；独立后台验证真实旧按键能引起有限当前感受，待执行提案不能成为感受来源。Unit/WorldHistory/Appraisals/ProcessIntegration 4/4通过39.36秒（personality-legacy-consistency-tests.log），0真实API调用。接下来更新最后运行包与源码快照，保留前两次备份及其结果，不覆盖正式数据。
+
+### 08:34 最终部署与交付依据
+
+- 一致性补丁8f825b3已于00:33:16.1188962Z完成正式更新，宿主0001CB26E4F46C4C32FA2943AD6D7CAA9A8AA3D505F22D8FEEDE6EA90EE856FB。最终部署备份E:/Aliyat/Backups/HibernationAgent/personality-deployment-20261028-083002-222117fe（619255127字节），此前两份备份与证明均保留。677运行文件、安装位置Integration38检查/ConfigurationCheck/RuntimeTools再次全部符合，388正式数据文件、配置、人设逐字节保留；0真实模型调用，正式后台保持停止。
+- engine-version.json已按最后实际包更新；旧元数据和发布协调脚本随本次备份保存。git fsck --no-reflogs --no-dangling退出0。所有本轮源码与文档提交main，旧V0.7不移动。最终源码备份、逐项校验与真实停止时间分别记录于artifacts/personality-source-backup-final.json、personality-final-preservation.json、personality-completion-audit.json；这些为本机生成证据，不混入源码仓库或正式角色经历。
+- 最终API账本仍为420次/5070211记账token（含6次保守估量），没有因修正程序一致性重新调用真实模型。角色与审核都参与自然相处实验；核心是经历如何留下关注、改变理解和影响后续选择，程序检查并非模型能力题。
+- 已知限制：部分措辞仍抽象、偏长或重复，审核也曾误判，需要继续实际相处校正；不能把59轮返回成功当成自然人格已完成。自主批次84次接受不代表每一步完成，旧拒绝/格式失败历史保留。正文接口已连通，但角色实际主生活读到的仍是导言，未把管理员探测当成亲历。正式人格、阶段不自动改写，视频/识图扩展与录音转文字仍属后续范围。
+- 本次开发窗口固定为2026-10-27 22:37:47至2026-10-28 08:37:47（Asia/Shanghai）。结束时关闭ai续接；真实结束时刻、清理与自动化状态以最终完成审计为准，不延长窗口。用户可通过Start.cmd启动已更新的正式版本；不会在验收时启动正式角色产生额外付费活动。
