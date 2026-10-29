@@ -29,14 +29,14 @@
   },
   "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "ef9829a37924f1bb54764ee517e853520c0b3ba6a6340e1b5594c8c6dd5e8d92",
+  "validatedExecutableSha256": "235c6239acffbb19b860d045c414efa3b1e5cbb1ac57b8c32d4e0dfe05320247",
   "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
   "applicationVersion": "0.7.0",
   "validatedApplicationSourceCommit": null,
   "engineWorktreeDirty": false,
-  "validationScope": "Owner continuity JSON/native, cache/session, native tools, restart, corrections, source withdrawal and cross-channel dialogue rebuild passed. 19 related merged groups checked cumulatively, full merged protocol passed after frozen helper sync; independent feature-only source passed 11 groups. Fresh real-model synthetic experiment: five turns, 16 calls, exact correction/revocation after restart. Deployment preserved 56860 historical encrypted rows, config, persona, key and mentor 0.5.0. Not a portable-release certification.",
-  "validatedApplicationFeatureCommit": "4156507643b6bd74bedf09777b3cb6f1cd113553",
-  "validatedApplicationSourceSnapshotSha256": "9bcd52e87e88f07122cd8e06bfb9d3b93100dd024b39741b3f21f6c2189a1f29",
-  "validatedApplicationSourceSnapshot": "artifacts/owner-continuity/deployed-source.json",
-  "applicationSourceSnapshotNote": "Merged frozen working snapshot includes separately developed mentor, runtime, budget, speech-style and vault code. Own feature is a separate verified commit on cache commit dc573cd; preserved other plugin binaries are listed in the deployment evidence."
+  "validationScope": "17 related groups passed cumulatively: schedule policy and JSON/native process, owner QQ/desktop continuity, NapCat health, continuous tasks, native tools, cache/session/context, foreground, offline, protocol and background budget. Final merged executable passed seven directed groups; retained latest chat layout and cache work. Deployment preserved all original encrypted versions, config/persona/key and mentor. NapCat login expired: bridge restarted but manual QR login still required.",
+  "validatedApplicationFeatureCommit": "8a6a2360879c66454cddee22d38ee0a5073c5eb6",
+  "validatedApplicationSourceSnapshotSha256": "3689b6dc0e24927314c8089b4449c46faff398958f3d7dbc8a03bdb0df06be0b",
+  "validatedApplicationSourceSnapshot": "artifacts/remembered-schedules/deployed-source.json",
+  "applicationSourceSnapshotNote": "Frozen tested merged source includes preserved work from other tasks; independent feature-only build not run. No private archives included."
 }
