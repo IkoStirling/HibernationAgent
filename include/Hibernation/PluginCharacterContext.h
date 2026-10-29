@@ -17,6 +17,7 @@ inline nlohmann::json pluginCharacterContext(std::string_view id,const nlohmann:
         view["documents"]=Json::array();for(const auto& document:saved.value("documents",Json::array())){if(view["documents"].size()>=6)break;view["documents"].push_back(document);}
         view["authorship_note"]="目录中的作品也可能由用户编辑；自己实际调用工具后的成功写入回执才证明自己完成了相应版本。";return view;
     }
+    if(id=="canteen")return saved.value("current",Json::object());
     if(id=="habitat")take({"objects","pending","appetite","visible","desktop","creation_policy"});
     else if(id=="television")take({"mode","title","source","state","position_seconds","duration_seconds","visible","audio_available","page_platform","page_url","observation","error"});
     else if(id=="tts")take({"active","synthesizing","queued_replies"});
@@ -32,7 +33,8 @@ inline nlohmann::json pluginCharacterContext(std::string_view id,const nlohmann:
 inline nlohmann::json pluginDialogueContext(std::string_view id,const nlohmann::json& current){
     using Json=nlohmann::json;if(!current.is_object())return current;
     Json view=Json::object();const auto take=[&](std::initializer_list<const char*> fields){for(const auto* field:fields)if(current.contains(field))view[field]=current.at(field);};
-    if(id=="habitat"){
+    if(id=="canteen"){take({"job","ready_count","shelf_capacity","can_cook","delivery_pending","automatic"});view["details_tool"]="canteen.observe";
+    }else if(id=="habitat"){
         take({"pending","appetite","visible","desktop","creation_policy"});
         view["object_count"]=current.value("objects",Json::array()).size();view["details_tool"]="habitat.observe";
     }else if(id=="pixel-canvas"){

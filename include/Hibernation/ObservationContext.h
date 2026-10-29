@@ -25,7 +25,7 @@ inline bool revisitableObservationTool(const std::string& tool){
     static const std::set<std::string> concrete={"workspace.list","workspace.read","workspace.view_image","computer.screenshot","computer.list_directory","television.observe","television.observe_sequence","television.search","reading.search","reading.open","atelier.read","napcat.view_image"};return concrete.contains(tool)||tool=="pixel.read"||tool=="pixel.preview";
 }
 inline bool continuityObservationTool(const std::string& tool){
-    static const std::set<std::string> effects={"workspace.write","workspace.edit","computer.open_application","television.open","television.open_page","television.play","television.pause","television.stop","atelier.write","atelier.append","habitat.create","habitat.act","habitat.arrange","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel"};
+    static const std::set<std::string> effects={"canteen.cook","canteen.cancel","canteen.take","canteen.discard","workspace.write","workspace.edit","computer.open_application","television.open","television.open_page","television.play","television.pause","television.stop","atelier.write","atelier.append","habitat.create","habitat.act","habitat.arrange","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel"};
     return revisitableObservationTool(tool)||pixelObservationTool(tool)||pixelMutationTool(tool)||effects.contains(tool);
 }
 inline bool appraisalExperienceRecord(const nlohmann::json& record){

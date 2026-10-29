@@ -41,6 +41,8 @@ inline EvidenceJson terminalAnchor(const EvidenceJson& record,const EvidenceJson
         const auto name=event.value("kind",std::string{});
         const auto game=event.value("game",EvidenceJson::object());
         if(name.starts_with("pocket.")&&game.is_object()&&game.contains("id"))return anchor("puzzle",game.at("id"),1);
+        const auto meal=event.value("batch",EvidenceJson::object());
+        if((name=="canteen.ready"||name=="canteen.taken")&&meal.is_object()&&meal.contains("id"))return anchor("canteen_meal",meal.at("id"),1);
         const auto object=event.value("item",EvidenceJson::object());
         if(name.starts_with("habitat.")&&object.is_object()&&object.contains("id"))return anchor("desk_object",object.at("id"),1);
         const auto piece=event.value("piece",EvidenceJson::object());

@@ -18,9 +18,10 @@ inline nlohmann::json archiveWorldExperience(const nlohmann::json& record){
     const auto& data=record.at("result");const auto kind=record.value("kind",std::string{});
     const bool legacyApplied=legacyAppliedPuzzleRecord(record);
     if(kind!="tool_observation"&&!legacyApplied)return nullptr;
-    static const std::set<std::string> concrete={"pocket.start","pocket.press","pocket.leave","pocket.observe","atelier.write","atelier.append","atelier.read","reading.open","workspace.read","workspace.write","workspace.edit","habitat.create","habitat.act","habitat.arrange","habitat.observe","workspace.view_image","computer.screenshot","television.observe","television.observe_sequence"};
+    static const std::set<std::string> concrete={"pocket.start","pocket.press","pocket.leave","pocket.observe","atelier.write","atelier.append","atelier.read","reading.open","workspace.read","workspace.write","workspace.edit","habitat.create","habitat.act","habitat.arrange","habitat.observe","canteen.observe","workspace.view_image","computer.screenshot","television.observe","television.observe_sequence"};
     if(!concrete.contains(tool)&&!pixelMutationTool(tool)&&!pixelObservationTool(tool))return nullptr;
     Json facts=Json::object();
+    if(tool=="canteen.observe"){for(const auto* field:{"job","shelf","recent","ready_count","delivery_pending"})if(data.contains(field))facts[field]=data.at(field);}
     if(data.contains("document")&&data.at("document").is_object())facts["document"]=pixelDocumentContext(data.at("document"));
     const auto copy=[&](Json& into,const Json& from,std::initializer_list<const char*> fields){for(const auto* field:fields)if(from.contains(field)&&from.at(field).is_primitive()){
         const auto& value=from.at(field);into[field]=value.is_string()?Json(experienceExcerpt(value.get_ref<const std::string&>(),512)):value;

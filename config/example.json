@@ -180,6 +180,13 @@
       "reactionProbability": 0.45,
       "autonomousMode": false,
       "autonomyIdleSeconds": 30
+    },
+    "canteen": {
+      "enabled": false,
+      "automatic": true,
+      "automaticIntervalSeconds": 900,
+      "supplyIntervalSeconds": 3600,
+      "shelfLifeSeconds": 1800
     }
   },
   "computer": {

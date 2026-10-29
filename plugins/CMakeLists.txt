@@ -49,3 +49,6 @@ add_custom_command(TARGET Hibernation_Speech POST_BUILD
 ha_role_plugin(television Hibernation_Television television/Television.cpp)
 target_link_libraries(Hibernation_Television PRIVATE AYVideoPlayback user32 gdi32 ole32 windowscodecs crypt32 winmm comctl32)
 add_subdirectory(napcat)
+
+ha_role_plugin(canteen Hibernation_Canteen canteen/Canteen.cpp)
+target_link_libraries(Hibernation_Canteen PRIVATE AYInventory::Json BSimmerCuisine::Rules)

@@ -1,4 +1,5 @@
 param([string]$ProjectRoot=(Join-Path $PSScriptRoot '..'),[string]$BuildRoot='')
+. (Join-Path $PSScriptRoot 'ProjectedRequest.ps1')
 $ErrorActionPreference='Stop';$ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot);if(!$BuildRoot){$BuildRoot=Join-Path $ProjectRoot out/release}
 Add-Type -Path (Join-Path $PSScriptRoot PrivateDesktop.cs)
 $root=Join-Path $ProjectRoot ('artifacts/autonomous-crafting-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
@@ -57,7 +58,7 @@ try{
  Message @((Calls @(@{kind='wait';seconds=2},$continue)),(Silent));$pieceFile=Join-Path $cfg.dataRoot ('drafts/atelier/'+$pieceId+'.json');$external=Get-Content -LiteralPath $pieceFile -Raw|ConvertFrom-Json -AsHashtable;$external.revision=3;$external.content='外部修改后不允许旧队列覆盖。';$external|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $pieceFile -Encoding utf8
  Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'creative_continue'-and$_.status-eq'atelier_revision_conflict'}).Count-eq1} 'execution checks the real file version again after waiting'
  Check ((Plugin atelier.read @{id=$pieceId}).result.piece.content-eq$external.content) 'external creative edit survives delayed stale append'
- Message @((Silent)) '刚才留下和续写了哪些创作，也放了什么小物？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json
+ Message @((Silent)) '刚才留下和续写了哪些创作，也放了什么小物？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=Model-CurrentEvent $capture
  Check (@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'atelier.created'}).Count-ge1-and@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'habitat.appeared'}).Count-ge1-and@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'atelier.revised'}).Count-ge1) 'later conversation has real creation and continuation experiences instead of invented memories'
  $objectId=(Snapshot habitat).objects[0].id
  Message @((Calls @(@{kind='interact';seconds=0;object_id=$objectId;action='look'},@{kind='wait';seconds=1})),(Silent))
@@ -68,7 +69,7 @@ try{
  Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'arrange'-and$_.status-eq'completed'}).Count-eq1} 'arrangement completes only after approach and real movement'
  $moved=@((Snapshot habitat).objects|Where-Object id -eq $objectId)[0]
  Check ([Math]::Abs($moved.x-$destinationX)-lt.00001-and$moved.expires-eq$old.expires-and($moved.definition|ConvertTo-Json -Compress)-eq($old.definition|ConvertTo-Json -Compress)) 'arrangement changes position without refreshing lifetime or authored properties'
- Message @((Silent)) '刚才那个小物被挪到哪里了？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json
+ Message @((Silent)) '刚才那个小物被挪到哪里了？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=Model-CurrentEvent $capture
  Check (@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'habitat.arranged'}).Count-ge1) 'later dialogue receives an actual arrangement experience'
  $before=(Snapshot atelier).piece_count
  Message @((Calls @($note,@{kind='interact';seconds=0;object_id='no-such-object';action='look'})),(Silent))
@@ -95,13 +96,13 @@ try{
  $read=@{kind='reference_read';seconds=0;key='Blue_moss';language='zh'};Message @((Calls @($read)),(Silent))
  Await {@((Api '/api/activities/status').recent|Where-Object {$_.kind-eq'reference_read'-and$_.status-eq'completed'}).Count-eq1} 'cached reading opens an observed result instead of guessing unseen content'
  Check ((Snapshot reading).last_read.excerpt-eq'虚构的蓝苔在雨后发出淡淡的蓝色光。'-and!(Snapshot reading).last_read.full_article_read) 'actual reading excerpt becomes available for later autonomous choices'
- Message @((Silent)) '刚才读到的材料是什么内容？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json
+ Message @((Silent)) '刚才读到的材料是什么内容？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=Model-CurrentEvent $capture
  Check (@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'reading.observed'-and$_.data.observation.reference.scope-eq'lead_excerpt'}).Count-ge1) 'later conversation receives an authentic reading experience with explicit excerpt scope'
  Check (@($context.authorized_context|Where-Object {$_.data.tool-eq'reading.open'-and$_.data.context_role-eq'previous_tool_observation'-and$_.data.result.full_article_read-eq$false}).Count-eq1) 'latest autonomous tool receipt reaches later dialogue without relying on prior assistant wording'
  $sourceRead=$read.Clone();$sourceRead.detail='source';$sourceRead.offset=0;$sourceRead.length=256;Message @((Calls @($sourceRead)),(Silent))
  Await {(Snapshot reading).last_read.scope-eq'article_source_chunk'} 'cached activity passes source range arguments to the actual tool'
  Check ((Snapshot reading).last_read.excerpt-eq'== 夜里 == 蓝苔的光靠近水边时微弱。'-and(Snapshot reading).last_read.next_offset-gt0-and!(Snapshot reading).last_read.full_article_read) 'source activity retains exact delivered material and continuation range'
- Message @((Silent)) '刚才那段材料呢？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=$capture.messages[1].content|ConvertFrom-Json
+ Message @((Silent)) '刚才那段材料呢？';$capture=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json;$context=Model-CurrentEvent $capture
  Check (@($context.authorized_context|Where-Object {$_.data.observation.kind-eq'reading.observed'-and$_.data.observation.reference.scope-eq'article_source_chunk'-and$_.data.text.Contains('正文源文本')}).Count-ge1) 'program-authored reading experience keeps source scope rather than relabeling body as a lead'
  $unknown=$read.Clone();$unknown.key='Never_observed';Message @((Calls @($unknown)),(Silent));Check (!(Feedback).ok-and(Feedback).error.code-eq'activity_reference_not_observed') 'queued reading rejects a key that was never observed'
  $knownCount=(Snapshot reading).recent.Count;Message @((Calls @(@{kind='wait';seconds=10},$read)),(Silent));Message @((Silent));Check ((Api '/api/activities/status').queued-eq0-and(Snapshot reading).recent.Count-eq$knownCount) 'new input consumes no deferred reading after cancellation'

@@ -28,11 +28,12 @@ public:
     void configure(std::size_t maximum,double ttl){maximum_=maximum;ttl_=ttl;}
     Json object(const std::string& id)const{for(const auto& item:objects_)if(item.at("id")==id)return item;return nullptr;}
     bool place(const std::string& id,const std::string& kind,double x,double y){return placeDetailed(id,kind,x,y,Json::object(),ttl_,0,"program");}
-    bool placeDetailed(const std::string& id,const std::string& kind,double x,double y,Json authored,double lifetime,int quality,const std::string& creator){
+    bool placeDetailed(const std::string& id,const std::string& kind,double x,double y,Json authored,double lifetime,int quality,const std::string& creator,const Json& provenance=Json(nullptr)){
         if(id.empty()||id.size()>96||!knownKind(kind)||!std::isfinite(x)||!std::isfinite(y)||x<0||x>1||y<0||y>1||object(id).is_object()||size()>=maximum_||!std::isfinite(lifetime)||lifetime<=0||lifetime>43200||quality<0||quality>2)return false;
-        if(!authored.is_object()||creator.size()>32)return false;
+        if(!authored.is_object()||creator.size()>32||(!provenance.is_null()&&(!provenance.is_object()||provenance.dump().size()>4096)))return false;
         auto definition=drops::definition(kind,std::move(authored));if(!drops::validDefinition(definition))return false;
         objects_.push_back({{"id",id},{"kind",kind},{"x",x},{"y",y},{"born",clock_},{"expires",clock_+lifetime},{"growth",0},{"observed_growth",-1},{"definition",definition},{"rules",drops::rules(kind,quality)},{"creator",creator}});
+        if(!provenance.is_null())objects_.back()["provenance"]=provenance;
         emit("habitat.appeared",objects_.back());return true;
     }
     std::string request(const std::string& id,const std::string& action,const std::string& token){

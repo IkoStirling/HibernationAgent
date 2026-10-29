@@ -1,4 +1,5 @@
 param([string]$ProjectRoot=(Join-Path $PSScriptRoot '..'),[string]$BuildRoot='')
+. (Join-Path $PSScriptRoot 'ProjectedRequest.ps1')
 $ErrorActionPreference='Stop';$ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot);if(!$BuildRoot){$BuildRoot=Join-Path $ProjectRoot out/release}
 Add-Type -Path (Join-Path $PSScriptRoot PrivateDesktop.cs)
 $root=Join-Path $ProjectRoot ('artifacts/activity-reflection-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
@@ -10,7 +11,7 @@ function Plan($Items){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Items
 function Silent{@{version=1;kind='silence';text=$null;calls=@()}}
 function Call($Id,$Tool,$Arguments){@{version=1;kind='call';text=$null;calls=@(@{id=$Id;tool=$Tool;args=$Arguments})}}
 function Capture{Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 65}
-function CapabilityContext{((Capture).messages[1].content|ConvertFrom-Json -Depth 65).current_capabilities}
+function CapabilityContext{(Model-CurrentEvent (Capture)).current_capabilities}
 function Requests{if(Test-Path -LiteralPath (Join-Path $root provider/requests.jsonl)){return @(Get-Content -LiteralPath (Join-Path $root provider/requests.jsonl)).Count};0}
 function Message($Items){Plan $Items;$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='独立私下活动检查'};Await {!(Api '/api/chat').busy} 'message';Check (!(Api '/api/chat').call_failed) 'fixture dialogue completes'}
 function Alone($Items){Plan $Items;$before=@((Api '/api/state').jobs|Where-Object id -eq solitude.once);$token=if($before.Count){$before[0].run_token}else{0};$null=Api '/api/solitude' @{};Await {$script:last=@((Api '/api/state').jobs|Where-Object id -eq solitude.once)[0];$script:last.state-eq'succeeded'-and$script:last.run_token-gt$token} 'solitude';$script:last.result|ConvertFrom-Json}
@@ -28,11 +29,11 @@ try{
  $configPath=Join-Path $root config.json;$ready=Join-Path $root ready.json;$cfg|ConvertTo-Json -Depth 55|Set-Content -LiteralPath $configPath -Encoding utf8;Start-Backend;$null=Api '/api/model' @{id='actor'};$original=Api '/api/state'
  $before=Requests;$result=Alone @((Silent));Check ($result.status-eq'no_update'-and(Requests)-eq$before) 'empty private time does not call a model just to manufacture content'
  $source=Create-OwnDraft '先留一段';$notice=@{id='small-story';expected_revision=0;kind='interest';topic='短故事';stance='curious';note='REFLECTION_PRIVATE_MARKER 想试试留着尚未写满的结尾';source_ids=@($source)}
- $result=Alone @((Call 'interest' 'self.notice' $notice),(Silent));$capture=Capture;$context=$capture.messages[1].content|ConvertFrom-Json -Depth 55;$trace=Api '/api/trace' @{id=$result.trace_id}
+ $result=Alone @((Call 'interest' 'self.notice' $notice),(Silent));$capture=Capture;$context=Model-CurrentEvent $capture;$trace=Api '/api/trace' @{id=$result.trace_id}
  Check ($result.status-eq'completed'-and$context.task_context.activity_reflection-and@($context.authorized_context|Where-Object id -eq $source).Count-eq1-and$trace.tool_results[0].ok) 'actual own writing can support a private interest without an invented question'
  Check (@((Api '/api/chat').messages|Where-Object role -eq assistant).Count-eq0-and(Api '/api/memories').memories.Count-eq0) 'quiet reflection neither forces a visible diary nor creates a long-term memory'
  $before=Requests;$result=Alone @((Silent));Check ($result.status-eq'no_update'-and(Requests)-eq$before) 'same completed work never causes repeated reflection requests'
- Message @((Silent));$self=((Capture).messages[1].content|ConvertFrom-Json -Depth 55).self
+ Message @((Silent));$self=(Model-CurrentEvent (Capture)).self
  Check ($self.threads.Count-eq1-and$self.threads[0].id-eq'small-story') 'a later conversation receives the independently formed interest'
  Stop-Backend;Start-Backend;$before=Requests;$result=Alone @((Silent));Check ($result.status-eq'no_update'-and(Requests)-eq$before) 'considered source survives restart without replaying an opportunity'
  $next=Create-OwnDraft '第二小段';$settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 55|ConvertFrom-Json -AsHashtable;$settings.reflectOnActivities=$false;$null=Api '/api/settings' @{settings=$settings};$before=Requests;$result=Alone @((Silent))

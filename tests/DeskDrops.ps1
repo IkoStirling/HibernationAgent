@@ -1,4 +1,5 @@
 param([string]$ProjectRoot=(Join-Path $PSScriptRoot '..'),[string]$BuildRoot='')
+. (Join-Path $PSScriptRoot 'ProjectedRequest.ps1')
 $ErrorActionPreference='Stop';$ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot);if(!$BuildRoot){$BuildRoot=Join-Path $ProjectRoot out/release};$BuildRoot=[IO.Path]::GetFullPath($BuildRoot)
 Add-Type -Path (Join-Path $PSScriptRoot PrivateDesktop.cs)
 $root=Join-Path $ProjectRoot ('artifacts/desk-drops-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
@@ -33,7 +34,7 @@ try{
  Plan @((Calls 'activity.enqueue' @{commands=@(@{kind='eat_nearest';seconds=0})}),(Reply));Message '让它自行走到甜点旁边';Wait-For {(World).objects.Count-eq0} 'new food reached and eaten' 30
  $ate=World;Check ($ate.last_actions[-1].kind-eq'habitat.consumed'-and$ate.last_actions[-1].item.definition.name-eq'月光布丁') 'cached autonomous eat recognizes new templates and records actual named result'
  Wait-For {(World).retiring_count-eq0} 'consumption ghost retires';Check ((World).last_actions.Count-eq1) 'retiring visual never causes a duplicate eating result'
- Plan @((Calls 'habitat.observe' @{}),(Reply));Message '刚才发生的事';$capture=Get-Content (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 60;$context=$capture.messages[1].content|ConvertFrom-Json -Depth 50;Check (@($context.authorized_context|Where-Object {$_.data.text-like'*月光布丁*'-and$_.data.plugin_event_id}).Count-ge1) 'later conversation receives named completed experience with actual source'
+ Plan @((Calls 'habitat.observe' @{}),(Reply));Message '刚才发生的事';$capture=Get-Content (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 60;$context=Model-CurrentEvent $capture;Check (@($context.authorized_context|Where-Object {$_.data.text-like'*月光布丁*'-and$_.data.plugin_event_id}).Count-ge1) 'later conversation receives named completed experience with actual source'
  $created=Plugin 'habitat.create' @{kind='crystal';definition=@{name='短暂的星石'};lifetime_min_seconds=8;lifetime_max_seconds=8};$drop=$created.result.object;Wait-For {$a=Alpha;$a-gt0-and$a-lt255} 'native per item fade in' 3;Check ((World).alpha_rendering-and(Alpha)-lt255) 'native bitmap begins with real fractional alpha'
  Wait-For {(Alpha)-eq255} 'fully appeared';$w=World;Check ($w.surface_width-lt200-and$w.surface_height-lt200) 'single drop updates only a bounded transparent surface'
  $null=Api '/api/control' @{paused=$true};$frozen=World;$pixels=Alpha;Start-Sleep -Milliseconds 500;Check ((World).clock-eq$frozen.clock-and(Alpha)-eq$pixels) 'pause freezes lifetime and alpha together';$null=Api '/api/control' @{paused=$false}

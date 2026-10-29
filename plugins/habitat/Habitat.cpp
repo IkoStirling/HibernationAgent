@@ -14,7 +14,7 @@ namespace {
 class Habitat final:public BasePlugin {
     PluginHostContext host_;PluginJson cfg_;mutable std::recursive_mutex mutex_;SmallWorld world_;
     HWND window_=nullptr;HBITMAP buffer_=nullptr;std::uint32_t* pixels_=nullptr;int surfaceLeft_=0,surfaceTop_=0,surfaceWidth_=0,surfaceHeight_=0;HINSTANCE instance_=nullptr;
-    int width_=1920,height_=1080,actorSize_=112;bool economyFallback_=false;bool autonomous_=false,visible_=true,paused_=false,busy_=false,input_=false,actor_=false,reducedMotion_=false,actorResting_=false;
+    int width_=1920,height_=1080,actorSize_=112;PluginJson canteenDeliveries_=PluginJson::object();bool canteenSupplies_=false;bool economyFallback_=false;bool autonomous_=false,visible_=true,paused_=false,busy_=false,input_=false,actor_=false,reducedMotion_=false,actorResting_=false;
     double actorX_=.1,actorY_=.5,nextSpawn_=12,nextAutonomy_=30,nextPaint_=0;std::int64_t actorSeen_=0;
     std::uint64_t sequence_=0,attentionEpoch_=0;std::mt19937 random_{std::random_device{}()};double lifetimeMin_=300,lifetimeMax_=600;std::vector<double> creations_;
     struct Retiring {PluginJson item;double born;double opacity;};std::vector<Retiring> retiring_;
@@ -58,6 +58,20 @@ class Habitat final:public BasePlugin {
         if(world_.size()>=static_cast<std::size_t>(cfg_.value("maxObjects",3)))return toolFailure("world_object_limit");std::erase_if(creations_,[&](double at){return world_.clock()-at>=60;});if(creations_.size()>=static_cast<std::size_t>(cfg_.value("creationsPerMinute",12)))return toolFailure("world_creation_rate");
         const auto placement=args.value("placement",std::string("desktop"));if(placement!="desktop"&&placement!="nearby"&&placement!="left"&&placement!="right")return toolFailure("world_placement_invalid");auto [x,y]=placementPoint(placement);
         const int roll=static_cast<int>(random_()%100),quality=roll<5?2:roll<25?1:0;const auto id=nextId("object");if(!world_.placeDetailed(id,kind,x,y,authored,std::uniform_real_distribution<double>(lo,hi)(random_),quality,creator))return toolFailure("world_definition_invalid");creations_.push_back(world_.clock());invalidate();return toolSuccess({{"object",world_.object(id)},{"creation_policy",policy()}});
+    }
+    void deliverMeal(const PluginJson& request){
+        const auto ticket=request.value("ticket",std::string{});if(ticket.empty()||ticket.size()>80)return;
+        const auto respond=[&](bool ok,const std::string& detail){PluginJson receipt={{"kind","habitat.canteen_delivery"},{"plugin","habitat"},{"ticket",ticket},{"ok",ok},{"occurred_ms",nowMs()}};receipt[ok?"object_id":"error"]=detail;host_.emit(receipt);};
+        try{const auto& batch=request.at("batch");const auto batchId=batch.at("id").get<std::string>();
+            if(canteenDeliveries_.contains(ticket)){const auto& prior=canteenDeliveries_.at(ticket);respond(prior.at("batch_id")==batchId,prior.at("batch_id")==batchId?prior.at("object_id").get<std::string>():"delivery_identity_conflict");return;}
+            if(!host_.desktopEnabled||!visible_||paused_||!canteenSupplies_){respond(false,"desktop_unavailable");return;}if(world_.size()>=static_cast<std::size_t>(cfg_.value("maxObjects",3))){respond(false,"world_object_limit");return;}
+            const std::string recipe=batch.at("recipe_id");const std::string kind=recipe=="bread"?"bread":recipe=="pudding"?"pudding":recipe=="tea"?"tea":"";if(kind.empty()||batch.at("template")!=kind){respond(false,"meal_recipe_invalid");return;}
+            const double life=std::min(lifetimeMax_,request.at("remaining_seconds").get<double>());if(!std::isfinite(life)||life<5||life>43200){respond(false,"meal_expired");return;}
+            const auto id="food-"+ticket;const auto [x,y]=placementPoint("nearby");const PluginJson definition={{"name",batch.at("name")},{"description",batch.at("sensory").at("texture")},{"tint","original"}};
+            const PluginJson provenance={{"type","canteen_meal"},{"batch_id",batchId},{"recipe_id",recipe},{"origin",batch.at("origin")},{"sensory",batch.at("sensory")}};
+            if(!world_.placeDetailed(id,kind,x,y,definition,life,0,"canteen",provenance)){respond(false,"meal_publication_rejected");return;}
+            canteenDeliveries_[ticket]={{"batch_id",batchId},{"object_id",id}};while(canteenDeliveries_.size()>256)canteenDeliveries_.erase(canteenDeliveries_.begin());invalidate();drain();respond(true,id);
+        }catch(...){respond(false,"meal_publication_invalid");}
     }
     bool place(const std::string& kind){return createDrop({{"kind",kind},{"placement","desktop"}},"program").value("ok",false);}
     std::string request(const std::string& id,const std::string& action){if(paused_||!visible_)return "world_paused";if(actorResting_)return "world_character_resting";if(!actor_||!host_.desktopEnabled)return "desktop_character_required";return world_.request(id,action,nextId("world-action"));}
@@ -104,7 +118,7 @@ public:
         std::lock_guard lock(mutex_);if(window_&&(IsWindowVisible(window_)!=FALSE)!=visible_)ShowWindow(window_,visible_?SW_SHOWNOACTIVATE:SW_HIDE);const bool actorAvailable=actor_&&nowMs()-actorSeen_<2500;
         world_.tick(dt,!paused_,actorX_,actorY_,actorAvailable);std::erase_if(retiring_,[&](const Retiring& ghost){return world_.clock()-ghost.born>=.55;});
         if(!paused_&&visible_&&!busy_&&!input_&&actorAvailable){
-            if(cfg_.value("autoSpawn",true)&&world_.clock()>=nextSpawn_){if(world_.size()<static_cast<std::size_t>(cfg_.value("maxObjects",3)))place(drops::kinds().at(random_()%drops::kinds().size()));nextSpawn_=world_.clock()+cfg_.value("spawnSeconds",120.0)*(.8+(random_()%401)/1000.0);}
+            if(cfg_.value("autoSpawn",true)&&world_.clock()>=nextSpawn_){if(world_.size()<static_cast<std::size_t>(cfg_.value("maxObjects",3))){const std::string selected=drops::kinds().at(random_()%drops::kinds().size());if(!canteenSupplies_||!SmallWorld::edible(selected))place(selected);}nextSpawn_=world_.clock()+cfg_.value("spawnSeconds",120.0)*(.8+(random_()%401)/1000.0);}
             if(world_.queued()&&!actorResting_)world_.beginWalk();
             if((!autonomous_||economyFallback_)&&cfg_.value("autoInteract",true)&&!actorResting_&&!world_.pending()&&!world_.objects().empty()&&world_.clock()>=nextAutonomy_){nextAutonomy_=world_.clock()+30+random_()%31;if(std::bernoulli_distribution(cfg_.value("interactionProbability",.35))(random_)){std::vector<PluginJson> candidates;for(const auto& item:world_.objects())if(SmallWorld::newObservation(item)||(world_.wantsFood()&&SmallWorld::edible(item.at("kind"))))candidates.push_back(item);if(!candidates.empty()){const auto& item=candidates.at(random_()%candidates.size());request(item.at("id"),world_.wantsFood()&&SmallWorld::edible(item.at("kind"))?"eat":"look");}}}
         }
@@ -112,6 +126,8 @@ public:
     }
     void event(const PluginJson& event)override{
         std::lock_guard lock(mutex_);const auto kind=event.value("kind",std::string{});
+        if(kind=="runtime.canteen.available"){canteenSupplies_=event.value("enabled",false);return;}
+        if(kind=="runtime.canteen.deliver"){deliverMeal(event.at("request"));return;}
         if(kind=="runtime.autonomy_fallback"){economyFallback_=event.value("enabled",false);return;}
         if(kind=="runtime.autonomy"){autonomous_=event.value("enabled",false);return;}
         if(kind=="runtime.activity_cancel"){world_.cancel("activity_cancelled");drain();return;}
@@ -123,8 +139,8 @@ public:
         if(kind=="surface.show"&&event.value("surface",std::string{})=="habitat"){visible_=true;if(window_)ShowWindow(window_,SW_SHOWNOACTIVATE);invalidate();}
         drain();
     }
-    PluginJson snapshot()const override{std::lock_guard lock(mutex_);auto result=world_.snapshot();result["visible"]=visible_;result["desktop"]=host_.desktopEnabled;result["paint_count"]=paintCount_;result["alpha_rendering"]=true;result["surface_left"]=surfaceLeft_;result["surface_top"]=surfaceTop_;result["surface_width"]=surfaceWidth_;result["surface_height"]=surfaceHeight_;result["retiring_count"]=retiring_.size();result["creation_policy"]=policy();return result;}
-    bool restore(const PluginJson& value)override{std::lock_guard lock(mutex_);if(!world_.restore(value))return false;retiring_.clear();paintKey_.reset();visible_=value.value("visible",true);nextSpawn_=world_.clock()+12;nextAutonomy_=world_.clock()+30;if(window_)ShowWindow(window_,visible_?SW_SHOWNOACTIVATE:SW_HIDE);invalidate();return true;}
+    PluginJson snapshot()const override{std::lock_guard lock(mutex_);auto result=world_.snapshot();result["canteen_deliveries"]=canteenDeliveries_;result["canteen_supplies"]=canteenSupplies_;result["visible"]=visible_;result["desktop"]=host_.desktopEnabled;result["paint_count"]=paintCount_;result["alpha_rendering"]=true;result["surface_left"]=surfaceLeft_;result["surface_top"]=surfaceTop_;result["surface_width"]=surfaceWidth_;result["surface_height"]=surfaceHeight_;result["retiring_count"]=retiring_.size();result["creation_policy"]=policy();return result;}
+    bool restore(const PluginJson& value)override{std::lock_guard lock(mutex_);const auto receipts=value.value("canteen_deliveries",PluginJson::object());if(!receipts.is_object()||receipts.size()>256)return false;for(auto it=receipts.begin();it!=receipts.end();++it)if(it.key().empty()||it.key().size()>80||!it.value().is_object()||!it.value().contains("batch_id")||!it.value().contains("object_id")||!it.value().at("batch_id").is_string()||!it.value().at("object_id").is_string())return false;if(!world_.restore(value))return false;canteenDeliveries_=receipts;retiring_.clear();paintKey_.reset();visible_=value.value("visible",true);nextSpawn_=world_.clock()+12;nextAutonomy_=world_.clock()+30;if(window_)ShowWindow(window_,visible_?SW_SHOWNOACTIVATE:SW_HIDE);invalidate();return true;}
     void shutdown()override{std::lock_guard lock(mutex_);if(window_){DestroyWindow(window_);window_=nullptr;}clearBuffer();UnregisterClassW(L"HibernationDeskObjects",instance_);}
 };
 }

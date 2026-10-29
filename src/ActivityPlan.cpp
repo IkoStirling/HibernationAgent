@@ -8,7 +8,7 @@
 #include <AYSerializer/JsonSchema.h>
 namespace hibernation {
 std::string activitySchema(){
-    Json variants=Json::array();for(const auto* kind:{"move_to","pose","eat_nearest","look_nearest","rest","wait","interact","arrange","create_drop","creative_note","creative_continue","creative_read","reference_search","reference_read","puzzle_start","puzzle_press","puzzle_leave"}){
+    Json variants=Json::array();for(const auto* kind:{"move_to","pose","eat_nearest","look_nearest","rest","wait","interact","arrange","create_drop","canteen_cook","take_meal","creative_note","creative_continue","creative_read","reference_search","reference_read","puzzle_start","puzzle_press","puzzle_leave"}){
         Json properties={{"kind",{{"type","string"},{"enum",Json::array({kind})}}},{"seconds",{{"type","number"},{"minimum",0},{"maximum",600}}},{"purpose",{{"type","string"},{"minLength",1},{"maxLength",160},{"description","可选的一句活动目的，是打算而非已完成经历，不填思维过程；没有特别目的可以省略。"}}}};Json required=Json::array({"kind"});
         const std::string_view action=kind;
         if(action=="rest"||action=="pose"||action=="wait")required.push_back("seconds");
@@ -21,6 +21,11 @@ std::string activitySchema(){
         if(std::string_view(kind)=="pose"){properties["state"]={{"type","string"},{"enum",Json::array({"idle","blink","curious","listening","breathing"})}};required.push_back("state");}
         if(std::string_view(kind)=="interact"){
             properties["object_id"]={{"type","string"},{"minLength",1},{"maxLength",96}};properties["action"]={{"type","string"},{"enum",Json::array({"look","eat","plant"})}};required.push_back("object_id");required.push_back("action");
+        }
+        if(action=="canteen_cook"||action=="take_meal"){
+            properties["recipe_id"]={{"type","string"},{"enum",Json::array({"bread","pudding","tea"})}};
+            if(action=="canteen_cook")required.push_back("recipe_id");
+            else properties["batch_id"]={{"type","string"},{"minLength",1},{"maxLength",96}};
         }
         if(std::string_view(kind)=="create_drop"){
             properties["template"]={{"type","string"},{"enum",drops::kinds()}};properties["name"]={{"type","string"},{"minLength",1},{"maxLength",40}};properties["description"]={{"type","string"},{"maxLength",160}};properties["tint"]={{"type","string"},{"enum",Json::array({"original","rose","mint","amber","sky","violet"})}};
@@ -84,10 +89,11 @@ ValidatedOutput validateActivities(std::string_view text,Json* formatNormalizati
         for(const auto& note:value.value("carry_forward",Json::array()))if(close.at("id")==note.at("id"))return {false,"activity_personal_conflict",{}};
         for(const auto& command:value.at("commands"))if(command.contains("intention")&&command.at("intention").at("id")==close.at("id"))return {false,"activity_closed_intention_still_queued",{}};
     }
-    int creations=0,notes=0,games=0,references=0,ownReads=0;for(const auto& command:value.at("commands")){
+    int meals=0,creations=0,notes=0,games=0,references=0,ownReads=0;for(const auto& command:value.at("commands")){
         const auto kind=command.at("kind").get<std::string>();const double seconds=command.at("seconds");
         if(command.contains("purpose")&&command.at("purpose").get_ref<const std::string&>().find_first_not_of(" \t\r\n")==std::string::npos)return {false,"activity_empty_purpose",{}};
         if(!std::isfinite(seconds)||(kind=="rest"&&(seconds<15||seconds>600))||(kind=="wait"&&(seconds<1||seconds>120))||(kind=="pose"&&(seconds<1||seconds>120))||((kind=="eat_nearest"||kind=="look_nearest"||kind=="move_to"||kind=="interact"||kind=="arrange"||kind=="create_drop"||kind=="creative_note")&&seconds!=0))return {false,"activity_duration",{}};
+        if(kind=="canteen_cook"&&++meals>1)return {false,"activity_canteen_batch_limit",{}};
         if((kind=="create_drop"&&++creations>2)||((kind=="creative_note"||kind=="creative_continue")&&++notes>1)||(kind=="puzzle_start"&&++games>1))return {false,"activity_creation_batch_limit",{}};
         if((kind=="reference_search"||kind=="reference_read")&&++references>1)return {false,"activity_reference_batch_limit",{}};
         if(kind=="creative_read"&&++ownReads>1)return {false,"activity_own_read_batch_limit",{}};

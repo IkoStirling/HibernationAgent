@@ -1,4 +1,8 @@
-    void processPluginEvents(std::int64_t now){for(auto event:plugins->takeEvents()){
+    std::optional<bool> lastCanteenAvailability;
+    void processPluginEvents(std::int64_t now){const bool canteenEnabled=plugins->enabled("canteen");if(!lastCanteenAvailability||*lastCanteenAvailability!=canteenEnabled){lastCanteenAvailability=canteenEnabled;plugins->event({{"kind","runtime.canteen.available"},{"enabled",canteenEnabled}});}for(auto event:plugins->takeEvents()){
+            if(canteenEnabled&&event.value("plugin",std::string{})=="canteen"&&event.value("kind",std::string{})=="canteen.delivery.request"){const auto pending=plugins->liveSnapshots().value("canteen",Json::object()).value("outbox",Json(nullptr));if(pending.is_object()&&pending.at("ticket")==event.value("ticket",std::string{}))plugins->event({{"kind","runtime.canteen.deliver"},{"request",pending}});continue;}
+            if(event.value("plugin",std::string{})=="habitat"&&event.value("kind",std::string{})=="habitat.canteen_delivery"){auto receipt=event;receipt["kind"]="runtime.canteen.delivery_result";plugins->event(receipt);continue;}
+
             if(event.value("plugin",std::string{})=="napcat"&&event.value("kind",std::string{})=="napcat.model.usage"){recordModelUsage(event.value("profile_id",std::string{}),"qq_"+event.value("purpose",std::string{}),event.value("usage",Json::object()));continue;}
             if(napcatControl(event))continue;
             if(event.value("kind","")=="ui.chat.open"){
