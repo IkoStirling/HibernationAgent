@@ -23,6 +23,10 @@ Asterlan material coverage, transitions, props, interruption and completion rule
 Distinguish implemented logic, independent animation, reused animation and planned
 scenes; adding a PNG/state is not automatic business wiring. After changing the
 Asterlan manifest or imported assets, refresh frame counts, timings and fallbacks.
+Maintain separate PixelLab static-State prompts and per-action custom animation
+prompts, with stable S/O pose IDs, start/end pose pairs and one-shot/loop flags.
+Split composite flows into reusable clips; mark UI-only work and unwired scenes
+explicitly. Update those prompts and pose pairs in the same action change.
 Link composite actions to reusable units; retain retired IDs instead of reusing
 them. Do not turn animation completion into a factual action receipt or alter
 persona/stages/novel settings as a documentation side effect.
