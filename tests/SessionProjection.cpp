@@ -1,4 +1,5 @@
 #include <Hibernation/SessionProjection.h>
+#include <Hibernation/FailureContinuation.h>
 #include <AYTestFixtures.h>
 using namespace hibernation;
 using Json=nlohmann::json;
@@ -39,5 +40,23 @@ TEST_CASE(old_segments_are_never_recompressed_with_the_current_receipts){
 TEST_CASE(narrative_references_never_become_content_access_on_restore){
     CHECK(session::referenceCanRead({{"access","content"}}));CHECK(!session::referenceCanRead({{"access","narrative"}}));
     for(const auto& value:{Json::object(),Json{{"access","unknown"}}}){bool failed=false;try{session::referenceCanRead(value);}catch(...){failed=true;}CHECK(failed);}
+}
+TEST_CASE(failed_reply_retains_exact_input_and_only_program_receipts_not_rejected_prose){
+    session::Prepared run;run.fullFrame={{"event_id","user-1"},{"input","remember blue"},{"conversation_focus",nullptr}};run.failureFrame=run.fullFrame;run.failureFrame["conversation_focus"]={{"subject","shared"}};
+    run.failureInput={"user",cacheOrderedEvent(run.fullFrame)};
+    run.capturedMessages={{"assistant","REJECTED_REPLY_MUST_NOT_SURVIVE"},{"user","REVIEW_GUIDANCE_MUST_NOT_SURVIVE"}};
+    failure_continuation::completed(run,"workspace.write",{{"path","blue.md"}},{{"ok",true},{"source_id","receipt-1"},{"result",{{"written",true}}}},"request-1.call-1");
+    failure_continuation::completed(run,"activity.enqueue",Json::object(),{{"ok",true},{"result",{{"accepted",true},{"completed",false}}}},"request-1.call-2");
+    const auto event=failure_continuation::outcome(run,"user-1","trace-1","review_rejected");const auto messages=failure_continuation::messages(run,event);const auto wire=session::encode(messages).dump();
+    CHECK(messages.front().text==run.failureInput.text&&messages.front().role=="user");CHECK(wire.find("REJECTED_REPLY_MUST_NOT_SURVIVE")==std::string::npos&&wire.find("REVIEW_GUIDANCE_MUST_NOT_SURVIVE")==std::string::npos);
+    CHECK(messages.size()==5&&Json::parse(messages[1].text).at("operation_receipt").at("receipt").at("result").at("written")==true);
+    CHECK(Json::parse(messages[2].text).at("operation_receipt").at("receipt").at("result").at("completed")==false);
+    CHECK(Json::parse(messages[3].text).at("runtime_event").at("changes").at("conversation_focus")==run.failureFrame.at("conversation_focus"));
+    CHECK(Json::parse(messages.back().text).at("turn_outcome").at("reply_delivered")==false);
+    for(const auto& message:messages)CHECK(message.role=="user"&&message.toolCalls.empty()&&message.toolCallId.empty()&&message.images.empty());
+    const auto invalidated=failure_continuation::outcome(run,"user-1","trace-1","context_authorization_changed",false);CHECK(invalidated.at("context_invalidated")==true&&invalidated.at("completed_operations").empty());
+    const Json record={{"id","failure-1"},{"data",{{"kind","turn_outcome"},{"text",std::string(3000,'f')}}}};
+    const auto reviewed=reviewEventContext(Json{{"event_id","new-user"},{"previous_turn_outcome_id","failure-1"},{"authorized_context",Json::array({record})}}.dump(),Json{{"text","new reply"}},1024);
+    CHECK(reviewed.at("authorized_context")==Json::array({record}));
 }
 TEST_SUITE_END

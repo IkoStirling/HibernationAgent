@@ -65,6 +65,13 @@ try{
  $afterCalls=@(Get-Content (Join-Path $providerRoot requests.jsonl)).Count
  Check ($interrupted.call_error.code-eq'context_authorization_changed'-and$afterCalls-eq$beforeCalls+1) 'mid-turn revocation stops before another model request or proposal uses the old prefix'
  Check (!((Api '/api/memories').memories|Where-Object id -eq $memory.id).accessible) 'successful revocation is retained when the remaining turn is stopped'
+
+ Plan @(@{decision='approve';reason='ok';guidance=''},@{decision='deny';reason='persona';guidance='停止本次候选。'}) $true
+ Plan @((Native 'native-before-fail' 'ha_workspace_DOT_write' @{path='native-failure.md';content='NATIVE_COMPLETED_FACT'}),(Native 'native-rejected' 'ha_turn_reply' @{text='NATIVE_REJECTED_PROSE'}));$nativeFailed=Message 'NATIVE_FAILED_USER_INPUT'
+ Check ($nativeFailed.failure_continuation.projection_saved-and$nativeFailed.failure_continuation.operations-eq1) 'native tool execution also receives a facts-only failure checkpoint'
+ Plan @(@{decision='approve';reason='ok';guidance=''}) $true;Plan @((Native 'native-next' 'ha_turn_reply' @{text='the previous native write is retained'}));$nativeNext=Message 'continue after native reply rejection'
+ $nativeWire=Get-Content (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 90;$nativeRaw=$nativeWire|ConvertTo-Json -Depth 90 -Compress
+ Check ($nativeNext.session_projection.mode-eq'append'-and$nativeRaw.Contains('NATIVE_FAILED_USER_INPUT')-and$nativeRaw.Contains('NATIVE_COMPLETED_FACT')-and!$nativeRaw.Contains('NATIVE_REJECTED_PROSE')) 'native continuation retains facts without rejected prose or unmatched function-call outputs'
  Stop-Backend
  $plainFound=$false;foreach($file in Get-ChildItem (Join-Path $cfg.dataRoot archive) -File -Recurse){if([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($file.FullName)).Contains('PROJECTION_PRIVATE_FIRST_EVENT')){$plainFound=$true}}
  Check (!$plainFound) 'private archive and session projection contents remain encrypted on disk'

@@ -1,4 +1,5 @@
 param([Parameter(Mandatory)][string]$Executable,[Parameter(Mandatory)][string]$ProviderExecutable,[Parameter(Mandatory)][string]$ProjectRoot,[Parameter(Mandatory)][string]$ScratchRoot)
+. (Join-Path $PSScriptRoot ProjectedRequest.ps1)
 $ErrorActionPreference='Stop';$service=$null;$provider=$null;$checks=0;$root=Join-Path $ScratchRoot ('layered-review-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
 $env:TEMP=$root;$env:TMP=$root;$env:HIBERNATION_SESSION_KEY='layered-review-fixture'
 function Check($Value,$Name){if(!$Value){throw "CHECK FAILED: $Name"};$script:checks++;Write-Output "PASS $Name"}
@@ -8,7 +9,7 @@ function Tool($Id,$Name,$Arguments){@{id=$Id;tool=$Name;args=$Arguments}}
 function Calls($Items){@{version=1;kind='call';text=$null;calls=@($Items);presentation=@{speech=$false;bubble=$false};carry_forward=$null;appraisal=$null}}
 function Reply($Text){@{version=1;kind='reply';text=$Text;calls=@();presentation=@{speech=$false;bubble=$false};carry_forward=$null;appraisal=$null}}
 function Verdict($Decision='approve'){@{decision=$Decision;reason=if($Decision-eq'approve'){'ok'}else{'tool_intent'};guidance=if($Decision-eq'approve'){''}else{'停止本次提案。'}}}
-function Plan($Items,$Review=$false){$file=if($Review){'review-plan.json'}else{'plan.json'};@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Items|ForEach-Object {@{response=$_}})}|ConvertTo-Json -Depth 60|Set-Content -LiteralPath (Join-Path $providerRoot $file) -Encoding utf8}
+function Plan($Items,$Review=$false){$file=if($Review){'review-plan.json'}else{'plan.json'};@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Items|ForEach-Object {if($_-is[hashtable]-and$_.ContainsKey("fixture_status")){@{response="";http_status=$_.fixture_status}}else{@{response=$_}}})}|ConvertTo-Json -Depth 60|Set-Content -LiteralPath (Join-Path $providerRoot $file) -Encoding utf8}
 function Message($Text){$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$Text};Await {!(Api '/api/chat/status').busy} 'turn';$job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$out=$job.result|ConvertFrom-Json;Api '/api/trace' @{id=$out.trace_id}}
 function ReviewWire{@(Get-Content (Join-Path $providerRoot review-requests.jsonl)|ForEach-Object {$_|ConvertFrom-Json -Depth 90})}
 try{
@@ -42,5 +43,34 @@ try{
  Plan @(@{fixture_incomplete=$true},@{fixture_incomplete=$true}) $true;Plan @((Reply 'THIS_MUST_NOT_PUBLISH'));$exhausted=Message '验证审核失败关闭'
  Check ((Api '/api/chat/status').call_failed-and$exhausted.reviews.Count-eq2-and$exhausted.turns.Count-eq1) 'repeated reviewer truncation stays bounded and fails closed'
  Check (@((Api '/api/chat').messages|Where-Object text -eq 'THIS_MUST_NOT_PUBLISH').Count-eq0) 'unreviewed text never reaches conversation history'
+
+ $start=@(Get-Content (Join-Path $providerRoot requests.jsonl)).Count
+ Plan @((Verdict 'deny')) $true;Plan @((Calls @((Tool 'saved-before-deny' 'workspace.write' @{path='continuation.md';content='COMPLETED_DRAFT_FACT'}))),(Reply 'REJECTED_CONTINUATION_PROSE'))
+ $failed=Message 'KEEP_FAILED_USER_INPUT';$stamp=(Get-Item (Join-Path $cfg.dataRoot drafts/continuation.md)).LastWriteTimeUtc
+ Check ($failed.failure_continuation.projection_saved-and$failed.failure_continuation.operations-eq1) 'rejected dialogue commits a facts-only failure segment'
+ $record=(Api '/api/archive' @{id=$failed.failure_continuation.record_id}).records[0].data
+ Check ($record.kind-eq'turn_outcome'-and$record.input_context.text-eq'KEEP_FAILED_USER_INPUT'-and!$record.outcome.reply_delivered-and$record.outcome.completed_operations[0].receipt.result.written) 'encrypted outcome distinguishes original input, actual write and undelivered reply'
+ $beforeWire=@(Get-Content (Join-Path $providerRoot requests.jsonl)|ForEach-Object {$_|ConvertFrom-Json -Depth 90})[$start]
+ $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)) 'restart after failed dialogue'
+ $service=Start-Process -FilePath $Executable -ArgumentList ('--config "'+$root+'/config.json" --ready-file "'+$root+'/ready.json"') -WindowStyle Hidden -PassThru;Await {if($service.HasExited){throw 'fixture exited'};(Get-Content (Join-Path $root ready.json) -Raw|ConvertFrom-Json).pid-eq$service.Id} 'restarted backend';$script:origin='http://127.0.0.1:'+((Get-Content (Join-Path $root ready.json) -Raw|ConvertFrom-Json).port)
+ Plan @($final) $true;Plan @((Reply '刚才的草稿已经保存了。'));$continued=Message '继续，刚才做完什么了？'
+ $wire=Get-Content (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 90;$raw=$wire|ConvertTo-Json -Depth 90 -Compress
+ Check ($continued.session_projection.mode-eq'append'-and$raw.Contains('KEEP_FAILED_USER_INPUT')-and$raw.Contains('operation_receipt')-and$raw.Contains('turn_outcome')) 'failure input and completed receipt survive restart into next actor context'
+ Check (!$raw.Contains('REJECTED_CONTINUATION_PROSE')-and!$raw.Contains('THIS_MUST_NOT_PUBLISH')-and!$raw.Contains('mixed proposal')) 'rejected prose and rejected tool proposals never enter reusable context'
+ $prefix=@($wire.messages|Select-Object -First $beforeWire.messages.Count)
+ Check (($prefix|ConvertTo-Json -Depth 90 -Compress)-ceq($beforeWire.messages|ConvertTo-Json -Depth 90 -Compress)) 'old history and failed turn original input keep their exact sent prefix'
+ Check ((Get-Item (Join-Path $cfg.dataRoot drafts/continuation.md)).LastWriteTimeUtc-eq$stamp-and$continued.tool_results.Count-eq0) 'next turn neither replays nor rewrites the already completed operation'
+ $review=Model-ReviewEvent (ReviewWire)[-1];$context=if($review.event_context-is[string]){$review.event_context|ConvertFrom-Json -Depth 90}else{$review.event_context}
+ Check (@($context.authorized_context|Where-Object {$_.data.kind-eq'turn_outcome'-and$_.data.input_context.text-eq'KEEP_FAILED_USER_INPUT'}).Count-eq1) 'reviewer sees the same authorized failure facts as actor'
+ Plan @((Verdict),@{fixture_status=503}) $true;Plan @((Calls @((Tool 'memory-before-review-outage' 'memory.remember' @{kind='conversation';text='KEEP_MEMORY_AFTER_REVIEW_OUTAGE';source_ids=@('${event_id}')}))),(Reply 'REJECTED_OUTAGE_PROSE'))
+ $outage=Message 'KEEP_USER_AFTER_REVIEW_OUTAGE';Check ($outage.failure_continuation.projection_saved-and$outage.turns.Count-eq2-and$outage.reviews.Count-eq2) 'review transport failure persists facts without retrying the entire actor job'
+ $kept=@((Api '/api/memories').memories|Where-Object text -eq 'KEEP_MEMORY_AFTER_REVIEW_OUTAGE')[0];Check ($null-ne$kept) 'previously approved memory write survives later reviewer outage'
+ $settings=(Api '/api/dashboard').settings;$settings.contextControl|Add-Member -NotePropertyName sessionProjection -NotePropertyValue $false -Force;$null=Api '/api/settings' @{settings=$settings}
+ Plan @($final) $true;Plan @((Reply '之前记下的内容还在。'));$fallback=Message '继续刚才的话'
+ $wire=Get-Content (Join-Path $providerRoot last-request.json) -Raw|ConvertFrom-Json -Depth 90;$context=Model-CurrentEvent $wire;$raw=$wire|ConvertTo-Json -Depth 90 -Compress
+ Check (!$fallback.session_projection-and@($context.authorized_context|Where-Object {$_.data.kind-eq'turn_outcome'-and$_.data.input_context.text-eq'KEEP_USER_AFTER_REVIEW_OUTAGE'}).Count-eq1-and!$raw.Contains('REJECTED_OUTAGE_PROSE')) 'ordinary retrieval retains failure facts when cached session projection is disabled'
+ $null=Api '/api/access' @{id=$kept.id;accessible=$false};Plan @($final) $true;Plan @((Reply '继续当前能看的部分。'));$hidden=Message '继续当前的交流'
+ $raw=Get-Content (Join-Path $providerRoot last-request.json) -Raw
+ Check (!$raw.Contains('KEEP_MEMORY_AFTER_REVIEW_OUTAGE')-and!$raw.Contains('KEEP_USER_AFTER_REVIEW_OUTAGE')) 'revoked sources suppress derived failure facts rather than leaking them through outcome records'
  $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)) 'clean shutdown';@{completed=$true;checks=$checks;root=$root;paid_calls=0}|ConvertTo-Json|Set-Content (Join-Path $root acceptance.json);Write-Output "Layered review passed: $checks checks. $root"
 }finally{foreach($process in @($service,$provider)){if($process){$process.Refresh();if(!$process.HasExited){Stop-Process -Id $process.Id}}}}

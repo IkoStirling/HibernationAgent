@@ -14,6 +14,7 @@
 #include <Hibernation/ReviewSnapshots.h>
 #include <Hibernation/DirectReview.h>
 #include <Hibernation/LayeredReview.h>
+#include <Hibernation/FailureContinuation.h>
 #include <Hibernation/BackgroundProjection.h>
 #include <Hibernation/DeepSeekPricing.h>
 #include <Hibernation/BalanceControl.h>
@@ -635,6 +636,9 @@ struct Application::Impl {
         sessionRun=prepareSessionProjection(selected,request,context,trace,control);std::size_t currentEventIndex=sessionRun.eventIndex;
         auto initialMessages=request.messages;std::vector<ayt::inference::Message> completedMessages;std::size_t rewrites=0;
         context_events::Turn liveContext(session::expand(sessionRun.fullFrame,request.messages.at(currentEventIndex).text));
+
+        sessionRun.failureInput=request.messages.at(currentEventIndex);sessionRun.failureInput.images.clear();
+        struct FailureFrameCapture {session::Prepared& run;context_events::Turn& live;~FailureFrameCapture()noexcept{try{run.failureFrame=live.current();}catch(...){run.failureFrame=nullptr;}}} failureFrameCapture{sessionRun,liveContext};
         review_snapshots::Stream reviewStream;layered_review::Events reviewEvents;
         const auto captureSession=[&]{sessionRun.captured=true;sessionRun.capturedMessages=request.messages;sessionRun.fullFrame=liveContext.current();sessionRun.postlude=liveContext.take();trace["runtime_events"]={{"queued",liveContext.sequence()},{"after_reply",sessionRun.postlude.size()}};};
         OperationReplay operationReplay;
@@ -726,7 +730,7 @@ struct Application::Impl {
                 if(authorized.is_array())for(auto it=authorized.begin();it!=authorized.end();)if(dialogueDigestExcluded(projection,it->at("data")))it=authorized.erase(it);else ++it;
                 for(const auto& key:sessionRun.inheritedSourceIds)context.sources.erase(key);sessionRun.inheritedSourceIds.clear();std::erase_if(context.sources,[&](const auto& entry){return !projectionSourceAllowed(entry.second);});std::erase_if(context.narrativeSources,[&](const auto& entry){return !projectionSourceAllowed(entry.second);});trace["session_projection"]["fence"]=projectionFence();
                 request.messages={request.messages.front(),ayt::inference::Message{"user",cacheOrderedEvent(rebuilt)}};currentEventIndex=1;sessionRun.eventIndex=1;sessionRun.reused=false;sessionRun.retainedBytes=0;trace["session_projection"]["mode"]="reset";trace["session_projection"]["reason"]="review_reset";trace["session_projection"]["current_event_index"]=1;initialMessages=request.messages;request.messages.insert(request.messages.end(),completedMessages.begin(),completedMessages.end());
-                liveContext.rebase(rebuilt);reviewStream.clear();reviewEvents.clear();sessionRun.fullFrame=rebuilt;
+                sessionRun.failureInvalidated=true;liveContext.rebase(rebuilt);reviewStream.clear();reviewEvents.clear();sessionRun.fullFrame=rebuilt;
                 trace["context_rebuilds"]=trace.value("context_rebuilds",0)+1;
             }
             const auto guidance=trace["reviews"].back().at("verdict");
@@ -877,6 +881,7 @@ struct Application::Impl {
                     if(hadImage)absent(output.at("result"),-1);
                     if(output.at("result").contains("frames")&&output.at("result").at("frames").is_array())for(std::size_t i=0;i<output.at("result").at("frames").size();++i){const auto& frame=output.at("result").at("frames")[i];if(frame.is_object()&&frame.contains("image_attached"))absent(frame,static_cast<int>(i));}
                 }
+                failure_continuation::completed(sessionRun,call.at("tool"),call.at("args"),output,key);
                 output["call_id"]=call.at("id");feedback.push_back(output);trace["tool_results"].push_back({{"tool",call.at("tool")},{"call_id",call.at("id")},{"ok",output.value("ok",false)},{"source_id",output.value("source_id",std::string{})},{"error_code",output.value("error",Json::object()).value("code",std::string{})},{"reused_after_review",output.value("reused_after_review",false)}});
                 if(nativeResponse){trace["tool_results"].back()["provider_call_id"]=nativeCalls.at(nativeIndex).id;ayt::inference::Message receipt{"tool",output.dump()};receipt.toolCallId=nativeCalls.at(nativeIndex++).id;request.messages.push_back(std::move(receipt));completedMessages.push_back(request.messages.back());}
             }
@@ -946,11 +951,11 @@ struct Application::Impl {
         auto recentRows=readIds(archiveScope,recentIds);Json recentDialogue=Json::array();
         for(const auto& row:recentRows){const auto data=Json::parse(row.payload);if(!blockedSources.contains(row.id)&&!dialogueExcluded(dialogueProjection,row.id)&&!isLegacyMetaReply(data))recentDialogue.push_back({{"id",row.id},{"data",data}});}
         const auto causalIds=latestDialoguePair(recentDialogue,eventId);int recentPriority=94;
-        std::reverse(recentRows.begin(),recentRows.end());
+        std::reverse(recentRows.begin(),recentRows.end());std::string previousOutcomeId;bool laterReplyDelivered=false;
         for(const auto& r:recentRows) {
             if(blockedSources.contains(r.id)&&r.id!=eventId)continue;
-            auto data=Json::parse(r.payload);const auto kind=data.value("kind",std::string{});if(isLegacyMetaReply(data)||(kind=="assistant_message"&&dialogueExcluded(dialogueProjection,r.id)))continue;if(causalIds.contains(r.id))data=boundedCausalDialogue(std::move(data));else if(r.id!=eventId)data=summarizedArchive(r.id,r.revision,std::move(data),memories,policy);if(isLegacyMetaReply(data))continue;if(kind=="assistant_message")data["context_role"]="previous_dialogue";
-            if(context.sources.contains(r.id))continue;fragments.push_back({r.id,data.dump(),"archive@"+std::to_string(r.revision),r.id==eventId?100:causalIds.contains(r.id)?98:std::max(71,recentPriority--)});
+            auto data=Json::parse(r.payload);const auto kind=data.value("kind",std::string{});if(kind=="turn_outcome"&&!projectionSourcesAllowed(data.value("sources",Json::array())))continue;if(kind=="assistant_message")laterReplyDelivered=true;if(kind=="turn_outcome"&&previousOutcomeId.empty()&&!laterReplyDelivered){previousOutcomeId=r.id;pinned.insert(r.id);}if(isLegacyMetaReply(data)||(kind=="assistant_message"&&dialogueExcluded(dialogueProjection,r.id)))continue;if(causalIds.contains(r.id))data=boundedCausalDialogue(std::move(data));else if(r.id!=eventId)data=summarizedArchive(r.id,r.revision,std::move(data),memories,policy);if(isLegacyMetaReply(data))continue;if(kind=="assistant_message")data["context_role"]="previous_dialogue";
+            if(context.sources.contains(r.id))continue;fragments.push_back({r.id,data.dump(),"archive@"+std::to_string(r.revision),r.id==eventId?100:r.id==previousOutcomeId?99:causalIds.contains(r.id)?98:std::max(71,recentPriority--)});
             context.sources.emplace(r.id,Source{r.id,r.revision,kind});
         }
         addRecentObservations(recentIds,fragments,context);
@@ -1057,6 +1062,7 @@ struct Application::Impl {
         // token increases on every claim. Their difference is stable on retries.
         const auto occurrence=claim.job.runToken-claim.job.attempts+1;
         const auto turnIdentity=payload.contains("continuous_task")?payload.at("continuous_task").get<std::string>()+"-step-"+std::to_string(payload.at("task_step").get<int>()):requestId.empty()?claim.job.spec.id+"-"+std::to_string(occurrence):requestId;trace["turn_identity"]=turnIdentity;
+        if(!previousOutcomeId.empty()){auto event=Json::parse(req.messages.at(1).text);event["previous_turn_outcome_id"]=previousOutcomeId;req.messages[1].text=cacheOrderedEvent(event);trace["previous_turn_outcome_id"]=previousOutcomeId;}
         if(!scheduledIntent.is_null()){auto event=Json::parse(req.messages.at(1).text);event["scheduled_intent"]=scheduledIntent;req.messages[1].text=cacheOrderedEvent(event);trace["scheduled_intent"]=scheduledIntent;}
         scopeChannelRequest(req);
         if(contextControl.sessionProjection)req.messages[0].text+=session::conduct()+context_events::conduct();
@@ -1072,7 +1078,7 @@ struct Application::Impl {
         if(token.requested())return {false,true,"cancelled",{}};
         const bool transient=result.status==ayt::inference::Status::Transport||result.status==ayt::inference::Status::Timeout||(result.status==ayt::inference::Status::Provider&&(result.httpStatus==429||result.httpStatus>=500));
         const auto failure=trace.value("call_error",trace.value("review_error",callFailure(static_cast<int>(result.status),result.httpStatus)));
-        if(!result&&transient)return {false,true,Json{{"status","provider_retry"},{"call_error",failure},{"trace",trace}}.dump(),{}};
+        if(!result&&transient&&!trace.contains("review_error"))return {false,true,Json{{"status","provider_retry"},{"call_error",failure},{"trace",trace}}.dump(),{}};
         auto finalContext=context;if(trace.value("silent",false))finalContext.eventKind="solitude";
         auto validated=result?validateOutput(result.text,finalContext):ValidatedOutput{false,"model_"+std::to_string(static_cast<int>(result.status)),{}};
         // Legacy proposal-shaped output must obey the same authority boundary
@@ -1080,6 +1086,7 @@ struct Application::Impl {
         if(validated.ok&&cfg.channel&&(!validated.value.at("actions").empty()||!validated.value.at("state_update").empty()||!validated.value.at("stage_proposal").is_null()))validated={false,"channel_operation_denied",{}};
         JobOutcome outcome;Json resultInfo={{"status",validated.ok?"completed":"rejected"},{"kind",eventKind},{"request_id",requestId},{"trace_id",traceId},{"output_id",outputId},{"occurred_at",serviceNowMs()}};
         if(!validated.ok)resultInfo["call_error"]=failure;
+        if(!validated.ok&&trace.contains("review_error"))appendFailedContinuation(sessionRun,context,trace,failure,traceId,recent,outcome.updates);
         trace["validation"]=validated.code;trace["output_id"]=outputId;
         outcome.updates.push_back({"ha.trace",traceId,0,1,trace.dump(),eventId});
         Json archived={{"kind","model_output"},{"profile_id",selectedProfile.id},{"trace_id",traceId},{"text",result.text},{"accepted",validated.ok},{"validation",validated.code},{"created_at",serviceNowMs()}};

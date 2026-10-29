@@ -111,3 +111,20 @@ because of additional queries, private intentions and legitimate reply rewrites.
 Its total fee was higher. Input reuse is verified; total fee and the number of
 operations still depend on character/reviewer choices. A 98% aggregate hit rate
 is not promised. See [the work log](cache-event-worklog.md).
+
+
+## 审核失败后的事实续接（2026-10-29）
+
+审核未通过或审核连接失败时，程序将本轮保存为事实检查点，而不是删除整轮或把未通过的对白当作角色经历：
+
+- 原始用户输入保持不变；仅保留已实际返回的程序调用/回执，区分成功、失败、排队和最终完成。被拒对白、未经准许的工具提案、格式修复文本及审核改写意见不进入续接上下文。
+- 会话投影追加 `operation_receipt` 和 `turn_outcome` 程序事件，明确 `reply_delivered=false`。保持此前已保留的历史前缀及本轮初始输入字节不变；失败轮内部的原生/JSON工具过程整理为统一的事实事件，不保存未发布的助手话语或不完整的原生工具消息对。
+- 检查点另存为加密原始档案 `kind=turn_outcome`，不等于新增 `ha.memory` 或人格/情绪更新。下轮在普通检索、缓存重建或关闭投影时仍可取回最新未答复轮次的用户输入与回执；该记录在角色和审核器两边优先保留。后续已有正式回复时不再把较早失败标为当前未答复轮。
+- 未通过最终审核的 carry_forward、appraisal 和对白仍不提交；此前已经通过审批并执行的记忆、草稿、状态或外部操作保留。审核服务临时故障不会再触发整轮角色作业的自动重跑；同一请求的原有执行账本去重继续有效。新的明确用户要求仍可发起新操作，不把所有跨轮相同参数调用永久封禁。
+- 续接仍受来源权限、版本、对话重建与窗口容量限制。来源撤回后检查点不能绕过隐藏策略重新带入旧内容；不安全的旧投影不复用，真实原始记录与操作账本仍保留。图片只保留事实元数据，不重放历史像素。
+
+诊断位于 `trace.failure_continuation`：`record_id`、`stored`、`operations`、`projection_saved`、`reason`。模型当前事件的 `previous_turn_outcome_id` 仅引用本次已获准装配的最近失败记录，不授予新权限。无需模型返回新增字段，turn-v1/原生工具协议维持。
+
+定向检查覆盖：文件写入后对白被拒、重启后续接、保持原前缀、排除拒绝对白与拒绝提案、下一轮不自动重写文件、审核器与角色依据一致、记忆写入后审核HTTP503、关闭投影仍可续接、来源撤回、JSON与原生工具两种流程。本轮不使用私人对话或付费模型调用。
+
+本轮验证：226/226 单元用例、146770/146770 断言通过（使用较短的非系统盘 `AY_TEST_TMPDIR`）；标准深层 CTest 临时目录下已有导师存档恢复用例出现路径相关失败，同一用例及全套在短目录通过，未修改恢复实现。分层审核28项、会话投影24项及缓存/事件追加四组入口通过，另有协议、NapCat、JSON/原生长任务、新调度、前台优先、私人延续和离线九组回归通过。本轮付费模型调用0次。

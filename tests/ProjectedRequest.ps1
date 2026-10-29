@@ -54,14 +54,29 @@ function Model-CurrentEvent($Capture){
  $current['authorized_context']=[System.Text.Json.Nodes.JsonNode]::Parse((ConvertTo-Json -InputObject @(Model-AuthorizedRows $Capture) -Depth 90 -Compress))
  $current.ToJsonString()|ConvertFrom-Json -Depth 90
 }
+function Model-PatchNode($Current,$Patches){
+ foreach($patch in $Patches){
+  $path=$patch['path'].ToString();$operation=$patch['op'].ToString();$value=$null;if($null-ne$patch['value']){$value=$patch['value'].DeepClone()}
+  if(!$path){$Current=$value;continue}
+  $parts=@($path.Substring(1).Split('/')|ForEach-Object {$_.Replace('~1','/').Replace('~0','~')});$parent=$Current
+  for($i=0;$i-lt$parts.Count-1;$i++){if($parent-is[System.Text.Json.Nodes.JsonArray]){$parent=$parent[[int]$parts[$i]]}else{$parent=$parent[$parts[$i]]}}
+  $key=$parts[-1]
+  if($parent-is[System.Text.Json.Nodes.JsonArray]){$index=if($key-eq'-'){$parent.Count}else{[int]$key};switch($operation){'remove'{$parent.RemoveAt($index)}'add'{$parent.Insert($index,$value)}'replace'{$parent[$index]=$value}default{throw 'Unsupported review fixture patch'}}}
+  else{if($operation-eq'remove'){$null=$parent.Remove($key)}elseif($operation-in@('add','replace')){$parent[$key]=$value}else{throw 'Unsupported review fixture patch'}}
+ }
+ return ,$Current
+}
 function Model-ReviewEvent($Capture){
  $messages=if($Capture.PSObject.Properties['messages']){@($Capture.messages)}else{@($Capture.input)}
- $capabilities=@{};$evidence=@{};$current=$null
+ $capabilities=@{};$evidence=@{};$current=$null;$authority=$null
  foreach($message in $messages){
   if($message.role-ne'user'){continue}
   $raw=if($message.content-is[string]){$message.content}else{($message.content|Where-Object {$_.text}|Select-Object -First 1).text}
   if(!$raw){continue};try{$node=[System.Text.Json.Nodes.JsonNode]::Parse($raw)}catch{continue}
   if($node-isnot[System.Text.Json.Nodes.JsonObject]){continue}
+  if($node['review_baseline']){$authority=$node['review_baseline']['authority'].DeepClone();continue}
+  if($node['review_event']){if(!$authority){throw 'Review delta lacks a baseline'};$authority=Model-PatchNode $authority $node['review_event']['patch'];continue}
+  if($node['review_candidate']){if(!$authority){throw 'Review candidate lacks authority'};$current=$authority.DeepClone();foreach($field in $node['review_candidate']){if($field.Key-eq'sequence'){continue};$copy=$null;if($null-ne$field.Value){$copy=$field.Value.DeepClone()};$current[$field.Key]=$copy};continue}
   if($node['review_capability']){$item=$node['review_capability'];$capabilities[$item['id'].ToString()]=$item['data'].DeepClone()}
   elseif($node['review_evidence']){$item=$node['review_evidence'];$evidence[$item['id'].ToString()]=$item['data'].DeepClone()}
   elseif($node['review_snapshot']){$current=$node['review_snapshot']['data'].DeepClone()}

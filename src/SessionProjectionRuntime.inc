@@ -65,6 +65,31 @@
         if(!run.enabled)return true;
         return trace.at("session_projection").at("fence")==projectionFence()&&(!run.reused||projectionSourcesAllowed(run.head.at("sources")))&&projectionSourcesAllowed(projectionSources(context),false);
     }
+    void appendFailedContinuation(session::Prepared& run,const ProposalContext& context,Json& trace,const Json& failure,const std::string& traceId,Doc& recent,std::vector<RecordMutation>& updates){
+        if(context.eventKind!="user_message"||context.eventId.empty())return;
+        const auto refs=projectionSources(context);
+        const bool allowed=!run.failureInvalidated&&projectionSourcesAllowed(refs)&&(!run.enabled||sessionStillAuthorized(run,context,trace));
+        const auto key="turn-outcome-"+traceId;
+        auto event=failure_continuation::outcome(run,context.eventId,traceId,failure.value("code",std::string("review_unavailable")),allowed);
+        const auto input=get(archiveScope,context.eventId);
+        Json inputContext={{"source_id",context.eventId},{"revision",input.revision}};
+        if(allowed)for(const auto* field:{"text","attachments","created_at"})if(input.value.contains(field))inputContext[field]=input.value.at(field);
+        Json record={{"kind","turn_outcome"},{"context_role","previous_turn_not_delivered"},{"text","上轮回复未通过，用户输入与已发生的操作按程序事实保留。"},{"input_context",inputContext},{"outcome",event},{"sources",refs},{"created_at",serviceNowMs()}};
+        updates.push_back({archiveScope,key,0,1,record.dump(),traceId});pushIndex(recent.value,key,200);updates.push_back(mutation("ha.index","recent",recent,recent.value,key));
+        trace["failure_continuation"]={{"record_id",key},{"stored",true},{"operations",allowed?run.failureOperations.size():0},{"projection_saved",false},{"reason",allowed?"projection_disabled":"authority_changed"}};
+        // A rejected response is not a global rollback. Only append facts when
+        // the original prefix and every retained source are still authorized.
+        if(!run.enabled||!allowed||run.failureInput.text.empty()||!run.failureFrame.is_object()||!context.taskId.empty()||!context.skillId.empty())return;
+        auto added=failure_continuation::messages(run,event);
+        if(run.retainedBytes+session::bytes(added)>run.maxBytes){trace["failure_continuation"]["reason"]="capacity";return;}
+        auto head=run.reused?run.head:Json{{"version",2},{"epoch",run.epoch},{"segments",Json::array()}};
+        auto sources=refs;sources.push_back({{"scope",archiveScope},{"id",key},{"revision",1},{"kind","turn_outcome"},{"access","narrative"}});if(sources.size()>256){trace["failure_continuation"]["reason"]="source_capacity";return;}
+        const auto segmentId="failure-segment-"+traceId;auto frame=run.failureFrame;frame.erase("authorized_context");
+        head["segments"].push_back(segmentId);head["sources"]=sources;head["compatibility"]=run.compatibility;head["fence"]=projectionFence();head["bytes"]=run.retainedBytes+session::bytes(added);head["updated_ms"]=serviceNowMs();
+        const auto before=get("ha.prompt-sessions",run.key);updates.push_back(mutation("ha.prompt-sessions",run.key,before,head,traceId));
+        updates.push_back({"ha.prompt-segments",segmentId,0,1,Json{{"epoch",run.epoch},{"messages",session::encode(added)},{"frame",frame},{"outcome","reply_not_approved"}}.dump(),traceId});
+        trace["failure_continuation"]["projection_saved"]=true;trace["failure_continuation"]["reason"]="facts_only_append";
+    }
     void appendSessionProjection(session::Prepared& run,const ProposalContext& context,const Json& output,const std::string& answerId,const std::string& traceId,std::vector<RecordMutation>& updates){
         if(!run.enabled||run.aborted||!run.captured||!context.taskId.empty()||!context.createdTaskId.empty()||!context.skillId.empty()||session::images(run.capturedMessages))return;
         const auto refs=projectionSources(context);if(!projectionSourcesAllowed(refs))return;

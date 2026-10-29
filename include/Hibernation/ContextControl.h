@@ -81,7 +81,7 @@ inline nlohmann::json reviewEventContext(const std::string& text,const nlohmann:
     if(!event.contains("authorized_context")||!event.at("authorized_context").is_array())return event;
     const auto all=event.at("authorized_context");Json selected=Json::array(),omitted=Json::array();std::size_t used=0;std::set<std::size_t> admitted;
     const auto mentions=[&](const Json& node,const std::string& id,auto&& self)->bool{if(node.is_string())return node.get_ref<const std::string&>()==id;if(node.is_structured())for(const auto& child:node)if(self(child,id,self))return true;return false;};
-    for(std::size_t i=0;i<all.size();++i){const auto& row=all.at(i);const auto id=row.value("id",std::string{});if(id==event.value("event_id",std::string{})||mentions(candidate,id,mentions)){admitted.insert(i);used+=row.dump().size();}}
+    for(std::size_t i=0;i<all.size();++i){const auto& row=all.at(i);const auto id=row.value("id",std::string{});if(id==event.value("event_id",std::string{})||(!id.empty()&&id==event.value("previous_turn_outcome_id",std::string{}))||mentions(candidate,id,mentions)){admitted.insert(i);used+=row.dump().size();}}
     for(std::size_t i=all.size();i-->0;){if(admitted.contains(i))continue;const auto size=all.at(i).dump().size();if(used+size<=budget){admitted.insert(i);used+=size;}}
     // Select newest background evidence first, but present it in the actor's
     // original order. Reversing dialogue places corrections before the mistake.
