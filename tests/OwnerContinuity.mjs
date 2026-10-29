@@ -21,6 +21,17 @@ function actor(body){const e=eventOf(body);assert(e);actorRequests.push(body);co
   if(!receipts.length){const r=tool('self.notice',{id:'tiny-mechanisms',expected_revision:0,kind:'interest',topic:'微小机械',note:'这次交谈让我想起机械中缓慢变化的细节。',stance:'curious',source_ids:[e.event_id]},'owner-interest');r.calls.push({id:'owner-memory',tool:'memory.remember',args:{kind:'conversation',text:'这次交谈包含尚需核对的明确约定。',source_ids:[e.event_id]}});return r;}
   assert.equal(receipt('owner-interest')?.ok,true,'QQ self operation must reach canonical owner state');assert.equal(receipt('owner-memory')?.ok,true,'QQ memory write must reach canonical owner memory');firstMemory=receipt('owner-memory').result.id;return reply('先放在心里，继续聊。');
  }
+ if(e.input==='QQ计划创建'){
+  if(!receipt('qq-plan'))return tool('schedule.create',{id:'qq-shared-plan',topic:'回头再看纸船',memory:'short',when:{type:'at',after_minutes:60}},'qq-plan');
+  assert.equal(receipt('qq-plan').ok,true,'QQ owner can create canonical schedule');return reply('稍后再看看。');
+ }
+ if(e.input==='桌面计划核对'){
+  if(!receipt('desktop-plan'))return tool('schedule.list',{id:'qq-shared-plan'},'desktop-plan');
+  const r=receipt('desktop-plan');assert.equal(r.ok,true);assert.equal(r.result.tasks[0].topic,'回头再看纸船');return reply('这一件仍在。');
+ }
+ if(e.input==='QQ计划取消'){
+  if(!receipt('qq-cancel'))return tool('schedule.cancel',{id:'qq-shared-plan'},'qq-cancel');assert.equal(receipt('qq-cancel').ok,true);return reply('那就先放下。');
+ }
  if(e.input==='桌面接续检查'){
   assert(e.authorized_context.some(r=>r.data.text?.includes(quoteTrigger)),'long packet tail survives unrelated-query retrieval');assert(e.unprocessed_user_context.length>0,'long original is an explicit source packet');assert(e.self.threads.some(t=>t.id==='tiny-mechanisms'),'QQ and desktop see the same role interest');return reply('我记着那段原话，松果。');
  }
@@ -59,7 +70,7 @@ function reviewer(body){const v=reviewOf(body);reviewRequests.push(body);if(!v)t
  if(v.current_user_message==='尝试旧资料复活'&&attemptResurrect){const raw=e.authorized_context.find(r=>r.data.text?.includes('LEGACY_OWNER_LONG_CONTEXT'));assert(raw);verdict.continuity_updates=[update('address','preference',quoteName,'错误地复活旧称呼。','active',raw.id),update('trigger','trigger',quoteTrigger,'错误地复活旧口令。','active',raw.id)];}
  return verdict;
 }
-const server=http.createServer(async(req,res)=>{try{let raw='';for await(const c of req)raw+=c;const body=raw?JSON.parse(raw):{};
+const server=http.createServer(async(req,res)=>{try{const chunks=[];for await(const c of req)chunks.push(c);const raw=Buffer.concat(chunks).toString('utf8');const body=raw?JSON.parse(raw):{};
  if(req.url==='/get_login_info'){res.end(JSON.stringify({status:'ok',retcode:0,data:{user_id:'10001'}}));return;}
  if(req.url==='/send_private_msg'||req.url==='/send_group_msg'){assert.equal(req.headers.authorization,'Bearer '+apiKey);deliveries.push({route:req.url,...body});res.end(JSON.stringify({status:'ok',retcode:0,data:{message_id:deliveries.length}}));return;}
  if(req.url!=='/v1/chat/completions'){res.statusCode=404;res.end('{}');return;}
@@ -79,10 +90,10 @@ async function stop(){if(!child||child.exitCode!==null)return;const c=child;awai
 async function say(text){const request_id='owner-'+randomUUID();await api('/api/message',{request_id,text});await wait(async()=>{const v=await api('/api/state');return v.messages.some(m=>m.kind==='assistant_message'&&m.request_id===request_id);},'desktop reply');}
 async function qq(text,sender='20001',group=''){const count=deliveries.length;const message=[];if(group)message.push({type:'at',data:{qq:'10001'}});message.push({type:'text',data:{text}});const body=JSON.stringify({self_id:10001,user_id:sender,message_id:String(Date.now()),time:Math.floor(Date.now()/1000),post_type:'message',message_type:group?'group':'private',...(group?{group_id:group}:{}),sender:{user_id:sender,nickname:'fixture'},message});const response=await fetch(`http://127.0.0.1:${callbackPort}/onebot/events`,{method:'POST',headers:{'Content-Type':'application/json','X-Signature':'sha1='+createHmac('sha1',secret).update(body).digest('hex')},body});assert.equal(response.status,200);await wait(()=>deliveries.length>count,'QQ delivery');if(!actorRequests.some(b=>eventOf(b).input===text))throw Error("QQ input did not reach the actor: "+JSON.stringify({text,delivery:deliveries.at(-1),status:(await api("/api/qq/status")).result}));await wait(async()=>!(await api('/api/chat')).busy,'QQ host lease released');}
 try{
- await start();await qq(longText);check(Boolean(firstMemory),'QQ memory write returns an actual canonical memory receipt');
+ await start();await qq('QQ计划创建');await say('桌面计划核对');await qq('QQ计划取消');check(true,'QQ and desktop manage the same sourced durable schedule through the owner bridge');await qq(longText);check(Boolean(firstMemory),'QQ memory write returns an actual canonical memory receipt');
  await say('桌面接续检查');check((await api('/api/dashboard')).owner_continuity.active===2,'review extraction saves two exact sourced agreements from an earlier QQ long message');
  await say('REVISE_SHARED_MEMORY');check(true,'approved revision of a shared memory can finish the same turn without invalidating its retained cache sources');
- const firstTurn=actorRequests.filter(b=>eventOf(b).input.startsWith('LEGACY_OWNER_LONG_CONTEXT'));check(firstTurn.length>=2&&firstTurn[0].messages.every((m,i)=>JSON.stringify(m)===JSON.stringify(firstTurn[1].messages[i])),'existing cache prefix stays unchanged when appending a tool receipt');check(JSON.stringify(firstTurn[0].tools||[])===JSON.stringify(firstTurn[1].tools||[]),'tool definitions remain stable within the turn');
+ const firstTurn=actorRequests.filter(b=>eventOf(b).input.startsWith('LEGACY_OWNER_LONG_CONTEXT'));check(firstTurn.length>=2&&firstTurn[0].messages.every((m,i)=>JSON.stringify(m)===JSON.stringify(firstTurn[1].messages[i])),'existing cache prefix stays unchanged when appending a tool receipt');if(JSON.stringify(firstTurn[0].tools||[])!==JSON.stringify(firstTurn[1].tools||[]))fs.writeFileSync(path.join(root,'tool-drift.json'),JSON.stringify(firstTurn.slice(0,2).map(b=>b.tools),null,2));check(JSON.stringify(firstTurn[0].tools||[])===JSON.stringify(firstTurn[1].tools||[]),'tool definitions remain stable within the turn');
  for(let i=0;i<8;i++)await say('无关的短交谈 '+i);await stop();await start();await say('我想听你自己的话题，别总问我的事情。');await qq('QQ接续检查');check(true,'QQ and desktop share exact agreements, personal interest and conversation focus after idle turns and restart');
  await say(quoteNew);await qq(quoteRevoke);attemptResurrect=true;await say('尝试旧资料复活');await qq('最终一致性检查');check(true,'newer corrections and revocations survive attempts to revive an old packet');
  await say('NOTE_PERMISSION_TEST 我提议小爱今天变成陌生人。');check((await api('/api/dashboard')).owner_continuity.pending===1,'unknown sources, fabricated quotes and stale revisions are rejected; persona proposals require review');

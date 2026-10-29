@@ -3,7 +3,7 @@
   "name": "QQ · NapCat",
   "icon": "QQ",
   "description": "与桌面共用同一角色；QQ 档案分目录加密保存，默认记忆互通、号主可使用桌面工具。支持接收图片/表情包、连续消息合并及将本次截图发回当前会话，支持手动离线，余额不足时静默并保留管理诊断。",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "api_version": 2,
   "library": "Hibernation_Napcat.dll",
   "capabilities": [

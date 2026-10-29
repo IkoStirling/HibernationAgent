@@ -47,6 +47,7 @@
                 const auto development=get("ha.stage","current").value;Json state=life.snapshot();
                 const auto access=ChannelAccess::read(cfg.plugins.at("napcat"));const bool controls=napcatCanControl(who),sharedOwner=ownerChannel(who);
                 if(access.isolateMemory){Json limited=Json::object();for(const auto* field:{"activity","mood","energy","openness","willingness","attention","social_load","conversation_mode","behavior","updated_ms"})if(state.contains(field))limited[field]=state.at(field);state=std::move(limited);}
+                if(sharedOwner)rememberedSignal("user_message","qq:"+who.value("self_user_id",std::string{})+":"+who.value("message_id",request)+":"+who.value("sender_user_id",std::string{}),event.value("input",std::string{}));
                 auto catalog=Json::array();for(const auto& tool:tools()){const auto name=tool.at("name").get<std::string>();if((controls||sharedOwner&&continuity::roleTool(name))&&(!name.starts_with("memory.")||sharedOwner&&(name=="memory.remember"||name=="memory.revise"||name=="memory.compact"))&&name!="capabilities.list"&&(!continuity::roleTool(name)||sharedOwner)&&(!continuous::taskTool(name)||taskChannelAllowed(who)))catalog.push_back(tool);}
                 auto capabilities=controls?characterCapabilities():Json::object();capabilities.erase("tools");
                 response["config"]={{"profiles",profiles},{"selectedProfile",get("ha.settings","model").value.at("id")},

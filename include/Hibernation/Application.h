@@ -23,6 +23,7 @@ struct ProposalContext {
     std::map<std::string,Source> sources;
     // Provenance of private views, never authority for memory/stage proposals.
     std::map<std::string,Source> narrativeSources;
+    std::string scheduleId,scheduleOccurrence;
     std::string taskId,createdTaskId,channelInputId; int taskStep=0;
     Json channelIdentity=Json::object();
     std::set<std::string> taskTools;

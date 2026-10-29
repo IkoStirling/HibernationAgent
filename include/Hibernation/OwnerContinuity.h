@@ -4,7 +4,7 @@
 #include <Hibernation/ContinuousTasks.h>
 #include <Hibernation/DialogueContext.h>
 namespace hibernation::continuity {
-inline bool roleTool(std::string_view n){return n.starts_with("continuity.")||n.starts_with("self.")||n.starts_with("memory.")||n.starts_with("reflection.")||n=="state.observe"||n=="state.propose"||n=="state.appraise"||n=="stage.observe"||n=="stage.propose";}
+inline bool roleTool(std::string_view n){return n.starts_with("schedule.")||n.starts_with("continuity.")||n.starts_with("self.")||n.starts_with("memory.")||n.starts_with("reflection.")||n=="state.observe"||n=="state.propose"||n=="state.appraise"||n=="stage.observe"||n=="stage.propose";}
 inline Json noteParameters(){return {{"type","object"},{"additionalProperties",false},{"required",Json::array({"id","expected_revision","kind","status","quote","meaning","source_id"})},{"properties",{
  {"id",{{"type","string"},{"minLength",1},{"maxLength",64}}},{"expected_revision",{{"type","integer"},{"minimum",0}}},
  {"kind",{{"type","string"},{"enum",Json::array({"preference","agreement","trigger","fact","persona_proposal"})}}},

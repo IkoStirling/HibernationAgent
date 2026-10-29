@@ -19,7 +19,7 @@ class Napcat final:public BasePlugin {
     std::atomic<std::uint64_t> offlineEpoch_=0,workerEpoch_=0;
     std::atomic<int> port_=0,lastHttpError_=0;std::atomic<std::uint64_t> callbacks_=0,signatureFailures_=0,httpRequests_=0;mutable std::mutex mutex_;std::condition_variable wake_;
     std::map<std::string,PluginJson> replies_;std::map<std::string,std::int64_t> admitted_;std::uint64_t token_=0;
-    PluginJson lastFailure_=PluginJson::object();
+    PluginJson lastFailure_=PluginJson::object(),connection_=PluginJson::object();std::int64_t nextConnectionProbe_=0;
     std::string issue_,activeRequest_,lastControlKind_,lastControlStatus_;double lastControlMs_=0;std::filesystem::path root_;std::uint64_t observationSequence_=0;
     bool cancelled()const{return stopped_.load()||paused_.load()||offline_.load()||offlineEpoch_.load()!=workerEpoch_.load();}
     void issue(std::string code){std::lock_guard lock(mutex_);issue_=std::move(code);}
@@ -35,6 +35,14 @@ class Napcat final:public BasePlugin {
         ayt::net::http::Request request;request.origin=settings_.origin;request.path="/"+action;request.method="POST";request.body=args.dump();request.timeout=std::chrono::seconds(seconds);request.maxResponseBytes=128*1024;request.cancelled=[this]{return cancelled();};
         const auto token=ayt::net::http::environmentCredential(settings_.apiEnvironment);if(token.size()<16||token.size()>4096||token.find_first_of("\r\n")!=std::string::npos)throw std::runtime_error("api_token_missing");
         request.headers={{"Content-Type","application/json"},{"Authorization","Bearer "+token}};return ayt::net::http::perform(request);
+    }
+    void probeConnection(){
+        nextConnectionProbe_=nowMs()+30000;PluginJson state={{"checked_ms",nowMs()},{"api_available",false},{"account_online",false},{"issue","napcat_api_unreachable"},{"message","NapCat本机API未响应，请检查桥接进程是否运行或需要重新登录。"}};
+        try{auto response=api("get_status",PluginJson::object(),2);if(response&&response.httpStatus==404)response=api("get_login_info",PluginJson::object(),2);
+            state["http_status"]=response.httpStatus;if(response&&(response.httpStatus==401||response.httpStatus==403)){state["issue"]="napcat_api_unauthorized";state["message"]="NapCat API鉴权失败，请核对已配置的访问凭据。";}
+            else if(response&&response.httpStatus==200){const auto value=PluginJson::parse(response.body,nullptr,false);if(value.is_object()&&value.value("status",std::string{})=="ok"&&value.value("retcode",-1)==0&&value.contains("data")&&value.at("data").is_object()){const auto& data=value.at("data");state["api_available"]=true;bool online=data.value("online",data.contains("user_id"));if(data.contains("user_id")&&digits(data.at("user_id"))!=settings_.bot){online=false;state["issue"]="bot_identity_mismatch";state["message"]="NapCat当前登录账号与配置的机器人账号不一致。";}else{state["issue"]=online?"":"napcat_account_offline";state["message"]=online?"QQ连接正常。":"QQ账号未在线，请在NapCat重新登录。";}if(online&&!data.contains("user_id")){const auto identity=api("get_login_info",PluginJson::object(),2);const auto login=PluginJson::parse(identity.body,nullptr,false);if(!identity||identity.httpStatus!=200||!login.is_object()||!login.contains("data")||!login.at("data").contains("user_id")||digits(login.at("data").at("user_id"))!=settings_.bot){online=false;state["issue"]="bot_identity_mismatch";state["message"]="NapCat登录身份未能与机器人配置核对，请检查账号。";}}state["account_online"]=online;}}
+        }catch(...){state["issue"]="napcat_api_unreachable";}
+        std::lock_guard lock(mutex_);connection_=std::move(state);
     }
     bool login(){const auto response=api("get_login_info",PluginJson::object());if(!response||response.httpStatus!=200){issue("napcat_unavailable");return false;}const auto value=PluginJson::parse(response.body);if(value.value("status",std::string{})!="ok"||value.value("retcode",-1)!=0||digits(value.at("data").at("user_id"))!=settings_.bot){issue("bot_identity_mismatch");return false;}return true;}
     PluginJson sendScreenshot(const PluginJson& row,const std::filesystem::path& localRoot,const Json& args,const ProposalContext& context,const std::string& trace){
@@ -164,7 +172,7 @@ class Napcat final:public BasePlugin {
     bool stillAllowed(const PluginJson& row)const{return row.at("self_id")==settings_.bot&&(row.at("type")=="group"?settings_.groups.contains(row.at("group_id").get<std::string>()):row.at("sender_id")==settings_.owner||settings_.users.contains(row.at("sender_id").get<std::string>()));}
     void loop(){while(!stopped_){workerEpoch_=offlineEpoch_.load();activeRequest_.clear();try{
             if(cancelled()){std::unique_lock lock(mutex_);wake_.wait_for(lock,std::chrono::milliseconds(250));continue;}
-            auto row=ledger_->next();if(!row){std::unique_lock lock(mutex_);wake_.wait_for(lock,std::chrono::milliseconds(250));continue;}
+            auto row=ledger_->next();if(!row){if(nowMs()>=nextConnectionProbe_)probeConnection();std::unique_lock lock(mutex_);wake_.wait_for(lock,std::chrono::milliseconds(250));continue;}
             const auto id=row->at("id").get<std::string>();if(!stillAllowed(*row)){ledger_->finish(id,"revoked");continue;}
             if(row->value("status",std::string{})=="sending"){ledger_->finish(id,"unknown");issue("delivery_unknown_not_retried");continue;}
             if(nowMs()-row->at("created_ms").get<std::int64_t>()>settings_.maxAgeSeconds*1000){ledger_->finish(id,"expired");continue;}
@@ -187,7 +195,7 @@ class Napcat final:public BasePlugin {
 public:
     ~Napcat()override{shutdown();}
     const char* getName()const override{return "napcat";}
-    const char* getVersion()const override{return "0.5.2";}
+    const char* getVersion()const override{return "0.5.3";}
     const char* getDescription()const override{return "Shared character with separately stored QQ archives and configurable desktop tools";}
     bool bind(PluginHostContext host,PluginJson configuration,std::string& error)override{
         bool replacementStarted=false;
@@ -196,6 +204,7 @@ public:
             // Reject incomplete candidates before stopping an existing connection.
             const auto problem=credentialProblem(parsed);if(!problem.empty()){error=configurationMessage(problem);return false;}
             shutdown();replacementStarted=true;host_=std::move(host);settings_=parsed;config_=std::move(configuration);
+            nextConnectionProbe_=0;connection_=PluginJson::object();
             root_=host_.dataRoot/"channels"/"napcat"/settings_.bot;ledger_=std::make_unique<Ledger>(root_/"transport");
             server_=std::make_unique<httplib::Server>();server_->new_task_queue=[]{return new httplib::ThreadPool(2,2,8);};server_->set_payload_max_length(64*1024);server_->set_read_timeout(std::chrono::seconds(3));server_->set_write_timeout(std::chrono::seconds(3));
             // The callback port must belong to one receiver; Windows address
@@ -212,7 +221,7 @@ public:
     PluginJson invoke(const std::string& name,const PluginJson&,const std::function<bool()>&)override{return name=="napcat.status"?toolSuccess(snapshot()):toolFailure("unknown_tool");}
     void tick(double)override{}
     void event(const PluginJson& value)override{const auto kind=value.value("kind",std::string{});if(kind=="runtime.paused"){std::lock_guard lock(mutex_);const bool automatic=value.value("balance_offline",false);if(automatic)issue_="insufficient_balance";else if(issue_=="insufficient_balance")issue_.clear();const bool offline=value.value("offline",false);if(offline&&!offline_.exchange(offline)){++offlineEpoch_;if(ledger_)ledger_->discardOffline(automatic?"insufficient_balance":"manual");}else offline_=offline;paused_=value.value("paused",false);wake_.notify_all();return;}if(kind!="runtime.napcat.context"&&kind!="runtime.napcat.budget"&&kind!="runtime.napcat.tool")return;std::lock_guard lock(mutex_);auto found=replies_.find(value.value("token",std::string{}));if(found!=replies_.end()){found->second=value;wake_.notify_all();}}
-    PluginJson snapshot()const override{std::lock_guard lock(mutex_);return {{"last_control",{{"kind",lastControlKind_},{"status",lastControlStatus_},{"elapsed_ms",lastControlMs_}}},{"effective_security",settings_.access.json()},{"callback_port",port_.load()},{"running",!stopped_.load()&&server_&&server_->is_running()},{"paused",paused_.load()},{"offline",offline_.load()},{"busy",working_.load()},{"http_requests",httpRequests_.load()},{"http_error",lastHttpError_.load()},{"callbacks",callbacks_.load()},{"signature_failures",signatureFailures_.load()},{"issue",issue_},{"last_failure",lastFailure_},{"transport",ledger_?ledger_->status():PluginJson::object()}};}
+    PluginJson snapshot()const override{std::lock_guard lock(mutex_);return {{"last_control",{{"kind",lastControlKind_},{"status",lastControlStatus_},{"elapsed_ms",lastControlMs_}}},{"effective_security",settings_.access.json()},{"callback_port",port_.load()},{"running",!stopped_.load()&&server_&&server_->is_running()},{"paused",paused_.load()},{"offline",offline_.load()},{"busy",working_.load()},{"http_requests",httpRequests_.load()},{"http_error",lastHttpError_.load()},{"callbacks",callbacks_.load()},{"signature_failures",signatureFailures_.load()},{"issue",issue_.empty()?connection_.value("issue",std::string{}):issue_},{"connection",connection_},{"last_failure",lastFailure_},{"transport",ledger_?ledger_->status():PluginJson::object()}};}
     bool restore(const PluginJson& value)override{return value.is_object();} // Actual inbox is in its own encrypted ledger.
     void shutdown()override{stopped_=true;wake_.notify_all();if(server_)server_->stop();if(listener_.joinable())listener_.join();if(worker_.joinable())worker_.join();server_.reset();port_=0;working_=false;}
 };
