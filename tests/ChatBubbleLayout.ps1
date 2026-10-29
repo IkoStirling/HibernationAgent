@@ -9,9 +9,15 @@ function Api($Path,$Data=$null){$p=@{Uri=$script:origin+$Path;Headers=@{Authoriz
 try{
  $cfg=Get-Content (Join-Path $ProjectRoot config/example.json) -Raw|ConvertFrom-Json -AsHashtable;$cfg.dataRoot=Join-Path $root data;$cfg.characterRoot=Join-Path $ProjectRoot character;$cfg.uiRoot=Join-Path $ProjectRoot ui;$cfg.pluginRoot=Join-Path $BuildRoot plugins;$cfg.frontend=@{startupAnimation=$false;reducedMotion=$true};$cfg.profiles=@($cfg.profiles[0]);$cfg.plugins=@{};$cfg.solitudeIntervalMs=600000;$cfg.idleBeforeSolitudeMs=600000;$cfg|ConvertTo-Json -Depth 40|Set-Content (Join-Path $root config.json) -Encoding utf8
  $desktop=[PrivateDesktop]::new((Join-Path $BuildRoot hibernation-agent.exe),(Join-Path $root config.json),(Join-Path $root ready.json),$ProjectRoot);$service=$desktop.Child;Wait-For {if($service.HasExited){throw 'fixture exited'};Test-Path (Join-Path $root ready.json)} 'ready';$script:origin='http://127.0.0.1:'+((Get-Content (Join-Path $root ready.json) -Raw|ConvertFrom-Json).port)
- $main=$desktop.Find('HibernationConversationV2');$viewport=[ChatWindowTest]::GetDlgItem($main,1203);[ChatWindowTest]::UseWindowCoordinates($main)
+ $null=Api '/api/desktop/show' @{}; $main=$desktop.Find('HibernationConversationV2');$viewport=[ChatWindowTest]::GetDlgItem($main,1203);[ChatWindowTest]::UseWindowCoordinates($main)
+ foreach($short in @('短消息一','写进去吧，记得维护好它','短消息三','短消息四','短消息五','短消息六')){
+  $null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$short};Wait-For {!(Api '/api/chat').busy} 'short reply'
+ }
+ Start-Sleep -Milliseconds 500
+ $shortRows=[BubbleLayoutProbe]::Inspect($viewport,$service.Id);$shortRows|Select-Object Length,Height,Width,LastY,Lines|ConvertTo-Json|Set-Content (Join-Path $root short-geometry.json)
+ Check (@($shortRows|Where-Object {$_.Length-lt20-and$_.Height-gt60}).Count-eq0) 'short bubbles remain compact after transcript scrolls'
  $text=('中文长段落：把每一个尚未解决的问题留在这里，末尾的文字也必须完整显示。'*12)+"`n`n第二段`r`n"+('视频路径 D:\Aliyat\materials\video\test1.mp4，标点、空行与英文混排。'*8)+"`n`n最后一段：星星和🌙都在。"
- $null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$text};Wait-For {!(Api '/api/chat').busy} 'reply';Wait-For {@([BubbleLayoutProbe]::Inspect($viewport,$service.Id)|Where-Object Length -gt 700).Count-eq1} 'full user message'
+ $null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$text};Wait-For {!(Api '/api/chat').busy} 'reply';Start-Sleep -Milliseconds 300;[BubbleLayoutProbe]::Inspect($viewport,$service.Id)|Select-Object Length,Height,Width,LastY,Lines|ConvertTo-Json|Set-Content (Join-Path $root long-geometry.json);Wait-For {@([BubbleLayoutProbe]::Inspect($viewport,$service.Id)|Where-Object {([ChatWindowTest]::Text($_.Window)).Replace("`r",'').Replace("`n",'')-eq$text.Replace("`r",'').Replace("`n",'')}).Count-eq1} 'full user message'
  $expected=(Api '/api/chat').messages[-1].text.Replace("`r",'').Replace("`n",'');Wait-For {@([BubbleLayoutProbe]::Inspect($viewport,$service.Id)|Where-Object {([ChatWindowTest]::Text($_.Window)).Replace("`r",'').Replace("`n",'')-eq$expected}).Count-eq1} 'full assistant presentation before static geometry checks'
  foreach($width in @(700,480,950,620)){
   [BubbleLayoutProbe]::Resize($main,$service.Id,$width,820);Start-Sleep -Milliseconds 250;$rows=[BubbleLayoutProbe]::Inspect($viewport,$service.Id);$script:samples+=@($rows|ForEach-Object {@{windowWidth=$width;textLength=$_.Length;width=$_.Width;height=$_.Height;lastY=$_.LastY;lines=$_.Lines}})
@@ -20,5 +26,15 @@ try{
   $long=@($rows|Where-Object Length -gt 700)[0];Check ($long.Width-gt($width-200)-and$long.Lines-gt10-and$long.Height-lt($long.Lines*36+20)) "long bubble expands without excessive empty height at width $width"
  }
  $row=([BubbleLayoutProbe]::Inspect($viewport,$service.Id))[0];$null=[ChatWindowTest]::Send($row.Window,0xB1,0,6);$selection=[ChatWindowTest]::Selection($row.Window);[BubbleLayoutProbe]::Resize($main,$service.Id,750,820);Start-Sleep -Milliseconds 200;Check ([ChatWindowTest]::Selection($row.Window)-eq$selection) 'resizing preserves selected text'
+ foreach($entry in [BubbleLayoutProbe]::Inspect($viewport,$service.Id)){$null=[ChatWindowTest]::Send($entry.Window,0xB1,0,0)}
+ $null=[ChatWindowTest]::Send($viewport,0x115,7,0)
+ $null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='只是一个短句。'};Wait-For {!(Api '/api/chat').busy} 'final compact reply';Start-Sleep -Milliseconds 600
+ $compact=@([BubbleLayoutProbe]::Inspect($viewport,$service.Id)|Where-Object {([ChatWindowTest]::Text($_.Window))-eq'只是一个短句。'})
+ Check ($compact.Count-eq1-and$compact[0].Height-le40) 'short message following long paragraphs uses a single compact line'
+ $copy=$compact[0];$null=[ChatWindowTest]::Send($copy.Window,0xB1,0,-1);Check ([ChatWindowTest]::CopySelection($copy.Window)-eq'只是一个短句。') 'rounded bubble copies the original Unicode text'
+ foreach($id in @(1201,1204,1205,1206,1207)){Check (([ChatWindowTest]::GetWindowLongPtrW([ChatWindowTest]::GetDlgItem($main,$id),-16).ToInt64()-band15)-eq11) "button $id uses the shared painted style"}
+ $capture=$desktop.CaptureClient($main);Add-Type -AssemblyName System.Drawing
+ $bitmap=[Drawing.Bitmap]::new($capture.Width,$capture.Height,[Drawing.Imaging.PixelFormat]::Format32bppRgb)
+ try{$locked=$bitmap.LockBits([Drawing.Rectangle]::new(0,0,$capture.Width,$capture.Height),[Drawing.Imaging.ImageLockMode]::WriteOnly,[Drawing.Imaging.PixelFormat]::Format32bppRgb);try{[Runtime.InteropServices.Marshal]::Copy($capture.Bgra,0,$locked.Scan0,$capture.Bgra.Length)}finally{$bitmap.UnlockBits($locked)};$bitmap.Save((Join-Path $root conversation-layout.png),[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
  $null=Api '/api/shutdown' @{};Check ($service.WaitForExit(10000)-and$service.ExitCode-eq0) 'layout fixture exits cleanly';@{completed=$true;checks=$checks;samples=$samples;root=$root}|ConvertTo-Json -Depth 20|Set-Content (Join-Path $root acceptance.json);Write-Output "Chat bubble layout passed: $checks checks. $root"
 }finally{if($service){$service.Refresh();if(!$service.HasExited){try{$null=Api '/api/shutdown' @{};$service.WaitForExit(5000)|Out-Null}catch{};$service.Refresh();if(!$service.HasExited-and$service.Path-eq(Join-Path $BuildRoot hibernation-agent.exe)){Stop-Process -Id $service.Id}}};if($desktop){$desktop.Dispose()}}
