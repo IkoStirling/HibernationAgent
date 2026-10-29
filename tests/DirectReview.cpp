@@ -55,6 +55,18 @@ TEST_CASE(review_events_append_exact_prefix_and_revoke_old_authority_without_rew
     const auto retried=session::encode(next.messages);ayt::inference::Request third;third.messages={{"system","fixed policy"},{"user",frame.dump()}};events.append(third);
     CHECK(session::encode(std::vector<ayt::inference::Message>(third.messages.begin(),third.messages.begin()+next.messages.size()))==retried);
 }
+TEST_CASE(review_event_baseline_preserves_the_other_cache_layout_and_exact_deduplication){
+    layered_review::Events events;
+    const Json caps={{"plugins",Json::array({Json{{"id","widget"},{"enabled",true},{"current",{{"pose","idle"}}}}})}};
+    const Json frame={{"conversation_delivery",{{"channel","desktop"}}},{"current_capabilities",caps},{"event_context",Json{{"current_capabilities",caps},{"event_kind","user_message"},{"input","hi"}}.dump()},{"approved_receipts",Json::array({Json{{"ok",true},{"data","changing receipt"}}})},{"candidate",{{"text","hi"}}},{"target","reply"}};
+    ayt::inference::Request request;request.messages={{"system","fixed"},{"user",frame.dump()}};events.append(request);
+    const auto& baseline=request.messages[1].text;
+    CHECK(baseline.find("conversation_delivery")<baseline.find("current_capabilities"));
+    CHECK(baseline.find("current_capabilities")<baseline.find("event_context")&&baseline.find("event_context")<baseline.find("approved_receipts"));
+    const auto authority=Json::parse(baseline).at("review_baseline").at("authority");
+    CHECK(!authority.at("event_context").contains("current_capabilities"));
+    CHECK(authority.at("current_plugin_state").at("widget").at("pose")=="idle"&&!authority.at("current_capabilities").at("plugins")[0].contains("current"));
+}
 TEST_CASE(review_event_capacity_and_images_start_a_complete_fresh_view){
     layered_review::Events events;Json frame={{"event_context",Json::object().dump()},{"candidate",std::string(1500,'x')}};
     ayt::inference::Request request;request.messages={{"system","policy"},{"user",frame.dump()}};events.append(request,2200);

@@ -41,16 +41,19 @@ public:
     void append(ayt::inference::Request& request,std::size_t limit=65536){
         if(request.messages.size()!=2)throw std::invalid_argument("review_events_shape");
         if(session::images(request.messages)){clear();request.messages[1].text=direct_review::frame(Json::parse(request.messages[1].text));return;}
-        auto frame=Json::parse(direct_review::frame(Json::parse(request.messages[1].text)));
+        // Retain DirectReview's cache-oriented wire order. Converting this
+        // baseline back to sorted json would move changing receipts ahead of
+        // stable capabilities and undo the other review cache improvements.
+        auto frame=nlohmann::ordered_json::parse(direct_review::frame(Json::parse(request.messages[1].text)));
         Json candidate=Json::object();for(const auto* key:{"candidate","target","style_edit"})if(frame.contains(key)){candidate[key]=frame.at(key);frame.erase(key);}
         const auto signature=Json::array({request.messages[0].text,request.outputSchema}).dump();
         if(signature_!=signature){clear();signature_=signature;}
         auto additions=[&]{std::vector<ayt::inference::Message> result;
-            if(history_.empty())result.push_back({"user",Json{{"review_baseline",{{"version",1},{"authority",frame}}}}.dump()});
-            else {const auto patch=Json::diff(state_,frame);if(!patch.empty())result.push_back({"user",Json{{"review_event",{{"version",1},{"sequence",sequence_+1},{"patch",patch}}}}.dump()});}
+            if(history_.empty())result.push_back({"user",nlohmann::ordered_json{{"review_baseline",{{"version",1},{"authority",frame}}}}.dump()});
+            else {const auto patch=Json::diff(state_,Json(frame));if(!patch.empty())result.push_back({"user",Json{{"review_event",{{"version",1},{"sequence",sequence_+1},{"patch",patch}}}}.dump()});}
             candidate["sequence"]=sequence_+1;result.push_back({"user",Json{{"review_candidate",candidate}}.dump()});return result;};
         auto added=additions();if(!history_.empty()&&session::bytes(history_)+session::bytes(added)>limit){clear();signature_=signature;++rebases_;added=additions();}
-        state_=std::move(frame);++sequence_;history_.insert(history_.end(),added.begin(),added.end());
+        state_=Json(frame);++sequence_;history_.insert(history_.end(),added.begin(),added.end());
         request.messages={request.messages[0]};request.messages.insert(request.messages.end(),history_.begin(),history_.end());
         if(session::bytes(history_)>limit){clear();++rebases_;}
     }
