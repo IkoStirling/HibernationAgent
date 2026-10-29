@@ -26,6 +26,14 @@ public:
     bool wantsFood()const{return std::min(appetite_,targetAppetite_)>.48;}
     static bool newObservation(const Json& item){return item.value("observed_growth",-1)!=item.value("growth",0);}
     void configure(std::size_t maximum,double ttl){maximum_=maximum;ttl_=ttl;}
+    void region(const std::string& id,const std::string& region){for(auto& item:objects_)if(item.at("id")==id){item["region"]=region;return;}}
+    void consumeInventoryNutrition(double nutrition){if(std::isfinite(nutrition)&&nutrition>=0&&nutrition<=40)targetAppetite_=std::max(0.0,targetAppetite_-nutrition/100.0);}
+    bool collect(const std::string& token){
+        if(!pending()||pending_.at("token")!=token||pending_.at("phase")!="awaiting_inventory")return false;
+        const auto item=object(pending_.at("id"));if(item.is_null())return false;
+        for(auto it=objects_.begin();it!=objects_.end();++it)if(it->at("id")==item.at("id")){objects_.erase(it);break;}
+        emit("habitat.collected",item,token);lastActions_.push_back({{"kind","habitat.collected"},{"item",item},{"at",clock_}});while(lastActions_.size()>4)lastActions_.erase(0);pending_=nullptr;return true;
+    }
     Json object(const std::string& id)const{for(const auto& item:objects_)if(item.at("id")==id)return item;return nullptr;}
     bool place(const std::string& id,const std::string& kind,double x,double y){return placeDetailed(id,kind,x,y,Json::object(),ttl_,0,"program");}
     bool placeDetailed(const std::string& id,const std::string& kind,double x,double y,Json authored,double lifetime,int quality,const std::string& creator,const Json& provenance=Json(nullptr)){
@@ -40,7 +48,7 @@ public:
         if(pending())return "world_action_busy";
         const auto item=object(id);if(item.is_null())return "world_object_missing";
         const auto kind=item.at("kind").get<std::string>();
-        if(action!="look"&&action!="eat"&&action!="plant")return "world_action_invalid";
+        if(action!="look"&&action!="eat"&&action!="plant"&&action!="collect")return "world_action_invalid";
         if(action=="eat"&&!edible(kind))return "world_object_not_food";
         if(action!="look"&&drops::fading(item,clock_))return "world_object_fading";
         if(action=="eat"&&std::min(appetite_,targetAppetite_)<.12)return "world_not_hungry";
@@ -91,6 +99,7 @@ public:
             for(auto& value:objects_)if(value.at("id")==item.at("id")){for(const auto* axis:{"x","y"}){const double from=pending_.at("origin").at(axis),to=pending_.at("destination").at(axis);value[axis]=from+(to-from)*eased;}item=value;break;}
         }
         if(clock_<pending_.at("complete_at").get<double>())return;
+        if(action=="collect"){pending_["phase"]="awaiting_inventory";events_.push_back({{"kind","habitat.collection.request"},{"token",pending_.at("token")},{"id",item.at("id")}});return;}
         const auto token=pending_.at("token").get<std::string>();const auto previousItem=item;
         if(action=="eat"){
             targetAppetite_=std::max(0.0,targetAppetite_-item.at("rules").at("nutrition").get<double>()/100.0);targetComfort_=std::min(.85,targetComfort_+item.at("rules").at("comfort").get<double>());

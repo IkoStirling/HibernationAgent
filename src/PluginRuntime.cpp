@@ -1,4 +1,5 @@
 #include <Hibernation/PluginRuntime.h>
+#include <Hibernation/ForagingBridge.h>
 #include <AYPlugin/IPluginLoader.h>
 #include <AYSerializer/JsonSchema.h>
 #include <fstream>
@@ -88,6 +89,16 @@ PluginJson PluginRuntime::invoke(const std::string& name,const PluginJson& args,
     {std::lock_guard guard(a.mutex);if(a.stopped)return toolFailure("plugin_stopped");for(const auto& [id,slot]:a.loaded)for(const auto& t:slot->plugin->tools())if(t.at("name")==name){if(!ayt::serializer::validateJsonDocument(args.dump(),t.at("parameters").dump()))return toolFailure("invalid_tool_arguments");selected=slot;break;}if(!selected)return toolFailure("tool_not_available");++a.calls;}
     struct Lease{std::atomic<unsigned>& calls;~Lease(){--calls;}}lease{a.calls};
     if(cancelled&&cancelled())return toolFailure("cancelled");try{auto result=selected->plugin->invoke(name,args,cancelled);if(result.dump().size()>1024*1024)return toolFailure("tool_result_limit");return result;}catch(...){return toolFailure("plugin_execution_failed");}
+}
+PluginJson PluginRuntime::commitCollection(const std::string& token){
+    auto& a=*impl_;std::lock_guard guard(a.mutex);
+    if(a.stopped||!a.loaded.contains("habitat")||!a.loaded.contains("canteen"))return toolFailure("resource_inventory_unavailable");
+    auto* source=dynamic_cast<IForagingSource*>(a.loaded.at("habitat")->plugin);
+    auto* inventory=dynamic_cast<IForagingInventory*>(a.loaded.at("canteen")->plugin);
+    if(!source||!inventory)return toolFailure("resource_inventory_unavailable");
+    // Holding the runtime lock excludes configure/unload and whole-bundle saves.
+    // The source holds its world lock throughout the engine ownership transaction.
+    return source->commitCollection(token,[&](const PluginJson& item,double remaining,ayt::inventory::IInteractionHost& host){return inventory->receiveCollection(item,remaining,host);});
 }
 void PluginRuntime::tick(double dt){auto& a=*impl_;std::lock_guard guard(a.mutex);for(auto& [id,s]:a.loaded)try{s->plugin->tick(dt);}catch(...){a.host.emit({{"kind","plugin.error"},{"plugin",id}});}}
 void PluginRuntime::event(const PluginJson& value){auto& a=*impl_;std::lock_guard guard(a.mutex);for(auto& [id,s]:a.loaded)try{s->plugin->event(value);}catch(...){}}

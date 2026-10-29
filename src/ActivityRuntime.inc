@@ -149,6 +149,9 @@
         if(tools.contains("widget.animate"))commands.push_back("pose");
         const bool hasObjects=declarations||!snapshots.value("habitat",Json::object()).value("objects",Json::array()).empty();
         if(tools.contains("habitat.act")){commands.push_back("eat_nearest");commands.push_back("look_nearest");if(hasObjects)commands.push_back("interact");}
+        if(tools.contains("habitat.gather")&&snapshots.value("habitat",Json::object()).value("inventory_available",false)){commands.push_back("gather");commands.push_back("gather_for_recipe");}
+        if(tools.contains("canteen.store"))commands.push_back("store_supplies");
+        if(tools.contains("canteen.eat_supply"))commands.push_back("eat_inventory");
         if(tools.contains("habitat.arrange")&&hasObjects)commands.push_back("arrange");
         if(tools.contains("habitat.create"))commands.push_back("create_drop");
         const auto kitchen=snapshots.value("canteen",Json::object()).value("current",Json::object());
@@ -210,7 +213,7 @@
         std::lock_guard lock(activityMutex);if(!autonomousMode())return;const auto kind=event.value("kind",std::string{});
         if(kind=="habitat.appeared"||kind=="canteen.ready")planningStimulus(serviceNowMs(),false);
         if(kind=="widget.interacted"){cancelActivities("pointer_interaction");return;}
-        const bool completed=kind=="habitat.consumed"||kind=="habitat.inspected"||kind=="habitat.arranged"||kind=="habitat.planted"||kind=="rhythm.rest_finished"||kind=="widget.move_finished";
+        const bool completed=kind=="habitat.consumed"||kind=="habitat.collected"||kind=="habitat.inspected"||kind=="habitat.arranged"||kind=="habitat.planted"||kind=="rhythm.rest_finished"||kind=="widget.move_finished";
         const bool interrupted=kind=="habitat.action_cancelled"||kind=="rhythm.rest_cancelled"||kind=="rhythm.rest_interrupted"||kind=="widget.move_cancelled";
         if(!completed&&!interrupted)return;auto plan=activityQueue();const auto& active=plan.at("active");if(active.is_null())return;
         const auto token=active.value("token",std::string{});if(token.empty()||event.value("token",std::string{})!=token)return;
@@ -252,9 +255,10 @@
             ProposalContext evidence;evidence.eventKind="solitude";receipt=observedTool(activityEffectTool,std::move(receipt),evidence,activityEffectId,&activityEffectArguments);
             auto plan=activityQueue();const auto status=receipt.value("ok",false)?std::string("completed"):receipt.value("error",Json::object()).value("code",std::string("failed"));
             if(plan.at("active").is_object()&&plan.at("active").value("id",std::string{})==activityEffectId){plan["active"]["source_id"]=receipt.value("source_id",std::string{});
+                if(receipt.value("ok",false)&&activityEffectTool=="habitat.gather"&&!receipt.at("result").value("completed",false)){plan["active"]["gather_wait"]=true;plan["active"]["gather_id"]=receipt.at("result").at("gather_id");plan["active"]["deadline_ms"]=now+185000;}
                 if(receipt.value("ok",false)&&(activityEffectTool=="canteen.cook"||activityEffectTool=="canteen.take")){const auto& result=receipt.at("result");plan["active"]["canteen_wait"]=true;plan["active"]["canteen_batch"]=activityEffectTool=="canteen.cook"?result.at("job").at("batch_id"):result.at("batch_id");if(result.contains("ticket"))plan["active"]["canteen_ticket"]=result.at("ticket");
                     if(activityEffectTool=="canteen.cook")for(auto& next:plan["entries"])if(next.at("kind")=="take_meal"&&!next.contains("batch_id")&&(!next.contains("recipe_id")||next.at("recipe_id")==result.at("job").at("recipe_id"))){next["batch_id"]=result.at("job").at("batch_id");break;}}
-                else finishActivity(plan,status);}
+                else if(!plan["active"].value("gather_wait",false))finishActivity(plan,status);}
             else for(auto& recent:plan["recent"])if(recent.value("id",std::string{})==activityEffectId){recent["effect_outcome"]=status;recent["effect_ended_ms"]=now;recent["source_id"]=receipt.value("source_id",std::string{});if(recent.contains("intention"))recent["attempt_source_id"]=recordIntentionAttempt(recent);}
             saveActivities(plan);activityEffectId.clear();activityEffectTool.clear();activityEffectArguments=Json::object();activityEffectCancelled.reset();nextActivityTick=now+500;
         }
@@ -297,6 +301,11 @@
         const bool economy=callsFor(profile(get("ha.settings","model").value.at("id"))).deferPrefetch;
         notifyEconomyFallback(economy&&plan.at("active").is_null()&&plan.at("entries").empty());
         if(!plan.at("active").is_null()){
+            if(plan["active"].value("gather_wait",false)){
+                const auto world=snapshots.value("habitat",Json::object()),last=world.value("last_gather",Json(nullptr)),current=world.value("gather",Json(nullptr));const auto gatherId=plan["active"].at("gather_id");
+                if(last.is_object()&&last.at("id")==gatherId){plan["active"]["gather_result"]=last;finishActivity(plan,last.value("completed",false)?"completed":"partial_or_interrupted");saveActivities(plan);}
+                else if(current.is_null()||now>=plan["active"].at("deadline_ms").get<std::int64_t>()){finishActivity(plan,"interrupted");saveActivities(plan);}return;
+            }
             if(plan["active"].value("canteen_wait",false)){
                 const auto kitchen=snapshots.value("canteen",Json::object()).value("current",Json::object());const std::string batch=plan["active"].at("canteen_batch");bool complete=false;
                 if(plan["active"].at("kind")=="canteen_cook"){for(const auto* field:{"shelf","recent"})for(const auto& item:kitchen.value(field,Json::array()))if(item.at("id")==batch)complete=true;}
@@ -323,10 +332,13 @@
         if(command.contains("intention")&&!currentIntention(command.at("intention"))){plan["active"]=command;finishActivity(plan,"not_started_intention_changed");saveActivities(plan);return;}
         command["from_state"]=widget.value("state",std::string("idle"));command["started_ms"]=now;command["deadline_ms"]=now+static_cast<std::int64_t>(command.at("seconds").get<double>()*1000)+125000;plan["active"]=command;saveActivities(plan);
         const auto kind=command.at("kind").get<std::string>();Json receipt;
-        if(kind=="canteen_cook"||kind=="take_meal"||kind=="create_drop"||kind=="creative_note"||kind=="creative_continue"||kind=="creative_read"||kind=="reference_search"||kind=="reference_read"||kind=="puzzle_start"||kind=="puzzle_press"||kind=="puzzle_leave"){
+        if(kind=="gather"||kind=="gather_for_recipe"||kind=="store_supplies"||kind=="eat_inventory"||kind=="canteen_cook"||kind=="take_meal"||kind=="create_drop"||kind=="creative_note"||kind=="creative_continue"||kind=="creative_read"||kind=="reference_search"||kind=="reference_read"||kind=="puzzle_start"||kind=="puzzle_press"||kind=="puzzle_leave"){
             activityEffectId=command.at("id");activityEffectCancelled=std::make_shared<std::atomic<bool>>(false);const auto cancel=activityEffectCancelled;
             Json args;
-            if(kind=="canteen_cook"){activityEffectTool="canteen.cook";args={{"recipe_id",command.at("recipe_id")}};}
+            if(kind=="gather"||kind=="gather_for_recipe"){activityEffectTool="habitat.gather";args=Json::object();for(const auto* field:{"region","ingredient_id","count","recipe_id","destination"})if(command.contains(field))args[field]=command.at(field);if(kind=="gather_for_recipe"&&!args.contains("destination"))args["destination"]="pantry";}
+            else if(kind=="store_supplies"){activityEffectTool="canteen.store";args=Json::object();}
+            else if(kind=="eat_inventory"){activityEffectTool="canteen.eat_supply";args={{"item_id",command.at("item_id")}};}
+            else if(kind=="canteen_cook"){activityEffectTool="canteen.cook";args={{"recipe_id",command.at("recipe_id")}};}
             else if(kind=="take_meal"){activityEffectTool="canteen.take";std::string target=command.value("batch_id",std::string{});const auto shelf=snapshots.value("canteen",Json::object()).value("current",Json::object()).value("shelf",Json::array());if(target.empty())for(auto it=shelf.rbegin();it!=shelf.rend();++it)if(it->at("status")=="ready"&&(!command.contains("recipe_id")||it->at("recipe_id")==command.at("recipe_id"))){target=it->at("id");break;}args={{"batch_id",target.empty()?"no-ready-meal":target}};}
             else if(kind=="create_drop"){activityEffectTool="habitat.create";args={{"kind",command.at("template")},{"definition",{{"name",command.at("name")},{"description",command.at("description")},{"tint",command.at("tint")}}}};}
             else if(kind=="puzzle_start"){activityEffectTool="pocket.start";args=Json::object();}

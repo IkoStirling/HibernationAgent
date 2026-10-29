@@ -15,6 +15,8 @@ public:
     PluginJson catalog()const;
     PluginJson status()const;
     PluginJson invoke(const std::string& tool,const PluginJson& args,const std::function<bool()>& cancelled);
+    // Serialized native world/inventory transaction; never a model-visible tool.
+    PluginJson commitCollection(const std::string& token);
     void tick(double elapsedSeconds);
     void event(const PluginJson& value);
     std::vector<PluginJson> takeEvents();

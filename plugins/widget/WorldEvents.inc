@@ -7,5 +7,5 @@
         }
         if(e.value("plugin",std::string{})=="habitat"&&!worldToken_.empty()){
             if(kind=="habitat.action_started"&&e.value("token",std::string{})==worldToken_){heldItem_=e.value("action",std::string{})=="arrange"?PluginJson(nullptr):e.value("item",PluginJson(nullptr));state_=e.value("action",std::string{})=="eat"?"eating":"curious";stateUntil_=clock_+3;return;}
-            if((kind=="habitat.consumed"||kind=="habitat.planted"||kind=="habitat.inspected"||kind=="habitat.arranged"||kind=="habitat.action_cancelled")&&e.value("token",std::string{})==worldToken_){worldToken_.clear();heldItem_=nullptr;postponeRoam();if(state_!="speaking"){state_="idle";stateUntil_=clock_+3;}return;}
+            if((kind=="habitat.consumed"||kind=="habitat.collected"||kind=="habitat.planted"||kind=="habitat.inspected"||kind=="habitat.arranged"||kind=="habitat.action_cancelled")&&e.value("token",std::string{})==worldToken_){worldToken_.clear();heldItem_=nullptr;postponeRoam();if(state_!="speaking"){state_="idle";stateUntil_=clock_+3;}return;}
         }

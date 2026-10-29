@@ -1,8 +1,8 @@
 {
   "id": "habitat",
   "name": "桌面小物",
-  "description": "可由角色创造的虚拟食物和掉落物，带描述属性、程序数值、随机寿命与淡入淡出。需要桌面小角色。",
-  "version": "0.3.0",
+  "description": "有资源区域、食材采集和上层行为队列的桌面小世界。背包与食堂共用引擎库存。",
+  "version": "0.4.0",
   "api_version": 2,
   "library": "Hibernation_Habitat.dll",
   "dependencies": [
@@ -11,6 +11,8 @@
   "capabilities": [
     "desktop.objects",
     "world.observation",
-    "world.interaction"
+    "world.interaction",
+    "world.foraging",
+    "world.regions"
   ]
 }

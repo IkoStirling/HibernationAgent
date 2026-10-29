@@ -10,13 +10,13 @@ using Json=nlohmann::json;
 inline bool localTool(const Json& call){
     const auto name=call.value("tool",std::string{});
     if(readOnlyModelTool(name))return true;
-    static const std::set<std::string> local={"workspace.write","widget.show","widget.move","widget.animate","habitat.show","habitat.place","habitat.arrange","habitat.create","habitat.act","atelier.write","atelier.append","pocket.start","pocket.press","pocket.leave"};
+    static const std::set<std::string> local={"workspace.write","widget.show","widget.move","widget.animate","habitat.show","habitat.place","habitat.arrange","habitat.create","habitat.act","habitat.gather","canteen.inventory","canteen.store","canteen.move_supply","canteen.eat_supply","atelier.write","atelier.append","pocket.start","pocket.press","pocket.leave"};
     if(local.contains(name))return true;
     if(name!="activity.enqueue")return false;
     const auto& args=call.value("args",Json::object());
     if(!args.contains("commands")||!args.at("commands").is_array()||args.at("commands").empty())return false;
     // Unknown/new commands require semantic review, even within a local queue.
-    static const std::set<std::string> commands={"move_to","pose","eat_nearest","look_nearest","rest","wait","interact","create_drop","creative_note","creative_read","creative_continue","puzzle_start","puzzle_press"};
+    static const std::set<std::string> commands={"move_to","pose","eat_nearest","look_nearest","rest","wait","interact","create_drop","gather","gather_for_recipe","store_supplies","eat_inventory","creative_note","creative_read","creative_continue","puzzle_start","puzzle_press"};
     for(const auto& command:args.at("commands"))if(!command.is_object()||!commands.contains(command.value("kind",std::string{})))return false;
     return true;
 }

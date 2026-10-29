@@ -1,10 +1,52 @@
 {
- "id":"canteen","name":"小食堂","description":"备有少量食材和三道料理的小厨房。可以自己准备食物，也可以等小爱选择制作、留下或取食。",
- "version":"0.1.0","api_version":2,"library":"Hibernation_Canteen.dll","dependencies":["habitat"],"capabilities":["canteen.cooking","canteen.shelf"],
- "settings_ui":[
-  {"key":"automatic","type":"toggle","label":"食堂自行少量备餐","default":true},
-  {"key":"automaticIntervalSeconds","type":"number","label":"自动备餐检查间隔（秒）","default":900,"min":60,"max":43200,"step":60},
-  {"key":"supplyIntervalSeconds","type":"number","label":"少量食材补给间隔（秒）","default":3600,"min":300,"max":86400,"step":60},
-  {"key":"shelfLifeSeconds","type":"number","label":"成品架保留时长（秒）","default":1800,"min":60,"max":43200,"step":60}
- ]
+  "id": "canteen",
+  "name": "小食堂",
+  "description": "与桌面采集共用食材库存的小厨房，提供背包、仓库、保鲜和三道料理。",
+  "version": "0.2.0",
+  "api_version": 2,
+  "library": "Hibernation_Canteen.dll",
+  "dependencies": [
+    "habitat"
+  ],
+  "capabilities": [
+    "canteen.cooking",
+    "canteen.shelf",
+    "inventory.backpack",
+    "inventory.warehouse"
+  ],
+  "settings_ui": [
+    {
+      "key": "automatic",
+      "type": "toggle",
+      "label": "食堂自行少量备餐",
+      "default": true
+    },
+    {
+      "key": "automaticIntervalSeconds",
+      "type": "number",
+      "label": "自动备餐检查间隔（秒）",
+      "default": 900,
+      "min": 60,
+      "max": 43200,
+      "step": 60
+    },
+    {
+      "key": "supplyIntervalSeconds",
+      "type": "number",
+      "label": "少量食材补给间隔（秒）",
+      "default": 3600,
+      "min": 300,
+      "max": 86400,
+      "step": 60
+    },
+    {
+      "key": "shelfLifeSeconds",
+      "type": "number",
+      "label": "成品架保留时长（秒）",
+      "default": 1800,
+      "min": 60,
+      "max": 43200,
+      "step": 60
+    }
+  ]
 }

@@ -18,7 +18,7 @@ inline nlohmann::json pluginCharacterContext(std::string_view id,const nlohmann:
         view["authorship_note"]="目录中的作品也可能由用户编辑；自己实际调用工具后的成功写入回执才证明自己完成了相应版本。";return view;
     }
     if(id=="canteen")return saved.value("current",Json::object());
-    if(id=="habitat")take({"objects","pending","appetite","visible","desktop","creation_policy"});
+    if(id=="habitat")take({"objects","pending","appetite","visible","desktop","creation_policy","regions","gather","last_gather","inventory_available"});
     else if(id=="television")take({"mode","title","source","state","position_seconds","duration_seconds","visible","audio_available","page_platform","page_url","observation","error"});
     else if(id=="tts")take({"active","synthesizing","queued_replies"});
     else if(id=="rhythm")take({"phase","duration","elapsed","origin","local_hour"});
@@ -33,9 +33,9 @@ inline nlohmann::json pluginCharacterContext(std::string_view id,const nlohmann:
 inline nlohmann::json pluginDialogueContext(std::string_view id,const nlohmann::json& current){
     using Json=nlohmann::json;if(!current.is_object())return current;
     Json view=Json::object();const auto take=[&](std::initializer_list<const char*> fields){for(const auto* field:fields)if(current.contains(field))view[field]=current.at(field);};
-    if(id=="canteen"){take({"job","ready_count","shelf_capacity","can_cook","delivery_pending","automatic"});view["details_tool"]="canteen.observe";
+    if(id=="canteen"){take({"job","ready_count","shelf_capacity","can_cook","delivery_pending","automatic"});const auto bag=current.value("inventory",Json::object());view["backpack"]={{"used",bag.value("used",0)},{"capacity",bag.value("capacity",8)}};view["inventory_tool"]="canteen.inventory";view["details_tool"]="canteen.observe";
     }else if(id=="habitat"){
-        take({"pending","appetite","visible","desktop","creation_policy"});
+        take({"pending","appetite","visible","desktop","gather","inventory_available"});view["regions"]=Json::array();for(const auto& region:current.value("regions",Json::array()))view["regions"].push_back({{"id",region.at("id")},{"name",region.at("name")}});
         view["object_count"]=current.value("objects",Json::array()).size();view["details_tool"]="habitat.observe";
     }else if(id=="pixel-canvas"){
         take({"document_count","maximum","can_create","surface"});view["details_tool"]="pixel.list";view["preview_tool"]="pixel.preview";

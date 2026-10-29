@@ -22,7 +22,7 @@ add_custom_target(Hibernation_WidgetAssets
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/widget/characters" "${CMAKE_BINARY_DIR}/plugins/widget/characters")
 add_dependencies(Hibernation_Widget Hibernation_WidgetAssets)
 ha_role_plugin(habitat Hibernation_Habitat habitat/Habitat.cpp)
-target_link_libraries(Hibernation_Habitat PRIVATE user32 gdi32)
+target_link_libraries(Hibernation_Habitat PRIVATE user32 gdi32 BSimmerSupplies::Rules)
 ha_role_plugin(rhythm Hibernation_Rhythm rhythm/Rhythm.cpp)
 ha_role_plugin(atelier Hibernation_Atelier atelier/Atelier.cpp)
 ha_role_plugin(pocket Hibernation_Pocket pocket/Pocket.cpp)
@@ -51,4 +51,4 @@ target_link_libraries(Hibernation_Television PRIVATE AYVideoPlayback user32 gdi3
 add_subdirectory(napcat)
 
 ha_role_plugin(canteen Hibernation_Canteen canteen/Canteen.cpp)
-target_link_libraries(Hibernation_Canteen PRIVATE AYInventory::Json BSimmerCuisine::Rules)
+target_link_libraries(Hibernation_Canteen PRIVATE AYInventory::Json BSimmerCuisine::Rules BSimmerSupplies::Rules)
