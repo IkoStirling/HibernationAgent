@@ -1,6 +1,12 @@
     std::vector<bsimmer::supplies::Region> regions_;
     PluginJson regionConfig_=PluginJson::array(),gather_=nullptr,lastGather_=nullptr,menu_=PluginJson::array(),pantry_=PluginJson::array();
     std::map<std::string,double> nextResources_;bool inventoryReady_=false;
+    void affordances(PluginJson& items)const{
+        static const auto catalog=supplies::catalog();for(auto& item:items){const auto resource=supplies::resource(item);bool edible=item.at("rules").value("edible",false);
+            const auto provenance=item.value("provenance",PluginJson::object());if(provenance.is_object()&&provenance.value("type",std::string{})=="field_resource")for(const auto& r:catalog)if(r.id==resource)edible=r.edible;
+            item["ingredient_id"]=resource;item["can_eat"]=edible;item["collectible"]=inventoryReady_&&!resource.empty();item["available_actions"]=PluginJson::array({"look"});if(edible)item["available_actions"].push_back("eat");if(item.at("kind")=="seed")item["available_actions"].push_back("plant");if(item.at("collectible")==true)item["available_actions"].push_back("collect");
+        }
+    }
     std::string regionAt(double x,double y)const{for(const auto& r:regions_)if(r.contains(x,y))return r.id;return {};}
     void updateRegions(){for(const auto& item:world_.objects())world_.region(item.at("id"),regionAt(item.at("x"),item.at("y")));}
     void finishGather(const std::string& reason){if(gather_.is_null())return;gather_["status"]=reason;gather_["completed"]=reason=="completed";gather_["partial"]=gather_.at("collected").get<int>()>0&&reason!="completed";lastGather_=gather_;host_.emit({{"plugin","habitat"},{"kind","habitat.gather_finished"},{"gather",gather_},{"occurred_ms",nowMs()}});gather_=nullptr;}
@@ -43,7 +49,7 @@
         gather_["phase"]="collecting";gather_["target"]=target;
     }
     void spawnResources(){
-        if(!cfg_.value("resourceSpawn",cfg_.value("autoSpawn",true))||!canteenSupplies_||!inventoryReady_)return;
+        if(!host_.desktopEnabled||!cfg_.value("resourceSpawn",cfg_.value("autoSpawn",true))||!canteenSupplies_||!inventoryReady_)return;
         for(const auto& r:regions_){auto& next=nextResources_[r.id];if(next==0)next=world_.clock()+5;
             if(world_.clock()<next)continue;next=world_.clock()+r.refreshSeconds;
             unsigned existing=0;for(const auto& item:world_.objects())if(item.value("region",std::string{})==r.id&&item.value("provenance",PluginJson::object()).value("type",std::string{})=="field_resource")++existing;
