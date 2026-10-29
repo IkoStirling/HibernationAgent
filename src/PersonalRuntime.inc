@@ -173,6 +173,7 @@
                     if(kind=="task_complete")actual=true;
                     if(kind=="outer_event"){
                         const auto event=evidence.value.value("observation",Json::object()).value("kind",std::string{});
+                        if(completedSuppliesExperience(evidence.value.value("observation",Json::object())))actual=true;
                         if(event=="canteen.ready"||event=="canteen.taken"||event=="widget.move_finished"||event=="rhythm.rest_finished"||event=="habitat.consumed"||event=="habitat.inspected"||event=="habitat.arranged"||event=="habitat.planted"||event=="habitat.appeared"||event=="atelier.created"||event=="atelier.revised"||event=="pocket.solved")actual=true;
                     }
                     if(kind=="tool_observation"&&personalCompletionObservation(evidence.value))actual=true;

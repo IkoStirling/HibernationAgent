@@ -26,7 +26,7 @@
             count=0;for(const auto& [id,n]:needs)count+=n;
         }
         if(count<0||count>8)return toolFailure("gather_quantity_invalid");
-        const auto id=nextId("gather");gather_={{"id",id},{"region",region},{"needs",needs},{"requested",count},{"collected",0},{"phase","finding"},{"deadline",world_.clock()+180},{"destination",args.value("destination",std::string(recipe.empty()?"backpack":"pantry"))}};
+        const auto id=nextId("gather");gather_={{"id",id},{"region",region},{"needs",needs},{"requested",count},{"collected",0},{"results",PluginJson::array()},{"phase","finding"},{"deadline",world_.clock()+180},{"destination",args.value("destination",std::string(recipe.empty()?"backpack":"pantry"))}};
         if(count==0){finishGather("completed");return toolSuccess({{"completed",true},{"gather_id",id},{"collected",0}});}
         return toolSuccess({{"accepted",true},{"completed",false},{"gather_id",id},{"requested",count}});
     }
@@ -80,6 +80,7 @@ public:
         auto result=import(transfer,item.at("expires").get<double>()-world_.clock(),host);
         if(!result.value("ok",false)){world_.cancel(result.at("error").value("code",std::string("collection_failed")));finishGather(result.at("error").value("code",std::string("collection_failed")));}
         else if(!gather_.is_null()){
+            gather_["results"].push_back({{"item_id",result.at("result").at("item_id")},{"source_id",item.at("id")},{"ingredient_id",supplies::resource(item)}});
             gather_["collected"]=gather_.at("collected").get<int>()+1;const auto resource=supplies::resource(item);auto& needs=gather_["needs"];if(needs.contains(resource)&&needs.at(resource).get<unsigned>()>0)needs[resource]=needs.at(resource).get<unsigned>()-1;
             gather_["phase"]="finding";
         }

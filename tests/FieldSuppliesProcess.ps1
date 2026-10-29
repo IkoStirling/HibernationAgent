@@ -15,6 +15,7 @@ function Stop-Backend{$null=Api '/api/shutdown' @{};Check ($service.WaitForExit(
 function Plan($responses){@{nonce=[Guid]::NewGuid().ToString('N');responses=@($responses|ForEach-Object {@{response=$_}})}|ConvertTo-Json -Depth 50|Set-Content (Join-Path $root provider/plan.json) -Encoding utf8}
 function Tool($name,$arguments){@{version=1;kind='call';text=$null;calls=@(@{id='fixture';tool=$name;args=$arguments})}}
 function Message($text){$id=[Guid]::NewGuid().ToString('N');$null=Api '/api/message' @{request_id=$id;text=$text};Wait-For {!(Api '/api/chat').busy} 'foreground complete'}
+function Feedback{$capture=Get-Content (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 90;$value=$capture.messages[-1].content;if($value-isnot[string]){$value=($value|Where-Object text|Select-Object -First 1).text};@(($value|ConvertFrom-Json -Depth 90).tool_results)[0]}
 function Reply{@{version=1;kind='reply';text='先准备一杯茶。';calls=@();presentation=@{speech=$false;bubble=$false}}}
 try{
  $provider=Start-Process -FilePath $ProviderExecutable -ArgumentList ('"'+$root+'/provider"') -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $root provider.log) -RedirectStandardError (Join-Path $root provider-error.log);Wait-For {Test-Path (Join-Path $root provider/port)} 'fake provider'
@@ -25,7 +26,7 @@ try{
 
  Wait-For {(World).inventory_available} 'inventory bridge ready'
  $asset=Invoke-WebRequest -Uri ($origin+'/ui/desktop-supplies.js');Check ($asset.StatusCode-eq200-and$asset.Content.Contains('appendDesktopResources')) 'actual backend serves resource configuration script'
- $asset=Invoke-WebRequest -Uri ($origin+'/ui/desktop-supplies.css');Check ($asset.StatusCode-eq200-and$asset.Content.Contains('.resource-region')) 'actual backend serves resource configuration styles' 
+ $asset=Invoke-WebRequest -Uri ($origin+'/ui/desktop-supplies.css');Check ($asset.StatusCode-eq200-and$asset.Content.Contains('.resource-region')) 'actual backend serves resource configuration styles'
  Check ((World).regions.Count-eq3) 'three authored resource regions are discoverable'
  Check ((Kitchen).inventory.used-eq0-and(Kitchen).inventory.capacity-eq8) 'engine backpack starts with eight empty slots'
  $tools=@((Api '/api/capabilities').tools.tool);Check ($tools-contains'habitat.gather'-and$tools-contains'canteen.store'-and$tools-contains'canteen.eat_supply') 'model discovers high-level gathering and inventory tools'
@@ -40,11 +41,13 @@ try{
  Check ((World).objects.Where({$_.kind-eq'berry'}).Count-eq0) 'collected projections disappear from world'
  $collected=@($bag.items.Where({$_.container-eq'backpack'}));Check (@($collected.Where({$sources-contains$_.source_id})).Count-eq2) 'inventory retains actual desktop source identities'
  Check ($collected[0].remaining_seconds-le600-and$collected[0].remaining_seconds-gt0) 'collected food has bounded inherited freshness'
+ Plan @((Tool 'memory.archive_search' @{query='角色这次收集了2份';limit=8}),(Reply));Message '回想刚才收集食材的经历。';$remembered=Feedback;Check ($remembered.ok-and@($remembered.result.records|Where-Object {$_.text.Contains('角色这次收集了2份')}).Count-eq1) 'batch gathering creates one source-backed searchable experience'
  $identity=$collected[0].item_id;$second=$collected[1].item_id;$fresh=$collected[0].remaining_seconds
  $stored=Plugin 'canteen.store' @{};Check ($stored.ok-and(Kitchen).inventory.used-eq0) 'whole bag can be stored atomically in kitchen warehouse'
  $inWarehouse=(Kitchen).inventory.items.Where({$_.item_id-eq$identity})[0];Check ($inWarehouse.container-eq'pantry'-and$inWarehouse.remaining_seconds-le$fresh) 'storage preserves instance and cannot refresh freshness'
  $null=Plugin 'canteen.move_supply' @{item_id=$identity;destination='backpack'};$ate=Plugin 'canteen.eat_supply' @{item_id=$identity};Check ($ate.ok-and(Kitchen).inventory.items.Where({$_.item_id-eq$identity}).Count-eq0) 'one specific inventory food can be eaten directly'
  $again=Plugin 'canteen.eat_supply' @{item_id=$identity};Check (!$again.ok) 'eaten instance cannot be consumed twice'
+ Plan @((Tool 'memory.archive_search' @{query='从自己的库存中吃掉';limit=8}),(Reply));Message '回想刚才从背包里吃东西的经历。';$remembered=Feedback;Check ($remembered.ok-and@($remembered.result.records|Where-Object {$_.text.Contains('从自己的库存中吃掉')}).Count-eq1) 'inventory consumption remains a searchable actual experience'
  $null=Api '/api/control' @{paused=$true};$saved=(Kitchen).inventory.items.Where({$_.item_id-eq$second})[0];Stop-Backend;Start-Backend
  $restored=(Kitchen).inventory.items.Where({$_.item_id-eq$second})[0];Check ($restored.source_id-eq$saved.source_id-and$restored.remaining_seconds-eq$saved.remaining_seconds) 'restart restores source and exact paused freshness without offline decay'
  Check ($null-eq(World).gather-and(World).objects.Where({$sources-contains$_.id}).Count-eq0) 'restart neither replays gathering nor resurrects collected objects'

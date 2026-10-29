@@ -3,6 +3,7 @@
 #include <Hibernation/StyleEditing.h>
 #include <Hibernation/ContinuousTasks.h>
 #include <Hibernation/DropDefinition.h>
+#include <Hibernation/SuppliesExperience.h>
 #include <Hibernation/ChannelProfiles.h>
 #include <Hibernation/Application.h>
 #include <Hibernation/OwnerContinuity.h>

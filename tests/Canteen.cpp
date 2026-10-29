@@ -1,4 +1,6 @@
 #include <Hibernation/CanteenKitchen.h>
+#include <Hibernation/SuppliesExperience.h>
+#include <Hibernation/ObservationContext.h>
 #include <iostream>
 using namespace hibernation;
 using namespace hibernation::canteen;
@@ -7,6 +9,9 @@ void check(bool v,const char* why){if(!v)throw std::runtime_error(why);++checks;
 std::uint64_t available(const Kitchen& k,const std::string& id){const auto view=k.observe();for(const auto& v:view.at("pantry"))if(v.at("id")==id)return v.at("available");throw 0;}
 void step(Kitchen& k,double seconds){while(seconds>0){const auto dt=std::min(1.0,seconds);k.tick(dt);seconds-=dt;}}
 int main(){try{
+ Json episode={{"plugin","habitat"},{"kind","habitat.gather_finished"},{"gather",{{"collected",1},{"results",Json::array({{{"item_id","field/one"},{"source_id","one"},{"ingredient_id","berry"}}})},{"destination","backpack"},{"completed",true}}}};
+ check(suppliesExperience(episode).has_value()&&completedSuppliesExperience(episode),"completed gathering becomes an actual experience");episode["gather"]["completed"]=false;check(suppliesExperience(episode).has_value()&&!completedSuppliesExperience(episode),"partial collection is remembered without proving the whole intention completed");episode["gather"]["collected"]=0;check(!suppliesExperience(episode),"empty gathering never becomes a claimed experience");
+ check(!suppliesExperience({{"plugin","habitat"},{"kind","habitat.collected"},{"gather_id","batch"}}),"individual batch pickups do not produce repeated episodes");check(continuityObservationTool("canteen.eat_supply")&&revisitableObservationTool("canteen.inventory"),"inventory receipts remain revisitable factual sources");
  using bsimmer::cuisine::Slot;using bsimmer::cuisine::Ingredient;
  auto m=bsimmer::cuisine::match(std::vector<Slot>{{"","milk"},{"milk",""}},std::vector<Ingredient>{{"milk","milk"},{"oat_milk","milk"}});
  check(m&&m->at(0)==1&&m->at(1)==0,"overlapping category uses non-greedy exact assignment");
