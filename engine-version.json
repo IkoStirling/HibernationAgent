@@ -29,14 +29,14 @@
   },
   "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "6790b0e2ff5788c3271065d4c1c6c63768647202b2ea9b611827fb70f54f79cb",
+  "validatedExecutableSha256": "3c24bf0765e164b81399e87a7f92b02fcad101073444ea73495e5704e7c8c9c2",
   "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
   "applicationVersion": "0.7.0",
   "validatedApplicationSourceCommit": null,
   "engineWorktreeDirty": false,
-  "validationScope": "Layered semantic review with immutable event baselines, previous DirectReview cache ordering/deduplication retained. Isolated process routing/retry/security checks, serial full units and final cache/session gates passed; related NapCat/continuous-task/schedule/priority/offline regressions and eight UI checks passed. Thirteen synthetic-only real reviewer requests counted, including invalid fixture runs. Old Continuity.ps1 schedule argument migration remains documented. Host and matching NapCat DLL deployed, original encrypted versions and persona/key retained.",
-  "validatedApplicationFeatureCommit": "880ab1a23557811b3435abe0f0cc8cb1cb44b4ac",
-  "validatedApplicationSourceSnapshotSha256": "25afc3189a3b754a358c5b72e97704d7c9aa01ec4611f53c891b6ae3121ad514",
-  "validatedApplicationSourceSnapshot": "artifacts/layered-review-20261029/deployed-source.json",
-  "applicationSourceSnapshotNote": "Built and tested merged workspace preserves pre-existing uncommitted application/plugin work; selective feature commit excludes unrelated changes. No private archives included."
+  "validationScope": "Facts-only failed-turn continuation with original input, completed receipts and an undelivered reply event; no rejected prose or automatic whole-job review retry. JSON/native process checks (28 layered, 24 session), four cache/session gates and nine related regressions passed; 226 unit cases/146770 assertions passed with short AY_TEST_TMPDIR. Existing deep temporary path mentor restore issue documented. Host and matching NapCat DLL deployed with full E-drive backup, immutable ciphertext audit and unchanged configuration/persona/key. No paid or private-dialogue experiments.",
+  "validatedApplicationFeatureCommit": "a7cf72f63f9f82f82fd707b0c626ab1996df2c7b",
+  "validatedApplicationSourceSnapshotSha256": "8a900097608c262f926a8b5f45b230a92c70d72c101dbbd145d40699e9af43cb",
+  "validatedApplicationSourceSnapshot": "artifacts/failure-continuation-20261029/deployed-source.json",
+  "applicationSourceSnapshotNote": "Tested merged workspace retains existing unrelated uncommitted work. Selective feature commit excludes that work; no private archives included."
 }
