@@ -20,7 +20,8 @@
     "AYFoundation/AYPlatform": "b6a3a251b0b7498596cd6d57ab73de413d201355",
     "AYFoundation/AYLog": "d4c717cd8afd2ed8ac92a3a6c1300810144b4f7a",
     "AYRuntime/AY2D": "0aa31f77b8df9ea5a6f424d18defef01facb67cb",
-    "AYFoundation/AYString": "fb39b01526901aa00163f686dff470140b360d61"
+    "AYFoundation/AYString": "fb39b01526901aa00163f686dff470140b360d61",
+    "AYRuntime/AYInventory": "e9db50a54bcea7381104f3efb9707e1e8650dc3f"
   },
   "recordStorageFormats": {
     "plain": 1,
@@ -29,14 +30,20 @@
   },
   "applicationServicesCommit": "3e84fbfc8fe6c9c4fe22ad97f8633ac84bd787fe",
   "hostConfiguration": "Release",
-  "validatedExecutableSha256": "3c24bf0765e164b81399e87a7f92b02fcad101073444ea73495e5704e7c8c9c2",
+  "validatedExecutableSha256": "f10f1542c9283660188fd83a503a9804913264e29438ca0af44f60d831a01a1b",
   "protectedPayloadEnvelope": "HV2:XChaCha20-Poly1305, legacy HV1 read compatibility",
   "applicationVersion": "0.7.0",
   "validatedApplicationSourceCommit": null,
   "engineWorktreeDirty": false,
-  "validationScope": "Facts-only failed-turn continuation with original input, completed receipts and an undelivered reply event; no rejected prose or automatic whole-job review retry. JSON/native process checks (28 layered, 24 session), four cache/session gates and nine related regressions passed; 226 unit cases/146770 assertions passed with short AY_TEST_TMPDIR. Existing deep temporary path mentor restore issue documented. Host and matching NapCat DLL deployed with full E-drive backup, immutable ciphertext audit and unchanged configuration/persona/key. No paid or private-dialogue experiments.",
-  "validatedApplicationFeatureCommit": "a7cf72f63f9f82f82fd707b0c626ab1996df2c7b",
-  "validatedApplicationSourceSnapshotSha256": "8a900097608c262f926a8b5f45b230a92c70d72c101dbbd145d40699e9af43cb",
-  "validatedApplicationSourceSnapshot": "artifacts/failure-continuation-20261029/deployed-source.json",
-  "applicationSourceSnapshotNote": "Tested merged workspace retains existing unrelated uncommitted work. Selective feature commit excludes that work; no private archives included."
+  "validationScope": "Canteen rules and independent invisible-desktop process passed, including stock holds, cancel, cooking restart, shelf expiry, failed handoff, actual desktop eating and cook-then-take queue. Twenty related app/engine groups passed cumulatively; BSimmer recipe/restaurant/tag suites also passed. SDK doctor: 0 errors and warnings. Latest cache and failed-turn continuation preserved. Protected deployment preserved 63312 encrypted original versions; enabled canteen only, existing configuration/persona/key and mentor preserved.",
+  "validatedApplicationFeatureCommit": "d4ead2a3e835f5ecbd539e72540393d699707749",
+  "validatedApplicationSourceSnapshotSha256": "7dd6dd86c80abfeb433f223a69b84785d5a23136239cef276ccf95626d62162d",
+  "validatedApplicationSourceSnapshot": "artifacts/canteen/deployed-source.json",
+  "applicationSourceSnapshotNote": "Tested merged source preserves existing mentor/runtime/budget/speech/vault work and latest upstream cache/failure continuation. Feature-only Git tree was not separately built.",
+  "sharedCuisine": {
+    "project": "BSimmer",
+    "relativeRoot": "../BSimmer/src/cuisine",
+    "commit": "831aefe406e08498841e1eb4e0eafcd76d1261b6",
+    "recipeRulesSha256": "01c10b2c830ee186127b10e3ae159698eb9de0f87c77a56a2463843a2dfd9418"
+  }
 }
