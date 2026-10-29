@@ -20,6 +20,7 @@ Git 支持本地仓库和常规远程操作（认证由用户配置）；7-Zip �
 后续新增[记忆浓缩检索、对话准备状态与自主活动队列](docs/memory-library-and-activities.md)。
 桌面玩法新增[角色创造食物、掉落物属性与渐变生命周期](docs/desktop-drops.md)。
 小组件新增[PNG 序列帧资源包、动作过渡与分层道具](docs/pixel-sequences.md)。
+动画制作用[小爱动作与动画制作总表](docs/character-action-catalog.md)：包含当前动作、素材缺口、过渡与道具需求；新增动作须同步维护。
 
 V0.7 封版后的持续开发重点是[人格连续性与自己的生活](docs/personality-development.md)：
 在有来源的经历中形成兴趣和未完打算，允许重新理解、放下或无更新；感受渐变，
