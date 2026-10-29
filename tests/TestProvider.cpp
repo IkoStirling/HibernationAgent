@@ -38,6 +38,12 @@ int main(int argc,char** argv){
         if(delay)std::this_thread::sleep_for(std::chrono::milliseconds(std::clamp(delay,0,30000)));
         if(httpStatus!=200){response.status=httpStatus;response.set_content(R"({"error":{"code":"fixture_transient"}})","application/json");return;}
         const auto usage=Json::parse(read(root/"usage.json"),nullptr,false);const auto usageEvent=usage.is_object()?"data: "+Json{{"choices",Json::array()},{"usage",usage}}.dump()+"\n\n":std::string{};
+        // Simulate a provider output cap without real requests or huge payloads.
+        const auto failure=Json::parse(output,nullptr,false);
+        if(failure.is_object()&&failure.value("fixture_incomplete",false)){
+            if(responses){const Json envelope={{"status","incomplete"},{"incomplete_details",{{"reason","max_output_tokens"}}},{"output",Json::array()}};response.set_content(envelope.dump(),"application/json");}
+            else response.set_content(Json{{"choices",Json::array({Json{{"message",{{"role","assistant"},{"content","{"}}},{"finish_reason","length"}}})}}.dump(),"application/json");return;
+        }
         const auto parsed=Json::parse(output,nullptr,false);const bool native=parsed.is_object()&&parsed.contains("fixture_native_calls");Json callsOut=Json::array();
         if(native)for(const auto& call:parsed.at("fixture_native_calls")){const auto args=call.at("arguments").is_string()?call.at("arguments").get<std::string>():call.at("arguments").dump();if(responses)callsOut.push_back({{"type","function_call"},{"id","fc_"+call.at("id").get<std::string>()},{"call_id",call.at("id")},{"name",call.at("name")},{"arguments",args},{"status","completed"}});else callsOut.push_back({{"id",call.at("id")},{"type","function"},{"function",{{"name",call.at("name")},{"arguments",args}}}});}
         if(responses){
