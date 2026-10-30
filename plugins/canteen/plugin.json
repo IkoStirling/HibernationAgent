@@ -1,8 +1,8 @@
 {
   "id": "canteen",
   "name": "小食堂",
-  "description": "与桌面采集共用食材库存的小厨房，提供背包、仓库、保鲜和三道料理。",
-  "version": "0.2.0",
+  "description": "共用BSimmer料理规则：可检索菜谱、真实库存、分阶段加工、背包、保鲜与程序虚拟补给。",
+  "version": "0.3.0",
   "api_version": 2,
   "library": "Hibernation_Canteen.dll",
   "dependencies": [
@@ -47,6 +47,12 @@
       "min": 60,
       "max": 43200,
       "step": 60
+    },
+    {
+      "key": "allowSupplyOrders",
+      "type": "toggle",
+      "label": "允许申请少量程序虚拟食材",
+      "default": true
     }
   ]
 }

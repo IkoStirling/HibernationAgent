@@ -22,10 +22,10 @@ inline std::string toolObservationKind(const std::string& tool,const nlohmann::j
     return pending?"tool_intent":"tool_observation";
 }
 inline bool revisitableObservationTool(const std::string& tool){
-    static const std::set<std::string> concrete={"workspace.list","workspace.read","workspace.view_image","computer.screenshot","computer.list_directory","television.observe","television.observe_sequence","television.search","reading.search","reading.open","atelier.read","napcat.view_image","canteen.inventory"};return concrete.contains(tool)||tool=="pixel.read"||tool=="pixel.preview";
+    static const std::set<std::string> concrete={"workspace.list","workspace.read","workspace.view_image","computer.screenshot","computer.list_directory","television.observe","television.observe_sequence","television.search","reading.search","reading.open","atelier.read","napcat.view_image","canteen.inventory","canteen.menu","canteen.recipe","canteen.plan","canteen.supplies"};return concrete.contains(tool)||tool=="pixel.read"||tool=="pixel.preview";
 }
 inline bool continuityObservationTool(const std::string& tool){
-    static const std::set<std::string> effects={"habitat.gather","canteen.store","canteen.move_supply","canteen.eat_supply","canteen.cook","canteen.cancel","canteen.take","canteen.discard","workspace.write","workspace.edit","computer.open_application","television.open","television.open_page","television.play","television.pause","television.stop","atelier.write","atelier.append","habitat.create","habitat.act","habitat.arrange","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel"};
+    static const std::set<std::string> effects={"habitat.gather","canteen.request_supplies","canteen.store","canteen.move_supply","canteen.eat_supply","canteen.cook","canteen.cancel","canteen.take","canteen.discard","workspace.write","workspace.edit","computer.open_application","television.open","television.open_page","television.play","television.pause","television.stop","atelier.write","atelier.append","habitat.create","habitat.act","habitat.arrange","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel"};
     return revisitableObservationTool(tool)||pixelObservationTool(tool)||pixelMutationTool(tool)||effects.contains(tool);
 }
 inline bool appraisalExperienceRecord(const nlohmann::json& record){
@@ -81,6 +81,22 @@ inline nlohmann::json compactObservation(const nlohmann::json& record,bool image
     }
     for(const auto* field:{"source_mount","source_path","width","height","original_width","original_height","frame_index","source_frame_count","written","completed","accepted","queued","opened","state","mode","frame_time_seconds","position_seconds","title","path","id","phase","changed","scope","source_url","article_url","provider","revision","retrieved_ms","full_article_read","text_truncated","cache_hit","language","detail","content_model","offset","next_offset","total_bytes","eof","source_total_bytes","source_truncated","reading_identity"})if(data.contains(field)&&data.at(field).is_primitive()){
         const auto& value=data.at(field);if(value.is_string()&&value.get_ref<const std::string&>().size()>512)continue;summary[field]=value;
+    }
+    if(record.at("tool").get<std::string>().starts_with("canteen.")){
+        // Keep bounded recipe identities and causal receipts, without replaying
+        // a complete cookbook or interpreting an accepted job as a finished meal.
+        for(const auto* field:{"recipe_id","name","kind","cuisine","output","yield","source","adaptation","units","total","has_more","catalog_revision","seconds","ready","ticket","batch_id","item_id","ingredient_id","container","next_request_seconds"})
+            if(data.contains(field)&&data.at(field).is_primitive()&&data.at(field).dump().size()<=1024)summary[field]=data.at(field);
+        for(const auto* field:{"recipes","items","inputs","stages","steps","equipment","allergens","missing_equipment"})if(data.contains(field)&&data.at(field).is_array()){
+            summary[field]=Json::array();for(const auto& item:data.at(field)){if(summary.at(field).size()>=12)break;if(item.dump().size()<=1536)summary[field].push_back(item);}
+        }
+        if(data.contains("missing")&&data.at("missing").is_object()&&data.at("missing").size()<=120)summary["missing"]=data.at("missing");
+        if(data.contains("job")&&data.at("job").is_object()){
+            summary["job"]=Json::object();for(const auto* field:{"id","batch_id","recipe_id","stage_recipe_id","phase","origin","step_index"})if(data.at("job").contains(field))summary["job"][field]=data.at("job").at(field);
+        }
+        if(data.contains("plan")&&data.at("plan").is_object()){
+            summary["plan"]=Json::object();for(const auto* field:{"recipe_id","seconds","missing","ready","mutates_inventory"})if(data.at("plan").contains(field))summary["plan"][field]=data.at("plan").at(field);
+        }
     }
     if(data.contains("document")&&data.at("document").is_object())summary["document"]=pixelDocumentContext(data.at("document"));
     if(data.contains("document_id")&&data.at("document_id").is_string())summary["document_id"]=data.at("document_id");

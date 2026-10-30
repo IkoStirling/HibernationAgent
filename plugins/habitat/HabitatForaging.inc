@@ -24,11 +24,9 @@
         std::map<std::string,unsigned> needs;int count=args.value("count",3);
         if(!ingredient.empty()){if(!supplies::known(ingredient))return toolFailure("resource_unknown");needs[ingredient]=count;}
         if(!recipe.empty()){
-            bool found=false;for(const auto& r:menu_)if(r.at("id")==recipe){found=true;for(const auto& id:r.at("ingredients"))++needs[id.get<std::string>()];}
-            if(!found)return toolFailure("canteen_recipe_unknown");
-            // Existing warehouse materials already satisfy this goal. Bag contents
-            // remain bag contents until an explicit store command, avoiding hidden moves.
-            for(const auto& item:pantry_){const std::string id=item.at("id");if(needs.contains(id))needs[id]-=std::min(needs[id],item.at("available").get<unsigned>());}
+            std::map<std::string,unsigned> available;for(const auto& item:pantry_)available[item.at("id").get<std::string>()]=item.at("available").get<unsigned>();
+            const auto plan=bsimmer::cuisine::planCooking(bsimmer::cuisine::catalog(),recipe,available);
+            if(!plan)return toolFailure(plan.error().c_str());needs=plan->missing;
             count=0;for(const auto& [id,n]:needs)count+=n;
         }
         if(count<0||count>8)return toolFailure("gather_quantity_invalid");

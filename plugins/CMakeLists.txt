@@ -51,4 +51,4 @@ target_link_libraries(Hibernation_Television PRIVATE AYVideoPlayback user32 gdi3
 add_subdirectory(napcat)
 
 ha_role_plugin(canteen Hibernation_Canteen canteen/Canteen.cpp)
-target_link_libraries(Hibernation_Canteen PRIVATE AYInventory::Json BSimmerCuisine::Rules BSimmerSupplies::Rules)
+target_link_libraries(Hibernation_Canteen PRIVATE BSimmerCuisine::Kitchen)

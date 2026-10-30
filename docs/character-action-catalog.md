@@ -1,6 +1,6 @@
 # 小爱动作与动画制作总表
 
-核对日期：2026-10-29。维护对象：HibernationAgent 的角色行为、相关插件，以及爱丝特兰默认动画包。
+核对日期：2026-10-30。维护对象：HibernationAgent 的角色行为、相关插件，以及爱丝特兰默认动画包。
 
 这是动画制作和后续接线的统一清单。项目新增、修改或移除动作时，同步更新本表；修改爱丝特兰素材时，同步核对现有素材表。以当前源码和 `character.json` 为依据，不读取私人对话或角色记忆。
 
@@ -86,12 +86,13 @@
 
 | 编号 | 动作 | 状态／入口 | 爱丝特兰当前表现 | 建议制作单元与衔接 | 优先级 |
 | --- | --- | --- | --- | --- | --- |
-| CAFE-01 | 看菜单、检查原料和成品 | 逻辑；`canteen.observe` | 返回实际食堂数据，没有菜单道具动作 | 可复用阅读／查看姿态；菜单是可换道具 | P1 |
-| CAFE-02 | 制作面包、布丁或泡茶 | 逻辑；`canteen.cook`、`canteen_cook` | 预留原料并计时制作，没有角色站在料理台前的动画 | **拟** `cooking`：准备 → 搅拌／操作循环 → 收尾；三道料理优先更换道具而非重做整个人物 | P1 |
+| CAFE-01 | 看菜单、配方、缺料与成品 | 逻辑；`canteen.observe/menu/recipe/plan/supplies` | 共享目录分页检索与只读加工规划，没有菜单道具动作 | 可复用阅读／查看姿态；菜单是可换道具 | P1 |
+| CAFE-02 | 从原料和中间品制作料理 | 逻辑；`canteen.cook`、`canteen_cook` | 共享 BSimmer 全配方与分阶段库存加工；没有角色站在料理台前的动画 | **拟** `cooking`：准备 → 按实际工序选局部操作 → 收尾；164 道成品／30 种中间品复用身体动作并更换道具 | P1 |
 | CAFE-03 | 等待料理完成 | 现成后台过程 | 食堂独立推进；角色可以去做别的事情 | 通常复用待机或其他活动，不让整个制作时长都强制卡在搅拌循环 | P1，复用 |
 | CAFE-04 | 从成品架取餐 | 逻辑；`canteen.take`、`take_meal` | 成品实际发布到桌面，没有端盘到座位的身体流程 | 通用拿取／端盘；需另接携带、餐桌锚点和放盘 | P1 |
 | CAFE-05 | 在食堂坐下就餐 | 规划；已有食堂制作和两种食用逻辑 | **没有独立食堂场景、座位或坐姿就餐流程** | 前往座位 → 坐下 → 放盘 → 坐姿进食 → 收盘 → 起身；可先准备坐下／坐姿吃饭／起身素材 | P2 |
 | CAFE-06 | 取消制作、丢弃成品 | 逻辑；`canteen.cancel/discard` | 真实取消或丢弃，没有对应身体动作 | 取消通常无须演；丢弃可复用拿放，垃圾桶道具和位置待接 | P2，可选 |
+| CAFE-07 | 申请程序虚拟食材补给 | 逻辑；`canteen.request_supplies` | 受开关、数量、冷却和真实入库回执控制；不是现实采购，没有包裹或签收身体动作 | UI-only；默认保持 S01，无需新素材；未来包裹场景须另接来源和交付 | P2，可选 |
 
 ### 阅读、创作、游戏与其他工具
 
@@ -668,7 +669,7 @@ S05→S06→S01，两段各单次，禁止中途插入 idle；现有落地素材
 | 2. `carry_walk` | `S13` | `S13` | 循环 | `Same reference character, crisp pixel art, fixed camera and unchanged proportions. Walk in place facing right while holding a small item steadily at waist height. Alternate both feet through a complete gait cycle, keep the hands stable and avoid root translation. Return to the same carrying gait phase.` |
 | 3. `carry_front` | `S13` | `S09` | 单次 | `Same reference character, crisp pixel art, fixed camera and unchanged proportions. Stop in the right-facing carrying pose, then turn toward the viewer using two small steps. Keep the item supported by both hands and end in the front holding pose.` |
 
-#### CAFE-01 看菜单、检查原料和成品
+#### CAFE-01 看菜单、配方、缺料与成品
 
 拟菜单道具表现；将书替换成统一尺寸菜单，道具层复用，不画菜单文字。纯数据查询允许不演。
 
@@ -680,9 +681,9 @@ S05→S06→S01，两段各单次，禁止中途插入 idle；现有落地素材
 | 4. `book_close` | `S19` | `S18` | 单次 | `Same reference character, crisp pixel art, fixed camera and unchanged proportions. Close the open book gently with both hands, keeping the binding edge steady, and end holding the closed book at waist height. Mouth closed.` |
 | 5. `book_put` | `S18` | `S01` | 单次 | `Same reference character, crisp pixel art, fixed camera and unchanged proportions. Reach a short distance forward to place the closed book on a nearby surface, then lower the hands into the default idle pose. No book vanishing halfway through the hand movement; removal is handled separately.` |
 
-#### CAFE-02 制作面包、布丁或泡茶
+#### CAFE-02 从原料和中间品制作料理
 
-面包／布丁／茶先共用料理身体动作并换道具；搅拌只是可选局部表现，不能假装所有配方都须一直搅拌。真实制作仍由后台计时。
+完整共享目录共用料理身体动作并按工序换道具；搅拌只是可选局部表现，不表示煎、烤、冷藏都须搅拌。真实制作仍由后台库存与分段计时推进，不等待动画才扣料。下列素材尚未接入自动烹调身体流程。
 
 | 顺序／片段键 | 起点 State | 终点 State | 播放 | 自定义 Animation 提示词（可直接复制） |
 | --- | --- | --- | --- | --- |
@@ -729,6 +730,14 @@ S05→S06→S01，两段各单次，禁止中途插入 idle；现有落地素材
 | 1. `reach` | `S01` | `S12` | 单次 | `Same reference character, crisp pixel art, fixed camera and unchanged proportions. Extend one hand forward at waist height toward a nearby storage surface while the other hand comes up to support an item. End in the storage-reaching pose, feet planted and mouth closed. No generated cupboard or background.` |
 | 2. `store` | `S12` | `S12` | 单次 | `Same reference character, crisp pixel art, fixed camera and unchanged proportions. Make one short gentle forward placing movement, release the fingers, then return to the same reaching pose. Keep the support hand steady. Item visibility and storage success are controlled separately.` |
 | 3. `reach_out` | `S12` | `S01` | 单次 | `Same reference character, crisp pixel art, fixed camera and unchanged proportions. Retract the extended arm and lower both hands into the normal relaxed standing pose, mouth closed and feet fixed.` |
+
+#### CAFE-07 申请程序虚拟食材补给
+
+纯数据操作，当前没有签收包裹或搬运身体流程。无需新 State；静态姿态沿用独立 State 表的 `S01`，不给补给操作虚构已签收的画面。可保持已有动作，以下仅为可选等待素材。
+
+| 顺序／片段键 | 起点 State | 终点 State | 播放 | 自定义 Animation 提示词（可直接复制） |
+| --- | --- | --- | --- | --- |
+| 1. `idle`（UI-only，可不播放） | `S01` | `S01` | 循环 | `Same reference character, crisp pixel art, fixed camera and unchanged proportions. Remain quietly in the neutral standing pose with a tiny sleeve settling motion, then return exactly to the start. Mouth closed, feet planted. No parcel, shopping gesture, food spawning or celebration; inventory delivery is handled by the application.` |
 
 #### READ-01 搜索感兴趣的资料
 

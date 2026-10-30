@@ -5,6 +5,7 @@
 #include <Hibernation/Review.h>
 #include <Hibernation/DropDefinition.h>
 #include <Hibernation/TurnProtocol.h>
+#include <cuisine/Catalog.h>
 #include <AYSerializer/JsonSchema.h>
 namespace hibernation {
 std::string activitySchema(){
@@ -26,11 +27,11 @@ std::string activitySchema(){
             properties["region"]={{"type","string"},{"maxLength",40}};
             properties["destination"]={{"enum",Json::array({"backpack","pantry"})}};
             if(action=="gather"){properties["ingredient_id"]={{"type","string"},{"maxLength",32}};properties["count"]={{"type","integer"},{"minimum",1},{"maximum",8}};}
-            else{properties["recipe_id"]={{"enum",Json::array({"bread","pudding","tea"})}};required.push_back("recipe_id");}
+            else{properties["recipe_id"]={{"type","string"},{"minLength",1},{"maxLength",64}};required.push_back("recipe_id");}
         }
         if(action=="eat_inventory"){properties["item_id"]={{"type","string"},{"minLength",1},{"maxLength",128}};required.push_back("item_id");}
         if(action=="canteen_cook"||action=="take_meal"){
-            properties["recipe_id"]={{"type","string"},{"enum",Json::array({"bread","pudding","tea"})}};
+            properties["recipe_id"]={{"type","string"},{"minLength",1},{"maxLength",64}};
             if(action=="canteen_cook")required.push_back("recipe_id");
             else properties["batch_id"]={{"type","string"},{"minLength",1},{"maxLength",96}};
         }
@@ -100,6 +101,7 @@ ValidatedOutput validateActivities(std::string_view text,Json* formatNormalizati
         const auto kind=command.at("kind").get<std::string>();const double seconds=command.at("seconds");
         if(command.contains("purpose")&&command.at("purpose").get_ref<const std::string&>().find_first_not_of(" \t\r\n")==std::string::npos)return {false,"activity_empty_purpose",{}};
         if(!std::isfinite(seconds)||(kind=="rest"&&(seconds<15||seconds>600))||(kind=="wait"&&(seconds<1||seconds>120))||(kind=="pose"&&(seconds<1||seconds>120))||((kind=="eat_nearest"||kind=="look_nearest"||kind=="move_to"||kind=="interact"||kind=="arrange"||kind=="create_drop"||kind=="creative_note")&&seconds!=0))return {false,"activity_duration",{}};
+        if(command.contains("recipe_id")&&!bsimmer::cuisine::catalog().dish(command.at("recipe_id").get<std::string>()))return {false,"activity_canteen_recipe_unknown",{}};
         if(kind=="canteen_cook"&&++meals>1)return {false,"activity_canteen_batch_limit",{}};
         if((kind=="create_drop"&&++creations>2)||((kind=="creative_note"||kind=="creative_continue")&&++notes>1)||(kind=="puzzle_start"&&++games>1))return {false,"activity_creation_batch_limit",{}};
         if((kind=="reference_search"||kind=="reference_read")&&++references>1)return {false,"activity_reference_batch_limit",{}};

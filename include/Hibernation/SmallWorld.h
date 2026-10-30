@@ -1,6 +1,7 @@
 #pragma once
 #include <nlohmann/json.hpp>
 #include <Hibernation/DropDefinition.h>
+#include <Hibernation/DesktopSupplies.h>
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -41,7 +42,7 @@ public:
         if(!authored.is_object()||creator.size()>32||(!provenance.is_null()&&(!provenance.is_object()||provenance.dump().size()>4096)))return false;
         auto definition=drops::definition(kind,std::move(authored));if(!drops::validDefinition(definition))return false;
         objects_.push_back({{"id",id},{"kind",kind},{"x",x},{"y",y},{"born",clock_},{"expires",clock_+lifetime},{"growth",0},{"observed_growth",-1},{"definition",definition},{"rules",drops::rules(kind,quality)},{"creator",creator}});
-        if(!provenance.is_null())objects_.back()["provenance"]=provenance;
+        if(!provenance.is_null())objects_.back()["provenance"]=provenance;objects_.back()["rules"]=supplies::objectRules(objects_.back());
         emit("habitat.appeared",objects_.back());return true;
     }
     std::string request(const std::string& id,const std::string& action,const std::string& token){
@@ -124,7 +125,7 @@ public:
             auto objects=value.at("objects");const auto actions=value.at("last_actions");if(!objects.is_array()||objects.size()>8||!actions.is_array()||actions.size()>4)return false;
             std::vector<std::string> ids;for(auto& item:objects){const auto id=item.at("id").get<std::string>(),kind=item.at("kind").get<std::string>();if(id.empty()||id.size()>96||!knownKind(kind)||std::find(ids.begin(),ids.end(),id)!=ids.end())return false;ids.push_back(id);bounded(item,"x",0,1);bounded(item,"y",0,1);bounded(item,"born",0,clock);bounded(item,"expires",0,1e10);bounded(item,"growth",0,3);if(item.at("expires").get<double>()<item.at("born").get<double>())return false;
                 if(legacy){item["definition"]=drops::definition(kind);item["rules"]=drops::rules(kind);item["creator"]="legacy";}
-                if(!drops::validDefinition(item.at("definition"))||!item.at("rules").at("quality").is_number_integer()||!item.at("creator").is_string())return false;const int quality=item.at("rules").at("quality");if(quality<0||quality>2||item.at("rules")!=drops::rules(kind,quality)||item.at("creator").get<std::string>().size()>32)return false;
+                if(!drops::validDefinition(item.at("definition"))||!item.at("rules").at("quality").is_number_integer()||!item.at("creator").is_string())return false;const int quality=item.at("rules").at("quality");if(quality<0||quality>2||item.at("creator").get<std::string>().size()>32)return false;const auto expected=supplies::objectRules(item);if(item.at("rules")!=expected&&item.at("rules")!=drops::rules(kind,quality))return false;item["rules"]=expected;
             }
             clock_=clock;appetite_=appetite;targetAppetite_=targetAppetite;comfort_=comfort;targetComfort_=targetComfort;objects_=objects;lastActions_=actions;pending_=nullptr;events_.clear();
             if(value.contains("pending")&&!value.at("pending").is_null())events_.push_back({{"kind","habitat.action_cancelled"},{"reason","application_restarted"}});
