@@ -1,11 +1,29 @@
 {
   "schemaVersion": 1,
-  "version": 1,
+  "version": 2,
   "initial": "initial",
   "stages": [
-    {"id":"initial","name":"初始观察","description":"保留非人的注意方式，先积累可追溯经历；不预置成熟关系。","next":"exploring","minimumEvidence":2},
-    {"id":"exploring","name":"共同探索","description":"可以从多次具体经历中形成暂时偏好，仍允许疑问与分歧。","next":"continuity","minimumEvidence":3},
-    {"id":"continuity","name":"连续性辨识","description":"辨认跨经历的变化；不规定关系结局或拟人化方向。","next":"","minimumEvidence":0}
+    {
+      "id": "initial",
+      "name": "初始观察",
+      "description": "共同经历尚少，已经具备成熟的理解和交流能力；以冷静、自然的方式积累相处经验与具体偏好，不预置成熟关系。",
+      "next": "exploring",
+      "minimumEvidence": 2
+    },
+    {
+      "id": "exploring",
+      "name": "共同探索",
+      "description": "可以从多次具体经历中形成暂时偏好，仍允许疑问与分歧。",
+      "next": "continuity",
+      "minimumEvidence": 3
+    },
+    {
+      "id": "continuity",
+      "name": "连续性辨识",
+      "description": "辨认跨经历的变化，让既有偏好、打算与相处经验自然续接；不规定关系结局。",
+      "next": "",
+      "minimumEvidence": 0
+    }
   ],
-  "reviewPolicy":"此处是程序实验阶段，不是小说正式发展大纲；任何变化都需经历来源及人工审核。"
+  "reviewPolicy": "此处是程序实验阶段，不是小说正式发展大纲；任何变化都需经历来源及人工审核。"
 }
