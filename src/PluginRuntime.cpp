@@ -36,8 +36,8 @@ bool PluginRuntime::configure(const PluginJson& settings,std::string& issue){aut
     for(const auto& [id,slot]:a.loaded)if(settings.value(id,PluginJson::object()).value("enabled",false)&&!dependencies(id,slot->plugin))return false;
     // Stage newly loaded libraries. Existing plugins are removed only after all
     // additions and reconfiguration succeeded; rejected batches unload staging.
-    std::map<std::string,std::shared_ptr<Impl::Slot>> staged;std::vector<std::string> rebound;
-    auto rollback=[&]{for(auto it=rebound.rbegin();it!=rebound.rend();++it){std::string ignored;try{a.loaded.at(*it)->plugin->bind(a.host,a.loaded.at(*it)->configuration,ignored);}catch(...){}}};
+    std::map<std::string,std::shared_ptr<Impl::Slot>> staged;std::vector<std::string> rebound;std::map<std::string,PluginJson> previousStates;
+    auto rollback=[&]{for(auto it=rebound.rbegin();it!=rebound.rend();++it){std::string ignored;try{auto& slot=a.loaded.at(*it);if(slot->plugin->bind(a.host,slot->configuration,ignored))slot->plugin->restore(previousStates.at(*it));}catch(...){}}};
     try{
         std::set<std::string> names;for(const auto& [id,existing]:a.loaded)if(settings.value(id,PluginJson::object()).value("enabled",false))for(const auto& t:existing->plugin->tools())names.insert(t.at("name"));
         for(const auto& m:a.manifests){const auto id=m.at("id").get<std::string>();const auto cfg=settings.value(id,PluginJson::object());if(!cfg.value("enabled",false)||a.loaded.contains(id))continue;
@@ -58,7 +58,7 @@ bool PluginRuntime::configure(const PluginJson& settings,std::string& issue){aut
             for(const auto& t:tools){if(!t.contains("name")||!t.contains("parameters")||!ayt::serializer::validateJsonSchema(t.at("parameters").dump())){issue="plugin_tools";return false;}const auto name=t.at("name").get<std::string>();const auto dot=name.find('.');if(dot==std::string::npos||name.size()>96||name.starts_with("self.")||name.starts_with("body.")||name.starts_with("activity.")||name.starts_with("computer.")||name.starts_with("capabilities.")||name.starts_with("reflection.")||name.starts_with("memory.")||name.starts_with("state.")||name.starts_with("stage.")||name.starts_with("schedule.")||name.starts_with("workspace.")||!names.insert(name).second){issue="plugin_tool_collision";return false;}}
             slot->manifest=m;slot->configuration=cfg;if(a.saved.contains(id)&&!slot->plugin->restore(a.saved.at(id))){issue="plugin_restore";return false;}staged.emplace(id,std::move(slot));
         }
-        for(const auto& [id,slot]:a.loaded){const auto cfg=settings.value(id,PluginJson::object());if(!cfg.value("enabled",false))continue;a.failureOwner=id;rebound.push_back(id);if(!slot->plugin->bind(a.host,cfg,issue)){rollback();return false;}}
+        for(const auto& [id,slot]:a.loaded){const auto cfg=settings.value(id,PluginJson::object());if(!cfg.value("enabled",false))continue;a.failureOwner=id;previousStates[id]=slot->plugin->snapshot();rebound.push_back(id);if(!slot->plugin->bind(a.host,cfg,issue)){rollback();return false;}}
     }catch(...){rollback();issue="plugin_configuration_exception";return false;}
     for(const auto& id:rebound)a.loaded.at(id)->configuration=settings.at(id);
     for(auto& [id,slot]:staged)a.loaded.emplace(id,std::move(slot));
@@ -100,11 +100,17 @@ PluginJson PluginRuntime::commitCollection(const std::string& token){
     // The source holds its world lock throughout the engine ownership transaction.
     return source->commitCollection(token,[&](const PluginJson& item,double remaining,ayt::inventory::IInteractionHost& host){return inventory->receiveCollection(item,remaining,host);});
 }
+PluginJson PluginRuntime::enqueueChannelReply(const PluginJson& envelope){
+    auto& a=*impl_;std::lock_guard guard(a.mutex);if(a.stopped||!a.loaded.contains("napcat"))return toolFailure("channel_unavailable",true);
+    auto* sink=dynamic_cast<IChannelReplySink*>(a.loaded.at("napcat")->plugin);if(!sink)return toolFailure("channel_delivery_unavailable",true);
+    try{return sink->enqueueChannelReply(envelope);}catch(...){return toolFailure("channel_delivery_failed",true);}
+}
 void PluginRuntime::tick(double dt){auto& a=*impl_;std::lock_guard guard(a.mutex);for(auto& [id,s]:a.loaded)try{s->plugin->tick(dt);}catch(...){a.host.emit({{"kind","plugin.error"},{"plugin",id}});}}
 void PluginRuntime::event(const PluginJson& value){auto& a=*impl_;std::lock_guard guard(a.mutex);for(auto& [id,s]:a.loaded)try{s->plugin->event(value);}catch(...){}}
 std::vector<PluginJson> PluginRuntime::takeEvents(){auto& a=*impl_;std::lock_guard guard(a.eventMutex);auto result=std::move(a.events);a.events.clear();return result;}
 PluginJson PluginRuntime::snapshots()const{auto& a=*impl_;std::lock_guard guard(a.mutex);auto result=a.saved;for(const auto& [id,s]:a.loaded)result[id]=s->plugin->snapshot();return result;}
 PluginJson PluginRuntime::liveSnapshots()const{auto& a=*impl_;std::lock_guard guard(a.mutex);auto result=PluginJson::object();for(const auto& [id,s]:a.loaded)result[id]=s->plugin->snapshot();return result;}
+PluginJson PluginRuntime::liveSnapshot(const std::string& id)const{auto& a=*impl_;std::lock_guard guard(a.mutex);const auto found=a.loaded.find(id);return found==a.loaded.end()?PluginJson::object():found->second->plugin->snapshot();}
 bool PluginRuntime::enabled(const std::string& id)const{auto& a=*impl_;std::lock_guard guard(a.mutex);return a.loaded.contains(id);}
 void PluginRuntime::restore(const PluginJson& value){auto& a=*impl_;std::lock_guard guard(a.mutex);if(!value.is_object())return;a.saved=value;for(auto& [id,s]:a.loaded)if(value.contains(id))s->plugin->restore(value.at(id));}
 void PluginRuntime::stop(){auto& a=*impl_;{std::lock_guard guard(a.mutex);a.stopped=true;} // Host stops/joins the model worker before reaching this boundary.

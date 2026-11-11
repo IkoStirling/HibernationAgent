@@ -2,7 +2,7 @@
         if(workshopBusy()||napcatActive())return false;
         if(!journalHealthy)return false;
         for(const auto& job:jobs()){
-            if(job.spec.kind=="role.solitude")continue;
+            if(intention_life::solitudeJob(job.spec.kind))continue;
             if(cfg.channel&&job.state!=JobState::Running&&job.spec.kind=="role.turn"){
                 const auto input=Json::parse(job.spec.payload);const auto request=get("ha.requests",input.value("request_id",std::string{}));
                 if(request.value.value("status",std::string{})=="abandoned")continue;
@@ -24,7 +24,7 @@
     void yieldBackground(std::int64_t now){
         auto held=get("ha.control","foreground-yield",Json::array());auto values=held.value;
         std::vector<std::string> pause;
-        for(const auto& job:jobs())if(job.spec.kind=="role.solitude"&&!job.pauseRequested&&
+        for(const auto& job:jobs())if(intention_life::solitudeJob(job.spec.kind)&&!job.pauseRequested&&
             (job.state==JobState::Running||job.state==JobState::Pending&&job.spec.dueAtMs<=now)){
             if(std::none_of(values.begin(),values.end(),[&](const auto& item){return item.at("id").template get<std::string>()==job.spec.id;}))
                 values.push_back({{"id",job.spec.id},{"token",job.runToken},{"original_due",job.spec.dueAtMs}});
@@ -42,7 +42,7 @@
         const auto snapshot=jobs();Json remaining=Json::array();
         for(const auto& item:held.value){
             const auto found=std::find_if(snapshot.begin(),snapshot.end(),[&](const auto& job){return job.spec.id==item.at("id").get<std::string>();});
-            if(found==snapshot.end()||found->spec.kind!="role.solitude"||found->runToken!=item.at("token")||found->state==JobState::Succeeded||found->state==JobState::Failed)continue;
+            if(found==snapshot.end()||!intention_life::solitudeJob(found->spec.kind)||found->runToken!=item.at("token")||found->state==JobState::Succeeded||found->state==JobState::Failed)continue;
             // A reschedule may have committed immediately before a crash. Its
             // changed due time is enough to acknowledge that completed step.
             if(found->state==JobState::Pending&&!found->pauseRequested&&found->spec.dueAtMs!=item.at("original_due"))continue;

@@ -6,7 +6,8 @@ class DesktopHost {
 public:
     DesktopHost(Application& app,std::string dashboardUrl);
     ~DesktopHost();
-    bool create();
+    bool create(bool startMinimized=false);
+    bool showNapcatLogin();
     void show();
     void openDashboard();
     bool pump();

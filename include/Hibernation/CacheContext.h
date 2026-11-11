@@ -1,12 +1,14 @@
 #pragma once
 #include <Hibernation/ContextControl.h>
 #include <map>
+#include <limits>
+#include <optional>
 namespace hibernation {
 // Keep the legacy event envelope and its evidence identities intact. Only its
 // wire ordering changes: already-authorized history precedes volatile snapshots.
 inline std::string cacheOrderedEvent(const nlohmann::json& event){
     nlohmann::ordered_json wire=nlohmann::ordered_json::object();
-    for(const auto* key:{"event_kind","conversation_delivery","authorized_context"})if(event.contains(key))wire[key]=event.at(key);
+    for(const auto* key:{"conversation_delivery","authorized_context","event_kind"})if(event.contains(key))wire[key]=event.at(key);
     for(auto it=event.begin();it!=event.end();++it)if(!wire.contains(it.key()))wire[it.key()]=it.value();
     return wire.dump();
 }
@@ -63,14 +65,44 @@ inline nlohmann::json cacheUsageJson(const ayt::inference::Usage& usage){
     return out;
 }
 inline void batchCacheUsage(nlohmann::json& batch,const std::string& role,const std::string& profile,const ayt::inference::Usage& usage){batch[role+"_profile_id"]=profile;batch[role+"_usage"]=cacheUsageJson(usage);}
+inline std::optional<std::uint64_t> reportedUsageCount(const nlohmann::json& value,const char* key){
+    const auto at=value.find(key);if(at==value.end()||!at->is_number_integer())return std::nullopt;
+    if(at->is_number_unsigned())return at->get<std::uint64_t>();
+    const auto count=at->get<std::int64_t>();return count>=0?std::optional<std::uint64_t>(static_cast<std::uint64_t>(count)):std::nullopt;
+}
 inline nlohmann::json addCacheUsage(nlohmann::json total,const nlohmann::json& usage){
-    const auto count=[](const nlohmann::json& v,const char* key)->std::optional<std::uint64_t>{const auto at=v.find(key);return at!=v.end()&&at->is_number_unsigned()?std::optional(at->get<std::uint64_t>()):std::nullopt;};
+    using Json=nlohmann::json;if(!total.is_object())total=Json::object();
+    const bool legacy=reportedUsageCount(total,"calls").value_or(0)>0&&!total.contains("input_reported_calls");
     for(const auto* key:{"calls","usage_reported_calls","cache_reported_calls","input_tokens","output_tokens","cached_input_tokens","uncached_input_tokens"})if(!total.contains(key))total[key]=std::uint64_t(0);
-    total["calls"]=total.at("calls").get<std::uint64_t>()+1;
-    const auto input=count(usage,"input_tokens"),output=count(usage,"output_tokens"),hit=count(usage,"cached_input_tokens"),miss=count(usage,"uncached_input_tokens");
-    if(input||output)total["usage_reported_calls"]=total.at("usage_reported_calls").get<std::uint64_t>()+1;
-    if(input)total["input_tokens"]=total.at("input_tokens").get<std::uint64_t>()+*input;if(output)total["output_tokens"]=total.at("output_tokens").get<std::uint64_t>()+*output;
-    if(hit&&miss){total["cache_reported_calls"]=total.at("cache_reported_calls").get<std::uint64_t>()+1;total["cached_input_tokens"]=total.at("cached_input_tokens").get<std::uint64_t>()+*hit;total["uncached_input_tokens"]=total.at("uncached_input_tokens").get<std::uint64_t>()+*miss;}
-    const double hits=total.at("cached_input_tokens").get<double>(),misses=total.at("uncached_input_tokens").get<double>();total["cache_hit_ratio"]=(hits+misses)>0?nlohmann::json(hits/(hits+misses)):nlohmann::json(nullptr);return total;
+    for(const auto* key:{"input_reported_calls","output_reported_calls","complete_usage_reported_calls"})if(!total.contains(key))total[key]=legacy?Json(nullptr):Json(std::uint64_t(0));
+    // A historical positive sum proves at least one observation, but an old zero
+    // does not prove the provider reported zero. Exact legacy report counts stay unknown.
+    if(!total.contains("input_tokens_known"))total["input_tokens_known"]=reportedUsageCount(total,"input_tokens").value_or(0)>0;
+    if(!total.contains("output_tokens_known"))total["output_tokens_known"]=reportedUsageCount(total,"output_tokens").value_or(0)>0;
+    const auto add=[&](const char* key,std::uint64_t amount){const auto previous=reportedUsageCount(total,key).value_or(0);if(amount>std::numeric_limits<std::uint64_t>::max()-previous){total[key]=std::numeric_limits<std::uint64_t>::max();total["counter_saturated"]=true;if(std::string_view(key)=="cached_input_tokens"||std::string_view(key)=="uncached_input_tokens")total["cache_counter_saturated"]=true;}else total[key]=previous+amount;};
+    const auto observed=[&](const char* key){if(!total.at(key).is_null())add(key,1);};
+    const auto input=reportedUsageCount(usage,"input_tokens"),output=reportedUsageCount(usage,"output_tokens"),hit=reportedUsageCount(usage,"cached_input_tokens"),miss=reportedUsageCount(usage,"uncached_input_tokens");
+    add("calls",1);if(input||output)add("usage_reported_calls",1);
+    if(input){add("input_tokens",*input);observed("input_reported_calls");total["input_tokens_known"]=true;}
+    if(output){add("output_tokens",*output);observed("output_reported_calls");total["output_tokens_known"]=true;}
+    if(input&&output)observed("complete_usage_reported_calls");
+    // Cache ratios use only paired provider cache counters, never a missing side as zero.
+    if(hit&&miss){add("cache_reported_calls",1);add("cached_input_tokens",*hit);add("uncached_input_tokens",*miss);}
+    const double hits=total.at("cached_input_tokens").get<double>(),misses=total.at("uncached_input_tokens").get<double>();total["cache_hit_ratio"]=!total.value("cache_counter_saturated",false)&&(hits+misses)>0?Json(hits/(hits+misses)):Json(nullptr);return total;
+}
+// Normal lifetime buckets stay bounded; a fixed extra bucket retains every later
+// reported call without accumulating an unbounded list of profile or purpose IDs.
+inline nlohmann::json addModelCacheUsage(nlohmann::json state,const std::string& profile,const std::string& purpose,const nlohmann::json& usage){
+    using Json=nlohmann::json;auto& connections=state["connections"];if(!connections.is_object())connections=Json::object();
+    constexpr const char* otherProfiles="$other_profiles";constexpr const char* otherPurposes="$other_purposes";
+    const auto profiles=connections.size()-(connections.contains(otherProfiles)?1:0);
+    const auto& profileKey=connections.contains(profile)||profiles<32?profile:std::string(otherProfiles);
+    auto& connection=connections[profileKey];if(!connection.is_object())connection=Json::object();
+    if(profileKey==otherProfiles)connection["aggregation"]="additional_profiles";
+    auto& groups=connection["purposes"];if(!groups.is_object())groups=Json::object();
+    const auto purposes=groups.size()-(groups.contains(otherPurposes)?1:0);
+    const auto& purposeKey=groups.contains(purpose)||purposes<24?purpose:std::string(otherPurposes);
+    groups[purposeKey]=addCacheUsage(groups.value(purposeKey,Json::object()),usage);
+    connection["total"]=addCacheUsage(connection.value("total",Json::object()),usage);return state;
 }
 }

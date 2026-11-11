@@ -43,7 +43,7 @@ public:
             else{if(!window_||now<window_||now-window_>=3600000){window_=now;used_=0;}if(used_>=maximum_)return toolFailure("reading_request_budget");++used_;}}
         if(!cached.is_null()){try{return present(std::move(cached));}catch(...){return toolFailure("reading_offset_range");}}
         ayt::net::http::Request request;request.origin=origin;request.path=path;request.method="GET";request.timeout=std::chrono::seconds(12);request.maxResponseBytes=source?2*1024*1024:256*1024;request.cancelled=cancel;
-        request.proxyOrigin=cfg.value("proxyOrigin",std::string{});request.useSystemProxy=cfg.value("useSystemProxy",true);request.headers={{"User-Agent","AliyatHibernation/0.3 (local desktop reading client; https://www.mediawiki.org/wiki/API:REST_API)"},{"Accept","application/json"}};
+        request.proxyOrigin=cfg.value("proxyOrigin",std::string{});request.useSystemProxy=cfg.value("useSystemProxy",false);request.headers={{"User-Agent","AliyatHibernation/0.3 (local desktop reading client; https://www.mediawiki.org/wiki/API:REST_API)"},{"Accept","application/json"}};
         const auto response=ayt::net::http::perform(request);if(cancel())return toolFailure("cancelled");
         if(!response||response.httpStatus!=200)return toolFailure(response.httpStatus==429?"reading_rate_limited":response.httpStatus==404?"reading_page_unavailable":"reading_unavailable",response.httpStatus!=404);
         try{

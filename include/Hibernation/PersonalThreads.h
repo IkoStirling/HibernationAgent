@@ -64,7 +64,7 @@ inline Json notice(Json before,const Json& proposal,const Json& sources,std::int
     return result;
 }
 inline Json context(const Json& record,std::int64_t revision){
-    Json result;for(const auto* field:{"kind","topic","note","stance","status","leaning","familiarity","created_ms","last_noticed_ms","basis"})if(record.contains(field))result[field]=record.at(field);
+    Json result;for(const auto* field:{"kind","topic","note","stance","status","leaning","familiarity","created_ms","last_noticed_ms","basis","intention_pause"})if(record.contains(field))result[field]=record.at(field);
     // Program-resolved provenance identities, never inferred from model prose.
     result["experience_contexts"]=Json::array();std::set<std::string> seen;
     const auto ledger=record.value("experience_evidence",Json::array());
@@ -85,7 +85,7 @@ inline bool pursuedBy(const Json& thread,const Json& queue){
     return false; // Completed/recent attempts are history, not current pursuit.
 }
 inline void backgroundIndex(Json& thread){
-    for(const auto* field:{"note","recent_changes","source_ids","created_ms","last_noticed_ms","attempts","basis"})thread.erase(field);
+    for(const auto* field:{"note","recent_changes","source_ids","created_ms","last_noticed_ms","attempts","basis","intention_pause"})thread.erase(field);
     thread["context_detail"]="background_index";thread["details_tool"]="self.observe";
 }
 }

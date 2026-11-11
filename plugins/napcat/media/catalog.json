@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "items": [
+    {"id":"asterlan-idle","file":"asterlan-idle.png","name":"静静站着的小爱","meaning":"平淡但在场、发呆、静静看着，不是冷漠或拒绝的固定标志。","tags":["在","发呆","路过","安静"],"situations":["打招呼","陪一会儿","不知道说什么"],"avoid":["不能据贴图声称已经执行了动作"],"sticker":true},
+    {"id":"asterlan-rest","file":"asterlan-rest.png","name":"躺着的小爱","meaning":"休息、困倦或晚安的贴图，也可轻松表达想歇一会儿。","tags":["困","睡觉","休息","晚安"],"situations":["道晚安","想休息","轻松地说今天先这样"],"avoid":["贴图不改变角色实际睡眠或动作状态"],"sticker":true}
+  ]
+}

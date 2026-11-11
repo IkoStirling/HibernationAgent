@@ -49,6 +49,7 @@ public:
     }
 };
 }
+std::shared_ptr<const ayt::storage::IRecordPayloadCodec> vaultCodecFromMasterKey(std::string_view key){return std::make_shared<VaultCodec>(key);}
 bool saveUserSecret(const std::filesystem::path& path,const std::string& value){
     DATA_BLOB input{static_cast<DWORD>(value.size()),reinterpret_cast<BYTE*>(const_cast<char*>(value.data()))},output{};
     if(!CryptProtectData(&input,L"Hibernation local secret",nullptr,nullptr,nullptr,CRYPTPROTECT_UI_FORBIDDEN,&output))return false;

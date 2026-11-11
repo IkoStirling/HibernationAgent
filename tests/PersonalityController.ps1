@@ -23,6 +23,7 @@ try{
  $after=Command snapshot;Check ($after.backend_pid-eq$before.backend_pid-and$after.turn_count-eq$before.turn_count+1) 'conversation continues without restarting the backend'
  $rebuilt=Command rebuild_dialogue;$preserved=Command snapshot
  Check ($rebuilt.rebuilt-and$rebuilt.history_retained-and$rebuilt.state_retained-and$preserved.dialogue_message_count-eq$after.dialogue_message_count-and$preserved.persona_version-eq$after.persona_version-and$preserved.stage_id-eq$after.stage_id) 'an explicit lab intervention rebuilds working dialogue while retaining actual history persona and stage'
+ $wake=Command wake;Check ($wake.ok-and$wake.result.circadian.phase-eq'idle') 'bounded administrator wake is available without arbitrary plugin execution'
  $manifest=Get-Content -LiteralPath (Join-Path $lab controller.json) -Raw|ConvertFrom-Json
  $id=[Guid]::NewGuid().ToString('N');$marker=Join-Path $root must-not-execute.txt
  $partial=Join-Path $lab ('inbox/'+$id+'.partial');@{controller_id=$manifest.controller_id;action='execute';text=('Set-Content '+$marker+' forbidden')}|ConvertTo-Json|Set-Content -LiteralPath $partial -Encoding utf8

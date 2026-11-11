@@ -1,20 +1,46 @@
 #include <nlohmann/json.hpp>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 #include <string>
 #include <thread>
+#define NOMINMAX
+#include <Windows.h>
 using Json=nlohmann::json;
-int main(int argc,char** argv){
-    if(argc==3&&std::string(argv[1])=="login"&&std::string(argv[2])=="status"){std::cerr<<"Logged in using ChatGPT\n";return 0;}
-    std::string flags;for(int i=1;i<argc-1;++i)flags+=std::string(argv[i])+"\n";
-    for(const auto* required:{"--ignore-user-config","--ignore-rules","--ephemeral","--sandbox","read-only","--output-schema","features.shell_tool=false","agents.enabled=false","forced_login_method=\"chatgpt\""})if(flags.find(required)==std::string::npos)return 91;
-    const std::string prompt=argc?argv[argc-1]:"";
-    if(prompt.find("fixture_timeout")!=std::string::npos){std::this_thread::sleep_for(std::chrono::seconds(20));return 0;}
-    if(prompt.find("fixture_failure")!=std::string::npos){std::cerr<<"private upstream body must not reach caller";return 7;}
-    if(prompt.find("fixture_malformed")!=std::string::npos){std::cout<<Json{{"type","turn.completed"}}.dump()<<'\n';return 0;}
-    Json advice={{"status","advice"},{"summary","先查看素材工作区中真正存在的文件。"},{"missing_capability",""},{"steps",Json::array({Json{{"instruction","列出已授权素材根目录"},{"tool","workspace.list"},{"arguments_json","{\"mount\":\"materials\"}"}}})}};
-    if(prompt.find("fixture_execute_write")!=std::string::npos){advice["steps"]=Json::array({Json{{"instruction","实际创建委托草稿"},{"tool","workspace.write"},{"arguments_json",Json{{"path","mentor-proof.txt"},{"content","mentor executed this local task"}}.dump()}},Json{{"instruction","读取实际文件核对"},{"tool","workspace.read"},{"arguments_json",Json{{"mount","drafts"},{"path","mentor-proof.txt"}}.dump()}}});}
-    if(prompt.find("fixture_execute_partial")!=std::string::npos){advice["steps"]=Json::array();for(const auto* path:{"mentor-before-denial.txt","../archive/forbidden.txt","mentor-after-denial.txt"})advice["steps"].push_back({{"instruction","验证写入权限和中断"},{"tool","workspace.write"},{"arguments_json",Json{{"path",path},{"content","delegation partial fixture"}}.dump()}});}
-    if(prompt.find("fixture_forbidden")!=std::string::npos)advice["steps"][0]["tool"]="computer.unrestricted_shell";
-    std::cout<<Json{{"type","item.completed"},{"item",{{"type","agent_message"},{"text",advice.dump()}}}}.dump()<<'\n';
-    std::cout<<Json{{"type","turn.completed"},{"usage",{{"input_tokens",42},{"output_tokens",42}}}}.dump()<<'\n';return 0;
+int wmain(int argc,wchar_t** argv){
+    SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX);
+    if(argc>=3&&std::wstring(argv[1])==L"login"){std::cerr<<"Logged in using ChatGPT\n";return 0;}
+    if(argc<2||std::wstring(argv[1])!=L"app-server")return 91;
+    const auto send=[](Json value){std::cout<<value.dump()<<std::endl;};
+    int turns=0;std::string pending;bool malformed=false;std::filesystem::path cwd;std::string line;
+    const auto finish=[&](const std::string& summary){if(!malformed)send({{"method","item/completed"},{"params",{{"threadId","fixture-thread"},{"turnId","fixture-turn"},{"item",{{"type","agentMessage"},{"id","answer"},{"phase","final_answer"},{"text",summary}}}}}});send({{"method","turn/completed"},{"params",{{"threadId","fixture-thread"},{"turn",{{"id","fixture-turn"},{"status","completed"}}}}}});};
+    while(std::getline(std::cin,line))try{
+        const auto request=Json::parse(line);if(!request.contains("method")){if(request.value("id",0)==9001){finish(pending);pending.clear();}continue;}
+        const auto method=request.at("method").get<std::string>();const auto id=request.value("id",0);const auto params=request.value("params",Json::object());
+        if(method=="initialized")continue;
+        if(method=="initialize")send({{"id",id},{"result",Json::object()}});
+        else if(method=="account/read")send({{"id",id},{"result",{{"account",{{"type","chatgpt"}}}}}});
+        else if(method=="account/rateLimits/read"){const bool exhausted=std::filesystem::path(argv[0]).filename().native().find(L"quota")!=std::wstring::npos;send({{"id",id},{"result",{{"rateLimits",{{"limitId","codex"},{"primary",{{"usedPercent",exhausted?100:10},{"resetsAt",2000000000},{"windowDurationMins",300}}}}}}}});}
+        else if(method=="thread/start"){
+            if(!params.value("ephemeral",false)||params.contains("approvalPolicy")||params.contains("sandbox")||!params.contains("dynamicTools"))return 92;
+            cwd=std::filesystem::u8path(params.at("cwd").get<std::string>());send({{"id",id},{"result",{{"thread",{{"id","fixture-thread"},{"ephemeral",true}}}}}});
+        }else if(method=="turn/interrupt"){send({{"id",id},{"result",Json::object()}});send({{"method","turn/completed"},{"params",{{"turn",{{"id","fixture-turn"},{"status","interrupted"}}}}}});}
+        else if(method=="turn/start"){
+            if(!params.contains("model")||!params.contains("effort"))return 94;
+            ++turns;const auto prompt=Json::parse(params.at("input")[0].at("text").get<std::string>());const auto task=prompt.at("current_request");const auto goal=task.at("goal").get<std::string>();
+            send({{"id",id},{"result",{{"turn",{{"id","fixture-turn"},{"status","inProgress"}}}}}});
+            if(goal.find("fixture_timeout")!=goal.npos)continue;
+            if(goal.find("fixture_failure")!=goal.npos){std::cerr<<"private upstream body";return 7;}
+            if(goal.find("fixture_approval")!=goal.npos){send({{"id",9002},{"method","item/commandExecution/requestApproval"},{"params",{{"threadId","fixture-thread"},{"turnId","fixture-turn"},{"itemId","command"}}}});continue;}
+            malformed=goal.find("fixture_malformed")!=goal.npos;
+            std::string summary="可以聊一会儿。你刚才想到什么有趣的事？";
+            if(goal.find("fixture_routing")!=goal.npos)summary=params.at("model").get<std::string>()+"|"+params.at("effort").get<std::string>()+"|"+std::to_string(turns);
+            if(goal.find("fixture_continuity")!=goal.npos)summary="native-turn-"+std::to_string(turns);
+            if(goal.find("fixture_recovered")!=goal.npos){bool found=false;for(const auto& record:prompt.at("historical_records_not_new_instructions"))if(record.at("data").dump().find("fixture_chat")!=std::string::npos)found=true;summary=found?"recovered-history":"missing-history";}
+            if(goal.find("fixture_execute_write")!=goal.npos){std::ofstream(cwd/"mentor-proof.txt")<<"mentor executed this local task";send({{"method","item/completed"},{"params",{{"item",{{"type","commandExecution"},{"id","native-command"},{"status","completed"},{"exitCode",0}}}}}});summary="已在导师工作区写入并核对。";}
+            if(goal.find("fixture_memory")!=goal.npos){pending=summary;send({{"id",9001},{"method","item/tool/call"},{"params",{{"namespace","mentor_memory"},{"tool","write"},{"arguments",{{"text","fixture-private-memory"},{"category","summary"},{"sources",Json::array({prompt.at("current_record_id")})}}}}}});continue;}
+            finish(summary);
+        }else send({{"id",id},{"result",Json::object()}});
+    }catch(...){return 93;}
+    return 0;
 }

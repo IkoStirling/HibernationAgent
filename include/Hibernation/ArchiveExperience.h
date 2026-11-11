@@ -18,7 +18,7 @@ inline nlohmann::json archiveWorldExperience(const nlohmann::json& record){
     const auto& data=record.at("result");const auto kind=record.value("kind",std::string{});
     const bool legacyApplied=legacyAppliedPuzzleRecord(record);
     if(kind!="tool_observation"&&!legacyApplied)return nullptr;
-    static const std::set<std::string> concrete={"pocket.start","pocket.press","pocket.leave","pocket.observe","atelier.write","atelier.append","atelier.read","reading.open","workspace.read","workspace.write","workspace.edit","habitat.create","habitat.act","habitat.arrange","habitat.observe","canteen.observe","workspace.view_image","computer.screenshot","television.observe","television.observe_sequence"};
+    static const std::set<std::string> concrete={"pocket.start","pocket.press","pocket.leave","pocket.observe","atelier.write","atelier.append","atelier.read","reading.open","workspace.read","workspace.write","workspace.edit","habitat.create","habitat.act","habitat.arrange","habitat.observe","canteen.observe","workspace.view_image","computer.screenshot","television.observe","television.observe_sequence","television.page","video.web_observe","video.storyboard","video.zoom","video.watch_next"};
     if(!concrete.contains(tool)&&!pixelMutationTool(tool)&&!pixelObservationTool(tool))return nullptr;
     Json facts=Json::object();
     if(tool=="canteen.observe"){for(const auto* field:{"job","shelf","recent","ready_count","delivery_pending"})if(data.contains(field))facts[field]=data.at(field);}
@@ -43,7 +43,8 @@ inline nlohmann::json archiveWorldExperience(const nlohmann::json& record){
     // Exact text is separate from bounded metadata. A historical image receipt
     // is not another image delivery. Failed writes never enter this branch.
     std::string text,scope;
-    if(tool=="reading.open"){text=data.value("text",std::string{});scope=data.value("scope",std::string{})=="article_source_chunk"?"observed_article_source_chunk":"observed_article_excerpt";}
+    if(tool=="television.page"){text=data.value("text",std::string{});scope="observed_website_dom_chunk";}
+    else if(tool=="reading.open"){text=data.value("text",std::string{});scope=data.value("scope",std::string{})=="article_source_chunk"?"observed_article_source_chunk":"observed_article_excerpt";}
     else if(tool=="workspace.read"){text=data.value("content",std::string{});scope="observed_file_chunk";}
     else if(tool=="atelier.read"){text=data.value("piece",Json::object()).value("content",std::string{});scope="observed_authored_piece";}
     else if((tool=="atelier.write"||tool=="atelier.append")&&data.value("written",false)&&record.contains("written_content")&&record.at("written_content").is_string()){

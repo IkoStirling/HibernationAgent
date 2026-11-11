@@ -1,6 +1,7 @@
 #pragma once
 #include <Hibernation/ActivityPlan.h>
 #include <Hibernation/DropDefinition.h>
+#include <Hibernation/LocalForaging.h>
 #include <algorithm>
 #include <optional>
 #include <set>
@@ -10,8 +11,9 @@ inline Json emptyActivityLibrary(){return {{"version",1},{"items",Json::array()}
 inline std::optional<Json> reusableActivity(const Json& value){
     if(!value.is_object())return {};
     const auto kind=value.value("kind",std::string{});
-    if(kind!="wait"&&kind!="pose"&&kind!="move_to"&&kind!="eat_nearest"&&kind!="look_nearest"&&kind!="rest")return {};
+    if(kind!="wait"&&kind!="pose"&&kind!="move_to"&&kind!="eat_nearest"&&kind!="look_nearest"&&kind!="rest"&&kind!="gather")return {};
     Json command={{"kind",kind},{"seconds",value.value("seconds",0.0)}};
+    if(kind=="gather"){if(!value.contains("ingredient_id")||value.at("ingredient_id")=="")return {};command["ingredient_id"]=value.at("ingredient_id");command["count"]=1;command["destination"]="backpack";}
     if(kind=="pose")command["state"]=value.value("state",std::string{});
     if(kind=="move_to"){if(!value.contains("x")||!value.contains("y"))return {};command["x"]=value.at("x");command["y"]=value.at("y");}
     if(!validateActivities(Json{{"version",1},{"commands",Json::array({command})}}.dump()).ok)return {};
@@ -23,6 +25,7 @@ inline Json retainActivity(Json library,const Json& completed,const std::string&
     std::erase_if(items.get_ref<Json::array_t&>(),[&](const auto& item){return now-item.value("completed_ms",std::int64_t(0))>7LL*86400000||item.value("signature",std::string{})!=signature;});
     const auto command=reusableActivity(completed);
     if(completed.value("status",std::string{})!="completed"||!command)return library;
+    if(command->at("kind")=="gather"&&completed.value("source",std::string{})=="local-foraging")return library; // Incidental program behavior must not manufacture a personal preference.
     const auto key=command->dump();
     std::erase_if(items.get_ref<Json::array_t&>(),[&](const auto& item){return item.at("command")==*command;});
     items.push_back({{"key",key},{"command",*command},{"signature",signature},{"from_state",completed.value("from_state",std::string("idle"))},{"source_activity",completed.value("id",std::string{})},{"completed_ms",completed.value("ended_ms",now)},{"uses",0}});
@@ -39,6 +42,7 @@ inline Json reusableCandidates(const Json& library,const Json& widget,const Json
         const auto command=reusableActivity(item.value("command",Json()));if(!command)continue;
         const auto kind=command->at("kind").get<std::string>();if(std::find(available.begin(),available.end(),kind)==available.end())continue;
         const auto from=item.value("from_state",std::string("idle"));if(from!=state&&!(stable(from)&&stable(state)))continue;
+        if(kind=="gather")continue; // Requires inventory/stock checks in localForagingOpportunity.
         if(kind=="rest"&&energy>.65)continue;
         if(kind=="pose"){
             const auto pose=command->at("state").get<std::string>();if((pose=="breathing"&&energy>.4)||(pose=="resting"&&energy>.65))continue;

@@ -5,6 +5,9 @@
 namespace hibernation::session {
 using Json=nlohmann::json;
 using Message=ayt::inference::Message;
+inline Json actorControl(const ContextControl& control){
+    auto value=control.describe();for(const auto* key:{"reviewPolicy","reviewReasoningEffort","reviewInitialTokens","reviewLayout","reviewHistoryBytes","reviewReadOnlyTools","reviewSilence","reviewAttempts","backgroundProjection"})value.erase(key);return value;
+}
 inline bool referenceCanRead(const Json& ref){
     const auto access=ref.at("access").get<std::string>();
     if(access!="content"&&access!="narrative")throw std::runtime_error("format_changed");
@@ -14,6 +17,13 @@ inline std::size_t bytes(const std::vector<Message>& messages){
     std::size_t n=0;for(const auto& m:messages){n+=m.role.size()+m.text.size()+m.toolCallId.size();for(const auto& c:m.toolCalls)n+=c.id.size()+c.name.size()+c.arguments.size();}return n;
 }
 inline bool images(const std::vector<Message>& messages){for(const auto& m:messages)if(!m.images.empty())return true;return false;}
+inline std::vector<Message> textOnlyHistory(std::vector<Message> messages){
+    for(auto& message:messages)if(!message.images.empty()){
+        const auto count=message.images.size();message.images.clear();auto value=Json::parse(message.text,nullptr,false);
+        const Json receipt={{"image_bytes_replayed",false},{"original_attached_images",count},{"meaning","历史图像本次未重发；保留当时的文字、读取回执与来源，不表示从未看过。"}};
+        if(value.is_object()){value["historical_media"]=receipt;message.text=value.dump();}else message.text=Json{{"historical_text",message.text},{"historical_media",receipt}}.dump();
+    }return messages;
+}
 inline Json encode(const std::vector<Message>& messages){
     Json result=Json::array();for(const auto& m:messages){
         if(!m.images.empty())throw std::runtime_error("projection_images");
@@ -73,7 +83,7 @@ struct Prepared {
     bool enabled=false,reused=false,aborted=false,captured=false,failureInvalidated=false;
     std::string key,epoch,compatibility,reason="disabled";
     std::size_t eventIndex=1,retainedBytes=0,maxBytes=131072,maxTurns=16;
-    Json head=Json::object(),fullFrame=Json::object(),previousFrame=Json::object();
+    Json head=Json::object(),fullFrame=Json::object(),previousFrame=Json::object(),compatibilityParts=Json::object(),compatibilityChanges=Json::array();
     std::vector<Message> capturedMessages;
     // Failure continuation contains program-confirmed facts only; never copy
     // the actor's rejected prose, repair messages or reviewer guidance here.

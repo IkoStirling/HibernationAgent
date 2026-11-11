@@ -9,9 +9,9 @@
 #include <vector>
 namespace hibernation {
 inline bool replayProtectedOperation(const std::string& tool){
-    if(tool=="napcat.capture_and_send"||tool=="napcat.send_image")return true;
-    static const std::set<std::string> names={"canteen.cook","canteen.request_supplies","canteen.cancel","canteen.take","canteen.discard","workspace.write","workspace.edit","activity.enqueue","habitat.create","habitat.act","habitat.arrange","atelier.write","atelier.append","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel","schedule.create","schedule.update","schedule.cancel","memory.remember","memory.revise","reflection.open","reflection.resolve","self.notice","self.close","state.propose","stage.propose","computer.open_application","television.open","television.open_page"};
-    return tool=="continuity.note"||names.contains(tool)||(tool.starts_with("task.")&&tool!="task.status")||pixelMutationTool(tool)||tool=="state.appraise"||tool=="mentor.execute";
+    if(tool=="television.login"||tool=="people.note"||tool=="shell.run"||tool=="napcat.capture_and_send"||tool=="napcat.send_image"||tool=="napcat.media_send")return true;
+    static const std::set<std::string> names={"canteen.cook","canteen.request_supplies","canteen.cancel","canteen.take","canteen.discard","workspace.write","workspace.edit","activity.enqueue","habitat.create","habitat.act","habitat.arrange","atelier.write","atelier.append","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel","rhythm.wake","rhythm.configure","schedule.create","schedule.update","schedule.cancel","memory.remember","memory.revise","reflection.open","reflection.resolve","self.notice","self.close","state.propose","stage.propose","computer.open_application","television.open","television.open_page"};
+    return tool=="continuity.note"||names.contains(tool)||(tool.starts_with("task.")&&tool!="task.status")||pixelMutationTool(tool)||tool=="state.appraise"||tool=="mentor.execute"||tool=="development.request";
 }
 class OperationReplay {
     using Json=nlohmann::json;

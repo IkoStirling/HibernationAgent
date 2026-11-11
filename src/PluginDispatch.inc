@@ -1,6 +1,10 @@
     Json lastSuppliesStatus=nullptr;
+    std::int64_t nextVideoPlayback=0;
     std::optional<bool> lastCanteenAvailability;
     void processPluginEvents(std::int64_t now){const bool canteenEnabled=plugins->enabled("canteen");if(!lastCanteenAvailability||*lastCanteenAvailability!=canteenEnabled){lastCanteenAvailability=canteenEnabled;plugins->event({{"kind","runtime.canteen.available"},{"enabled",canteenEnabled}});}const auto kitchen=plugins->liveSnapshots().value("canteen",Json::object()).value("current",Json::object());const Json supplyStatus={{"kind","runtime.supplies.status"},{"available",canteenEnabled&&!kitchen.contains("issue")},{"menu",kitchen.value("menu",Json::array())},{"pantry",kitchen.value("pantry",Json::array())}};if(supplyStatus!=lastSuppliesStatus){lastSuppliesStatus=supplyStatus;plugins->event(supplyStatus);}
+        if(plugins->enabled("video-analysis")&&now>=nextVideoPlayback){nextVideoPlayback=now+250;auto playback=plugins->liveSnapshot("television");if(desktop&&playback.value("mode",std::string{})=="webpage"){
+            const auto actual=desktop->webVideoPlayback();if(!actual.empty()&&now-actual.value("sampled_at_ms",std::int64_t(0))<=3000)playback=actual;else playback["state"]="unavailable";
+        }plugins->event({{"kind","runtime.television.playback"},{"playback",playback}});}
         for(auto event:plugins->takeEvents()){
             if(event.value("plugin",std::string{})=="habitat"&&event.value("kind",std::string{})=="habitat.collection.request"){plugins->commitCollection(event.value("token",std::string{}));continue;}
             if(event.value("plugin",std::string{})=="canteen"&&event.value("kind",std::string{})=="canteen.inventory_consumed")plugins->event({{"kind","runtime.supplies.consumed"},{"nutrition",event.value("nutrition",0.0)}});
@@ -21,7 +25,7 @@
             trackSpeech(event);
             if(event.value("kind","")=="speech.failed")speechIssue="语音未能播放，请在管理页检查声音设置。";
             if(event.value("kind","")=="speech.started")speechIssue.clear();
-            if(event.value("kind","")=="weather.observed")life.weather(event.at("temperature"),event.at("weather_code"),event.value("observed_ms",now));
+            if(event.value("kind","")=="weather.observed")observeWeather(event.at("temperature"),event.at("weather_code"),event.value("observed_ms",now));
             plugins->event(event);
             const auto transientKind=event.value("kind",std::string{});
             if(transientKind=="speech.progress"||transientKind=="widget.position"||transientKind=="rhythm.pose.request"||transientKind=="rhythm.pose.release"||transientKind=="widget.rest_started"||transientKind=="widget.rest_interrupted")continue; // Pose acknowledgements, playback and position telemetry are ephemeral.

@@ -26,6 +26,12 @@
   "idleBeforeSolitudeMs": 120000,
   "reflectOnActivities": false,
   "maxStartsPerHour": 600,
+  "backgroundBudget": {
+    "enabled": true,
+    "maxCallsPerDay": 120,
+    "maxInputTokensPerDay": 500000,
+    "autoEconomy": false
+  },
   "profiles": [
     {
       "id": "mock",
@@ -33,7 +39,8 @@
       "protocol": "mock",
       "enabled": true,
       "timeoutMs": 20000,
-      "maxOutputTokens": 2048
+      "maxOutputTokens": 2048,
+      "useSystemProxy": false
     },
     {
       "id": "local",
@@ -47,7 +54,8 @@
       "supportsJsonSchema": false,
       "legacyMaxTokens": true,
       "timeoutMs": 30000,
-      "maxOutputTokens": 2048
+      "maxOutputTokens": 2048,
+      "useSystemProxy": false
     },
     {
       "id": "remote",
@@ -60,7 +68,8 @@
       "credentialEnvironment": "HIBERNATION_MODEL_KEY",
       "supportsJsonSchema": false,
       "timeoutMs": 30000,
-      "maxOutputTokens": 2048
+      "maxOutputTokens": 2048,
+      "useSystemProxy": false
     }
   ],
   "maxToolRounds": 6,
@@ -70,6 +79,11 @@
       "maximumDocuments": 32,
       "reducedMotion": false,
       "topmost": true
+    },
+    "speech-style": {
+      "enabled": false,
+      "activePreset": "natural",
+      "allowModelSwitch": false
     },
     "style-lora": {
       "enabled": false,
@@ -89,12 +103,22 @@
       "allowExecution": true,
       "backend": "chatgpt",
       "codexExecutable": "",
-      "model": "",
-      "useSystemProxy": true,
+      "pythonExecutable": "",
+      "model": "gpt-6.1-sol",
+      "useSystemProxy": false,
       "proxyOrigin": "",
       "maxRequestsPerHour": 12,
       "cooldownSeconds": 60,
-      "timeoutSeconds": 35
+      "timeoutSeconds": 120,
+      "reasoningEffort": "high",
+      "routingMode": "fixed",
+      "casualModel": "gpt-6.1-sol",
+      "casualEffort": "low",
+      "normalModel": "gpt-6.1-sol",
+      "normalEffort": "medium",
+      "complexModel": "gpt-6.1-sol",
+      "complexEffort": "high",
+      "quotaFallback": "chat_web"
     },
     "pocket": {
       "enabled": false,
@@ -123,13 +147,14 @@
       "enabled": false,
       "language": "zh",
       "maxRequestsPerHour": 60,
-      "useSystemProxy": true,
+      "useSystemProxy": false,
       "autonomousReading": false
     },
     "television": {
       "enabled": false,
       "volume": 65,
-      "topmost": true
+      "topmost": true,
+      "browserUseSystemProxy": false
     },
     "tts": {
       "maxSeconds": 60,
@@ -180,7 +205,10 @@
       "reactionCooldownMs": 8000,
       "reactionProbability": 0.45,
       "autonomousMode": false,
-      "autonomyIdleSeconds": 30
+      "autonomyIdleSeconds": 30,
+      "autonomyPursuitEnabled": true,
+      "autonomyPursuitCooldownSeconds": 120,
+      "autonomyPursuitMaxSeconds": 90
     },
     "canteen": {
       "enabled": false,
@@ -188,12 +216,27 @@
       "automaticIntervalSeconds": 900,
       "supplyIntervalSeconds": 3600,
       "shelfLifeSeconds": 1800
+    },
+    "video-analysis": {
+      "nodeExecutable": "",
+      "ffmpegExecutable": "",
+      "ffprobeExecutable": "",
+      "enabled": false,
+      "watchWindowSeconds": 30,
+      "asrEnabled": false,
+      "asrEndpoint": "",
+      "asrModel": "",
+      "asrKeyEnv": "",
+      "asrLanguage": "zh"
     }
   },
   "computer": {
     "enabled": true,
     "allowScreenCapture": false,
-    "readRoots": []
+    "readRoots": [],
+    "autonomousObservationEnabled": false,
+    "autonomousObservationIntervalSeconds": 300,
+    "limitedShellEnabled": false
   },
   "remoteStorage": {
     "enabled": false,
@@ -204,7 +247,8 @@
     "enabled": false,
     "retainConversationFocus": false,
     "profileId": "",
-    "maxRewrites": 2
+    "maxRewrites": 2,
+    "roleOnly": false
   },
   "memoryWorkshop": {
     "enabled": true,
@@ -215,5 +259,21 @@
     "enabled": true,
     "maxActive": 3,
     "maxSteps": 24
+  },
+  "cognition": {
+    "enabled": false,
+    "attention": true,
+    "observations": true,
+    "dwellMs": 5000,
+    "resumeMinutes": 15,
+    "observationCooldownMs": 120000
+  },
+  "desktopIntegration": {
+    "napcat": {
+      "directory": "",
+      "qqExecutable": "",
+      "webuiOrigin": "",
+      "autoStart": false
+    }
   }
 }

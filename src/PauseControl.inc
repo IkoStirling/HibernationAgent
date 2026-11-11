@@ -55,7 +55,7 @@
                 nextActivityFill=now;nextActivityTick=now;nextReactionFill=now+2000;
             }
         }
-        if(pause){reactionGenerator.cancel();cancelActivities(runtimeOffline?"offline":"paused");}
+        if(pause){reactionGenerator.cancel();cancelActivities(runtimeOffline?"offline":"paused");cancelRoutedReplies(runtimeOffline?"offline":"paused");}
         if(plugins)plugins->event({{"kind","runtime.paused"},{"paused",pause},{"offline",runtimeOffline.load()},{"balance_offline",value.value("balance_offline",false)}});
         nextWorkerPoll=0;return value;
     }

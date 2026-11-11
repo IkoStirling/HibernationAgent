@@ -193,7 +193,8 @@ def main():
     sys.dont_write_bytecode = True
     # Optional packages may print notices at import; stdout is a WAV-only protocol.
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        runtime = json.loads((Path(__file__).parent / "runtime.json").read_text(encoding="utf-8-sig"))
+        runtime = (unprotect(sys.argv[2]) if len(sys.argv) == 3 and sys.argv[1] == "--serve"
+                   else json.loads((Path(__file__).parent / "runtime.json").read_text(encoding="utf-8-sig")))
         sys.path.insert(0, runtime["modules"])
         if sys.argv[1:] == ["--check"]:
             import numpy, pypinyin, pyopenjtalk

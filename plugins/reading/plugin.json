@@ -1,18 +1,64 @@
 {
-  "id":"reading",
-  "name":"阅读角",
-  "description":"让角色查找百科条目、阅读导言或分段正文源文本，保留实际范围与来源，并形成自己的联想。",
-  "version":"0.3.0",
-  "api_version":2,
-  "library":"Hibernation_Reading.dll",
-  "dependencies":[],
-  "capabilities":["reference.search","reference.read"],
-  "settings_ui":[
-    {"key":"language","label":"默认阅读语言","type":"select","default":"zh","options":[["zh","中文"],["en","英文"],["ja","日文"]]},
-    {"key":"maxRequestsPerHour","label":"每小时联网读取次数上限","type":"number","default":60,"min":6,"max":1200,"step":1},
-    {"key":"autonomousReading","label":"自主控制时允许自己搜索和阅读","type":"toggle","default":false},
-    {"key":"useSystemProxy","label":"使用系统手动代理","type":"toggle","default":true},
-    {"key":"serviceOrigin","label":"兼容百科服务地址（留空使用维基百科）","type":"text","default":"","maxLength":256}
+  "id": "reading",
+  "name": "阅读角",
+  "description": "让角色查找百科条目、阅读导言或分段正文源文本，保留实际范围与来源，并形成自己的联想。",
+  "version": "0.3.0",
+  "api_version": 2,
+  "library": "Hibernation_Reading.dll",
+  "dependencies": [],
+  "capabilities": [
+    "reference.search",
+    "reference.read"
   ],
-  "settings_note":"默认关闭。角色可搜索、读导言，或用detail=source分段阅读正文源文本（可能含Wiki标记）；自主阅读需另行开启。没有独立联网定时器，不下载图片或执行网页指令。读完源文本的一段不等于浏览或读完整篇网页。只有查询词和条目会发送给所选百科服务。"
+  "settings_ui": [
+    {
+      "key": "language",
+      "label": "默认阅读语言",
+      "type": "select",
+      "default": "zh",
+      "options": [
+        [
+          "zh",
+          "中文"
+        ],
+        [
+          "en",
+          "英文"
+        ],
+        [
+          "ja",
+          "日文"
+        ]
+      ]
+    },
+    {
+      "key": "maxRequestsPerHour",
+      "label": "每小时联网读取次数上限",
+      "type": "number",
+      "default": 60,
+      "min": 6,
+      "max": 1200,
+      "step": 1
+    },
+    {
+      "key": "autonomousReading",
+      "label": "自主控制时允许自己搜索和阅读",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "key": "useSystemProxy",
+      "label": "使用系统手动代理",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "key": "serviceOrigin",
+      "label": "兼容百科服务地址（留空使用维基百科）",
+      "type": "text",
+      "default": "",
+      "maxLength": 256
+    }
+  ],
+  "settings_note": "默认关闭。角色可搜索、读导言，或用detail=source分段阅读正文源文本（可能含Wiki标记）；自主阅读需另行开启。没有独立联网定时器，不下载图片或执行网页指令。读完源文本的一段不等于浏览或读完整篇网页。只有查询词和条目会发送给所选百科服务。"
 }

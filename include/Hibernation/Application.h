@@ -23,6 +23,8 @@ struct ProposalContext {
     std::map<std::string,Source> sources;
     // Provenance of private views, never authority for memory/stage proposals.
     std::map<std::string,Source> narrativeSources;
+    std::string personalPursuitId,personalPursuitDomain;std::int64_t personalPursuitRevision=0,personalPursuitExpiresMs=0;
+    std::string screenGlanceAdmission;
     std::string scheduleId,scheduleOccurrence;
     std::string taskId,createdTaskId,channelInputId; int taskStep=0;
     Json channelIdentity=Json::object();
@@ -37,12 +39,17 @@ bool safeRelative(std::string_view path);
 struct Profile {std::string id,label;bool enabled=true;ayt::inference::ModelProfile model;std::uint32_t maxOutputTokens=2048;};
 // Native adapters construct this immutable policy; messages/config JSON cannot.
 struct ChannelPolicy {
+    Json expressionPreference=Json::object();
     Json pricing=Json::object();
     std::string selectedProfile;
     Json identity=Json::object(),roleState=Json::object(),stage=Json::object();
     std::function<bool(int)> reserveModelCalls;
     Json desktopTools=Json::array(),desktopCapabilities=Json::object(),body=Json::object();
     bool sharedOwner=false;
+    bool circadianHold=false;
+    Json circadianState=Json::object();
+    Json sharedMind=Json::object();
+    Json sharedPeople=Json::object(),sharedTasks=Json{{"tasks",Json::array()},{"enabled",false}};
     Json sharedUnderstanding=Json::object(),sharedPersonal=Json::object(),sharedFocus=Json::object(),sharedFocusSource=Json::object(),sharedQuestions=Json::array(),sharedHiddenSources=Json::array(),sharedDialogueExcluded=Json::array();
     std::filesystem::path sharedMemoryRoot;
     std::function<Json(const std::string&,const Json&,const ProposalContext&,const std::string&,const std::function<bool()>&)> invokeDesktop;
@@ -60,12 +67,16 @@ struct Config {
     Json skills={{"enabled",true},{"useBuiltins",true},{"grants",Json::array()}};
     Json computer={{"enabled",true},{"allowScreenCapture",false},{"readRoots",Json::array()}};
     Json plugins=Json::object(),remoteStorage={{"kind","none"},{"url",""},{"enabled",false}};
+    Json desktopIntegration=Json::object();
     Json frontend={{"startupAnimation",true},{"reducedMotion",false}};
     Json memoryWorkshop={{"enabled",true},{"backupRoot",""}},dashboardLayout=Json::object();
     Json contextControl=Json::object();
+    Json backgroundBudget={{"enabled",true},{"maxCallsPerDay",120},{"maxInputTokensPerDay",500000}};
+    Json cognition=Json::object();
     Json continuousTasks={{"enabled",true},{"maxActive",3},{"maxSteps",24}};
     std::size_t maxToolRounds=6;
     bool reviewEnabled=false;
+    bool reviewRoleOnly=false;
     bool retainConversationFocus=false;
     bool reflectOnActivities=false;
     std::string reviewProfileId;

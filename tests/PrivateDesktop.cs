@@ -65,19 +65,30 @@ public sealed class PrivateDesktop : IDisposable {
         }catch(Exception e){failure=e;}finally{if(old!=IntPtr.Zero)SelectObject(dc,old);if(bitmap!=IntPtr.Zero)DeleteObject(bitmap);if(dc!=IntPtr.Zero)DeleteDC(dc);}});
         thread.Start();thread.Join();if(failure!=null)throw failure;return result;
     }
+    [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")]static extern IntPtr GetWindowLongPtr(IntPtr window,int index);
+    [DllImport("user32.dll")]static extern bool SetWindowPos(IntPtr window,IntPtr after,int x,int y,int width,int height,uint flags);
+    public bool IsTopmost(IntPtr window){uint pid;GetWindowThreadProcessId(window,out pid);if(pid!=Child.Id)throw new ArgumentException("owned_window_required");return (GetWindowLongPtr(window,-20).ToInt64()&8)!=0;}
+    public void DemoteOwnedOverlay(IntPtr window){uint pid;GetWindowThreadProcessId(window,out pid);if(pid!=Child.Id)throw new ArgumentException("owned_window_required");Exception error=null;var t=new Thread(()=>{try{if(!SetThreadDesktop(desktop))throw new Win32Exception(Marshal.GetLastWin32Error());if(!SetWindowPos(window,new IntPtr(-2),0,0,0,0,0x13))throw new Exception("owned_demote_failed");}catch(Exception e){error=e;}});t.Start();t.Join();if(error!=null)throw error;}
     public IntPtr Find(string className){IntPtr found=IntPtr.Zero;EnumDesktopWindows(desktop,(window,context)=>{uint pid;GetWindowThreadProcessId(window,out pid);if(pid==Child.Id){var name=new StringBuilder(128);GetClassName(window,name,128);if(name.ToString()==className){found=window;return false;}}return true;},IntPtr.Zero);return found;}
-    public PrivateDesktop(string executable,string config,string ready,string directory){
+    [DllImport("user32.dll")]static extern bool ShowWindow(IntPtr window,int command);
+    public void ShowOwnedWindow(IntPtr window){uint pid;GetWindowThreadProcessId(window,out pid);if(pid!=Child.Id)throw new ArgumentException("owned_window_required");ShowWindow(window,4);}
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern IntPtr SendMessageTimeoutW(IntPtr window,uint message,IntPtr w,IntPtr l,uint flags,uint timeout,out IntPtr result);
+    // Synthetic mouse messages target only this fixture's inactive desktop.
+    // They never move the system cursor or switch the user's active desktop.
+    public void Mouse(IntPtr window,uint message,int x,int y){uint pid;GetWindowThreadProcessId(window,out pid);if(pid!=Child.Id||window==IntPtr.Zero||(message!=0x201&&message!=0x200&&message!=0x202))throw new ArgumentException("owned_mouse_target_required");IntPtr result;if(SendMessageTimeoutW(window,message,new IntPtr(message==0x202?0:1),new IntPtr((y<<16)|(x&65535)),2,1500,out result)==IntPtr.Zero)throw new Exception("owned_mouse_message_timeout");}
+    public PrivateDesktop(string executable,string config,string ready,string directory,bool quickStart=false,string customArguments=null){
         foreach(string value in new[]{executable,config,ready,directory})if(value.IndexOfAny(new[]{'"','\0','\r','\n'})>=0)throw new ArgumentException("invalid_fixture_path");
         executable=Path.GetFullPath(executable);config=Path.GetFullPath(config);ready=Path.GetFullPath(ready);directory=Path.GetFullPath(directory);
         Name="HibernationTest_"+Guid.NewGuid().ToString("N");desktop=CreateDesktopW(Name,IntPtr.Zero,IntPtr.Zero,0,0xC7,IntPtr.Zero);
         if(desktop==IntPtr.Zero)throw new Win32Exception(Marshal.GetLastWin32Error(),"private_test_desktop_failed");
         var startup=new Startup{size=Marshal.SizeOf<Startup>(),desktop="WinSta0\\"+Name,flags=1,show=0};Created made;
-        var args=new StringBuilder("\""+executable+"\" --desktop --config \""+config+"\" --ready-file \""+ready+"\"");
-        var captureFlag=Environment.GetEnvironmentVariable("HIBERNATION_TEST_CAPTURE");bool started;
-        try{Environment.SetEnvironmentVariable("HIBERNATION_TEST_CAPTURE","owned-native-buffer");started=CreateProcessW(executable,args,IntPtr.Zero,IntPtr.Zero,false,0x08000000,IntPtr.Zero,directory,ref startup,out made);}
+        if(customArguments!=null&&customArguments.IndexOfAny(new[]{'\0','\r','\n'})>=0)throw new ArgumentException("invalid_fixture_arguments");
+        var args=new StringBuilder("\""+executable+"\" "+(customArguments??((quickStart?"--quick-start":"--desktop")+" --config \""+config+"\" --ready-file \""+ready+"\"")));
+        var captureFlag=Environment.GetEnvironmentVariable("HIBERNATION_TEST_CAPTURE");bool started;int startError=0;
+        try{Environment.SetEnvironmentVariable("HIBERNATION_TEST_CAPTURE","owned-native-buffer");started=CreateProcessW(executable,args,IntPtr.Zero,IntPtr.Zero,false,0x08000000,IntPtr.Zero,directory,ref startup,out made);if(!started)startError=Marshal.GetLastWin32Error();}
         finally{Environment.SetEnvironmentVariable("HIBERNATION_TEST_CAPTURE",captureFlag);}
         if(!started){
-            int error=Marshal.GetLastWin32Error();CloseDesktop(desktop);desktop=IntPtr.Zero;throw new Win32Exception(error,"private_test_process_failed");
+            CloseDesktop(desktop);desktop=IntPtr.Zero;throw new Win32Exception(startError,"private_test_process_failed_win32_"+startError);
         }
         // Retain a query/synchronize handle before the child exits. An attached
         // Process otherwise may be unable to retrieve ExitCode after exit.

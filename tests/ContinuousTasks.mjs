@@ -12,7 +12,9 @@ if(!executable||!project||!scratch)throw Error('Expected executable, project roo
 const root=path.join(scratch,`continuous-${mode}-${randomUUID()}`);fs.mkdirSync(root,{recursive:true});
 fs.writeFileSync(path.join(root,'.continuous-task-fixture'),'synthetic only');
 const runtime=path.join(root,'runtime');fs.mkdirSync(runtime);for(const file of fs.readdirSync(path.dirname(executable))){if(file==='hibernation-agent.exe'||file.endsWith('.dll'))fs.copyFileSync(path.join(path.dirname(executable),file),path.join(runtime,file));}const runtimeExecutable=path.join(runtime,'hibernation-agent.exe');
+// Separate fixture model IDs route actor/reviewer requests independently of role wording.
 const checks=[],calls=[],session='synthetic-continuous-task-session';let child,origin='',rejectCompletions=0,rememberedId="",browser=null,page=null,heldFinal=false;
+let tasksPage=null;
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const check=(condition,label)=>{assert.ok(condition,label);checks.push(label);console.log('PASS '+label);};
 const decode=value=>{try{if(Array.isArray(value))value=value.filter(v=>v.type==='text'||v.type==='input_text').map(v=>v.text).join('');return JSON.parse(value);}catch{return null;}};
@@ -82,8 +84,9 @@ function actor(body){
 }
 const provider=http.createServer(async(req,res)=>{try{
  let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);
- const reviewing=(body.messages[0]?.content||'').includes('独立的角色表现');
+ const reviewing=body.model==='fixture-review';
  const result=reviewing?{decision:'approve',reason:'ok',guidance:''}:actor(body);
+ if(reviewing&&(body.messages[0]?.content||'').includes('focus_update'))result.focus_update=null;
  if(result.fixture_hold){heldFinal=true;await new Promise(resolve=>{const timer=setTimeout(resolve,11000);res.once('close',()=>{clearTimeout(timer);resolve();});});if(res.destroyed)return;Object.assign(result,silence());delete result.fixture_hold;}
  let message,reason='stop';
  if(!reviewing&&mode==='native'){
@@ -95,9 +98,10 @@ const provider=http.createServer(async(req,res)=>{try{
  }catch(error){console.error('PROVIDER FIXTURE ERROR',error.stack);res.writeHead(500);res.end('{}');}});
 await new Promise(resolve=>provider.listen(0,'127.0.0.1',resolve));
 const config=JSON.parse(fs.readFileSync(path.join(project,'config/example.json'),'utf8').replace(/^\uFEFF/,''));
-Object.assign(config,{dataRoot:path.join(root,'data'),draftsRoot:path.join(root,'drafts'),materialsRoot:path.join(root,'materials'),characterRoot:path.join(project,'character'),uiRoot:path.join(project,'ui'),pluginRoot:path.join(root,'no-plugins'),plugins:{},computer:{enabled:false},solitudeIntervalMs:604800000,idleBeforeSolitudeMs:86400000,reflectOnActivities:false,maxToolRounds:4,continuousTasks:{enabled:true,maxActive:3,maxSteps:8}});
+Object.assign(config,{dataRoot:path.join(root,'data'),draftsRoot:path.join(root,'drafts'),materialsRoot:path.join(root,'materials'),characterRoot:path.join(project,'character'),uiRoot:path.join(project,'ui'),pluginRoot:path.join(root,'no-plugins'),plugins:{},computer:{enabled:false},solitudeIntervalMs:604800000,idleBeforeSolitudeMs:86400000,reflectOnActivities:false,maxToolRounds:4,backgroundBudget:{enabled:true,maxCallsPerDay:1,maxInputTokensPerDay:1000,autoEconomy:false},continuousTasks:{enabled:true,maxActive:3,maxSteps:8}});
 config.profiles=[config.profiles.find(p=>p.protocol==='mock'),{id:'fixture',label:'Synthetic task actor',enabled:true,protocol:'chat-completions',origin:`http://127.0.0.1:${provider.address().port}`,basePath:'/v1',model:'fixture',credentialEnvironment:'HIBERNATION_CONTINUOUS_FIXTURE',supportsToolCalls:mode==='native',supportsJsonObject:true,supportsJsonSchema:false,supportsStreaming:false,timeoutMs:10000,maxOutputTokens:2048}];
-config.review={enabled:true,profileId:'fixture',maxRewrites:1};
+config.profiles.push({...config.profiles.find(p=>p.id==='fixture'),id:'fixture-review',label:'Synthetic task reviewer',model:'fixture-review',supportsToolCalls:false});
+config.review={enabled:true,profileId:'fixture-review',maxRewrites:1};
 const configPath=path.join(root,'config.json'),readyPath=path.join(root,'ready.json');fs.writeFileSync(configPath,JSON.stringify(config,null,2));
 async function start(){
  try{fs.unlinkSync(readyPath);}catch{}
@@ -115,22 +119,62 @@ async function openDashboard(){
  const {chromium}=await import(pathToFileURL(entry).href);browser=await chromium.launch({executablePath:process.env.HIBERNATION_TEST_BROWSER,headless:true,args:['--disable-gpu']});page=await browser.newPage({viewport:{width:1100,height:900}});await page.goto(origin+'/#session='+session);await page.locator('#continuous-tasks').waitFor({state:'visible'});const fold=page.locator('#continuous-tasks > .fold-head > .fold-toggle');await fold.waitFor({state:'visible'});if(await fold.getAttribute('aria-expanded')!=='true')await fold.click();await page.locator('#continuous-tasks h3').waitFor({state:'visible'});check(await page.locator('#continuous-tasks').getByRole('heading',{name:'说完之后，事情仍可以继续。'}).count()===1,'dashboard serves and renders the real continuous-task module');
 }
 async function button(task,action){const target=page.locator(`#continuous-tasks button[data-task-id="${task.id}"][data-task-action="${action}"]`);await target.waitFor({state:'visible'});await page.waitForFunction(({id,action,revision})=>{const b=document.querySelector(`#continuous-tasks button[data-task-id="${id}"][data-task-action="${action}"]`);return b&&!b.disabled&&Number(b.dataset.taskRevision)>=revision;},{id:task.id,action,revision:task.revision});await target.click();}
+async function openChatTasks(task){
+ await openDashboard();
+ tasksPage=await browser.newPage({viewport:{width:780,height:760}});
+ await tasksPage.goto(origin+'/ui/chat.html?view=tasks#session='+session);
+ const card=tasksPage.locator(`#task-list details[data-task-id="${task.id}"]`);
+ await card.locator('summary').waitFor({state:'visible'});
+ check((await card.innerText()).includes('已完成'),'the chat task card shows a real completed state');
+ await card.locator('summary').click();
+ await card.getByRole('button',{name:'continuous/小窗台便签.md'}).click();
+ await tasksPage.locator('#draft-preview[open] #draft-text').getByText('第二部分：依据已读取的第一段继续。',{exact:true}).waitFor();
+ check(true,'the chat card opens the verified second draft in its preview');
+ await tasksPage.locator('#draft-close').click();
+ await page.bringToFront();
+}
+async function cancelInChat(task){
+ await tasksPage.bringToFront();
+ const card=tasksPage.locator(`#task-list details[data-task-id="${task.id}"]`);
+ await card.getByText('已暂放',{exact:true}).waitFor();
+ await card.locator('summary').click();
+ tasksPage.once('dialog',dialog=>dialog.accept());
+ await card.getByRole('button',{name:'取消目标'}).click();
+ await card.getByText('已取消',{exact:true}).waitFor();
+ check(true,'chat card controls the actual versioned task through a compact response');
+}
+
 
 try{
  await start();const before=calls.length;await say('你好');check((await api('/api/tasks')).tasks.length===0,'ordinary conversation does not create a task');check(calls.length===before+1,'conversation routing uses the same actor call without an extra classifier');
+ await api('/api/event',{kind:'outer_event',text:'synthetic-budget-opportunity',request_id:'budget-'+randomUUID()});await awaitValue(async()=>{const budget=await api('/api/background-budget');return budget.blocked&&!(await api('/api/state')).busy;},'ambient daily budget exhausted');check((await api('/api/background-budget')).blocked,'fixture has exhausted daily autonomous budget before accepting a task');
  await say('分两段做便签');let task=await taskWith('two-notes');check(!fs.existsSync(path.join(root,'drafts/continuous/should-not-write.txt')),'accepting a goal prevents remaining calls in the same batch from doing its work twice');check(task.status!=='completed','acceptance and the initial reply do not claim goal completion');
  task=await taskWith('two-notes',t=>t.status==='ready'&&t.steps===1);check(fs.existsSync(path.join(root,'drafts/continuous/月光便签.md')),'first background slice actually writes its result after the initial reply');
  const firstBytes=fs.readFileSync(path.join(root,'drafts/continuous/月光便签.md'),'utf8'),firstModified=fs.statSync(path.join(root,'drafts/continuous/月光便签.md')).mtimeMs;
  await say('先聊句别的');check((await api('/api/tasks')).tasks.some(t=>t.id===task.id&&!['abandoned','completed'].includes(t.status)),'unrelated new conversation preserves the accepted goal');
  await stop();await start();task=await taskWith('two-notes',t=>t.status==='completed');
  check(task.steps===2,'a saved checkpoint resumes automatically after a real backend restart');check(fs.readFileSync(path.join(root,'drafts/continuous/月光便签.md'),'utf8')===firstBytes&&fs.statSync(path.join(root,'drafts/continuous/月光便签.md')).mtimeMs===firstModified,'restart does not repeat the already completed file write');check(fs.readFileSync(path.join(root,'drafts/continuous/小窗台便签.md'),'utf8').includes('第二部分'),'later slice performs the dependent second operation');
+ const taskView=await api('/api/chat/tasks');
+ const publicCard=taskView.tasks.find(t=>t.id===task.id);
+ assert.deepEqual(Object.keys(publicCard).sort(),['id','phase','revision','status','steps_started','title']);
+ check(publicCard.status==='completed'&&publicCard.steps_started===2,'chat task projection excludes checkpoint text, private plans, and trace content');
+ const {artifacts}=await api('/api/chat/tasks/detail',{id:task.id});
+ assert.deepEqual(artifacts.map(a=>a.path).sort(),['continuous/月光便签.md','continuous/小窗台便签.md'].sort());
+ const preview=await api('/api/chat/tasks/detail',{id:task.id,artifact_id:artifacts[0].id});
+ check(preview.content.includes('实际写入')||preview.content.includes('依据已读取'),'both task slices expose verified draft artifacts');
+ await assert.rejects(api('/api/chat/tasks/detail',{id:task.id,artifact_id:'unrelated-receipt'}),{status:404});
+ await assert.rejects(api('/api/chat/tasks/detail',{id:task.id,artifact_id:'../external.txt'}),{status:400});
+ check((await fetch(origin+'/api/chat/tasks')).status===401,'chat task API requires the local session credential');
+ const completedTwoNotes=task;
+
  await say('检查点恢复任务');await awaitValue(()=>heldFinal,'persisted checkpoint before final response');const callsBeforeRecovery=calls.length;const recoveryModified=fs.statSync(path.join(root,'drafts/continuous/recovery.txt')).mtimeMs;await stop();await start();await taskWith('checkpoint-recovery',t=>t.status==='completed');check(calls.length===callsBeforeRecovery,'restart settles an approved checkpoint without regenerating the interrupted final response');check(fs.statSync(path.join(root,'drafts/continuous/recovery.txt')).mtimeMs===recoveryModified,'checkpoint recovery does not repeat external file effects');
  await say('没有证据的任务');task=await taskWith('unproved',t=>t.status==='waiting_input');check(rejectCompletions===1,'program rejects completion based only on the original request even when the reviewer approves');check(!fs.existsSync(path.join(root,'drafts/continuous/unproved.txt')),'rejected completion does not fabricate a result');await operator(task,'cancel');
+ if(mode==='forms')await openChatTasks(completedTwoNotes);
  await say('需要补充的任务');task=await taskWith('needs-details',t=>t.status==='waiting_input');const pausedCalls=calls.filter(c=>c.task===task.id).length;await delay(400);check(calls.filter(c=>c.task===task.id).length===pausedCalls,'waiting for input stops autonomous model calls');if(mode==='forms'){await openDashboard();await button(task,'resume');}else await say('继续补充任务');task=await taskWith('needs-details',t=>t.status==='completed');check(fs.existsSync(path.join(root,'drafts/continuous/details.txt')),'a later user instruction resumes the waiting task through the same conversation');
  await say('没有进展的任务');task=await taskWith('no-progress',t=>t.status==='blocked');check(task.last_issue==='task_no_progress'&&task.steps===3,'three empty continuations stop instead of consuming calls indefinitely');await operator(task,'cancel');
  const accepted=await say('稍后继续的任务');task=await taskWith('hold',t=>t.status==='ready'&&t.steps===1);let stale=false;try{await api('/api/tasks/control',{id:task.id,expected_revision:task.revision-1,action:'cancel'});}catch(e){stale=e.status===409;}check(stale,'operator task control refuses stale revisions');
  const access=await api('/api/access',{id:rememberedId,accessible:false});let denied=false;try{await operator(task,'resume');}catch(e){denied=e.status===409;}check(denied,'revoked instruction access prevents resuming the task');
- await api('/api/access',{id:rememberedId,accessible:true});task=await taskWith('hold');if(mode==='forms')await button(task,'pause');else await operator(task,'pause');task=await taskWith('hold',t=>t.status==='paused');check(task.status==='paused','operator pause retains the goal and actual progress');if(mode==='forms'){await page.screenshot({path:path.join(root,'dashboard.png'),fullPage:true});await button(task,'cancel');await taskWith('hold',t=>t.status==='abandoned');check(true,'dashboard cancel uses the actual versioned task endpoint');}else await operator(task,'cancel');
+ await api('/api/access',{id:rememberedId,accessible:true});task=await taskWith('hold');if(mode==='forms')await button(task,'pause');else await operator(task,'pause');task=await taskWith('hold',t=>t.status==='paused');check(task.status==='paused','operator pause retains the goal and actual progress');if(mode==='forms'){await page.screenshot({path:path.join(root,'dashboard.png'),fullPage:true});await cancelInChat(task);await taskWith('hold',t=>t.status==='abandoned');}else await operator(task,'cancel');
  await say('稍后继续的任务');task=await taskWith('hold',t=>t.status==='ready'&&t.steps===1);await stop();config.draftsRoot=path.join(root,'different-drafts');fs.writeFileSync(configPath,JSON.stringify(config,null,2));await start();let workspaceDenied=false;try{await operator(task,'resume');}catch(e){workspaceDenied=e.status===409;}check(workspaceDenied&&!fs.existsSync(path.join(root,'different-drafts/continuous/held.txt')),'old goals cannot migrate effects into a newly configured workspace');await operator(task,'cancel');
  await stop();config.maxToolRounds=1;fs.writeFileSync(configPath,JSON.stringify(config,null,2));await start();await say('需要补充的任务');task=await taskWith('needs-details',t=>t.status==='blocked');check(task.last_issue==='task_requires_two_tool_rounds'&&!calls.some(c=>c.task===task.id),'insufficient operation rounds stop a task before starting a paid background request');await operator(task,'cancel');
  await stop();check(!fs.readFileSync(path.join(root,'data/archive/records.sqlite')).includes(Buffer.from('two-notes')),'goal and checkpoint storage remains encrypted on disk');const log=fs.readFileSync(path.join(root,'service.log'),'utf8');check(!log.includes(session)&&!log.includes('synthetic-provider-key'),'startup logs do not expose session or model credentials');

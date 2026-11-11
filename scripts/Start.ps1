@@ -1,6 +1,12 @@
-param([string]$BuildRoot=(Join-Path $PSScriptRoot '../out/build'),[string]$ConfigPath=(Join-Path $PSScriptRoot '../config/local.json'),[switch]$NoBrowser,[switch]$Dashboard)
+param([string]$BuildRoot='',[string]$ConfigPath=(Join-Path $PSScriptRoot '../config/local.json'),[switch]$NoBrowser,[switch]$Dashboard)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot BuildPaths.ps1);$BuildRoot=Resolve-HibernationRuntimeRoot $BuildRoot ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')))
 Add-Type -AssemblyName System.Security
+$installedRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+if(Test-Path -LiteralPath (Join-Path $installedRoot .manifest.json)){
+ $inside=$installedRoot.TrimEnd([char]92,[char]47)+[IO.Path]::DirectorySeparatorChar
+ if([IO.Path]::GetFullPath($ConfigPath).StartsWith($inside,[StringComparison]::OrdinalIgnoreCase)){throw '引擎安装版本目录不可写入配置和存档；请使用原来的外部启动入口。'}
+}
 if(!(Test-Path -LiteralPath $ConfigPath)){Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../config/example.json') -Destination $ConfigPath}
 $ConfigPath=[IO.Path]::GetFullPath($ConfigPath);$config=Get-Content -LiteralPath $ConfigPath -Raw|ConvertFrom-Json
 # A long-lived launcher can predate credentials saved to the Windows user
@@ -31,11 +37,26 @@ if((Test-Path -LiteralPath $readyPath) -and (Test-Path -LiteralPath $tokenPath))
 }
 if($knownProcess -and !$ready){throw '后台仍在运行，但本机连接资料不可用；请先停止该后台，再重新启动。'}
 if(!$ready){
+ $selectionPath=Join-Path ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))) out/cognitive-runtime-current.json
+ if(Test-Path -LiteralPath $selectionPath){
+  $selection=Get-Content -LiteralPath $selectionPath -Raw|ConvertFrom-Json
+  if($selection.engine_installation-and[IO.Path]::GetFullPath($selection.build_root)-eq[IO.Path]::GetFullPath($BuildRoot)){
+   $installer=if($selection.engine_installation.installer_executable){$selection.engine_installation.installer_executable}else{Join-Path $BuildRoot hibernation-installer.exe}
+   $verified=& $installer inspect $selection.engine_installation.release_config|ConvertFrom-Json
+   if(!$verified.ok-or[IO.Path]::GetFullPath($verified.executable)-ne[IO.Path]::GetFullPath($executable)){throw '已安装程序未通过引擎完整性检查；请修复该版本后重试。'}
+  }
+ }
  if(!(Test-Path -LiteralPath $executable)){throw '请先运行 scripts/Build.ps1。'}
  $archiveProbe=[IO.File]::Open((Join-Path $runtime 'service.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$archiveProbe.Dispose()
- $random=[byte[]]::new(32);[Security.Cryptography.RandomNumberGenerator]::Fill($random);$token=[Convert]::ToHexString($random)
- $encrypted=[Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($token),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser)
- [IO.File]::WriteAllBytes($tokenPath,$encrypted);[Environment]::SetEnvironmentVariable($config.credentialEnvironment,$token,'Process')
+ # Preserve the local dashboard login across restarts at its fixed origin.
+ $token=''
+ if(Test-Path -LiteralPath $tokenPath){try{$plain=[Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($tokenPath),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);try{$token=[Text.Encoding]::UTF8.GetString($plain)}finally{[Array]::Clear($plain,0,$plain.Length)}}catch{$token=''}}
+ if($token-notmatch'^[0-9a-fA-F]{64}$'){
+  $random=[byte[]]::new(32);[Security.Cryptography.RandomNumberGenerator]::Fill($random);$token=[Convert]::ToHexString($random)
+  $encrypted=[Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($token),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser)
+  [IO.File]::WriteAllBytes($tokenPath,$encrypted)
+ }
+ [Environment]::SetEnvironmentVariable($config.credentialEnvironment,$token,'Process')
  $previousWrite=if(Test-Path -LiteralPath $readyPath){(Get-Item -LiteralPath $readyPath).LastWriteTimeUtc}else{[DateTime]::MinValue}
  $argumentLine='--config "'+$ConfigPath+'" --ready-file "'+$readyPath+'"'
  if(!$NoBrowser){$argumentLine+=' --desktop'}

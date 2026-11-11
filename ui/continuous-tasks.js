@@ -17,6 +17,7 @@
       const row=node('div',undefined,'continuous-task-row');row.style.cssText='border-top:1px solid var(--line,#dde6da);padding:16px 0';
       const head=node('div',undefined,'card-head');head.append(node('h4',task.goal),node('span',labels[task.status]||task.status,'pill'));row.append(head);
       if(task.summary)row.append(node('p',task.summary));
+      if(task.deferred_reason==='circadian_sleep')row.append(node('p','正在休息，醒来后再接续；这不代表任务失败或已经完成。','helper'));
       row.append(node('p',`完成条件：${task.completion_criterion}`,'helper'));
       if(task.status==='blocked')row.append(node('p','本项已停止自动尝试。可在对话中讨论下一步；权限、工作区或预算条件未满足时不能直接继续。','helper'));
       if(!['completed','abandoned'].includes(task.status)){

@@ -34,7 +34,7 @@ inline std::vector<SharedMemoryRoot> sharedMemoryRoots(const std::filesystem::pa
 }
 inline bool sharedMemoryId(const std::string& id){return id.starts_with("shared-")&&id.size()>24&&id[23]==':';}
 struct SharedMemoryResult {Json rows=Json::array();bool limited=false;};
-inline SharedMemoryResult querySharedMemory(const std::vector<SharedMemoryRoot>& roots,bool archive,const std::string& query,const std::string& key={},std::size_t limit=8,std::size_t offset=0,std::size_t length=2400,const std::function<bool()>& cancelled={},unsigned depth=0,std::size_t* inheritedBudget=nullptr){
+inline SharedMemoryResult querySharedMemory(const std::vector<SharedMemoryRoot>& roots,bool archive,const std::string& query,const std::string& key={},std::size_t limit=8,std::size_t offset=0,std::size_t length=2400,const std::function<bool()>& cancelled={},unsigned depth=0,std::size_t* inheritedBudget=nullptr,bool nativeProvenance=false){
     struct Match{Json value;int score;std::int64_t time;};std::vector<Match> matches;SharedMemoryResult output;std::size_t scannedBytes=0;
     std::size_t localBudget=128;auto& accessBudget=inheritedBudget?*inheritedBudget:localBudget;
     if(depth>8||accessBudget==0){output.limited=true;return output;}
@@ -47,7 +47,7 @@ inline SharedMemoryResult querySharedMemory(const std::vector<SharedMemoryRoot>&
             if(archive){ayt::storage::RecordQuery q;q.scope="ha.archive";q.limit=8192;q.maxPayloadBytes=8*1024*1024;q.cancelled=cancelled;if(!key.empty()){q.id=key.substr(root.tag.size());q.limit=1;}
                 records=store.query({{"ha.archive"}},q);if(!records){output.limited=true;continue;}if(records.records.size()==8192)output.limited=true;}
             for(const auto& row:records.records){scannedBytes+=row.payload.size();if(scannedBytes>32*1024*1024){output.limited=true;break;}if(!key.empty()&&root.tag+row.id!=key)continue;
-                auto data=Json::parse(row.payload);if(archive?policy.archives.contains(row.id)||!libraryArchiveKind(data.value("kind",std::string{}))||isLegacyMetaReply(data):policy.memories.contains(row.id)||!policy.allows(data))continue;
+                auto data=Json::parse(row.payload);if(archive?policy.archives.contains(row.id)||(!(nativeProvenance&&!key.empty())&&!libraryArchiveKind(data.value("kind",std::string{})))||isLegacyMetaReply(data):policy.memories.contains(row.id)||!policy.allows(data))continue;
                 const auto text=memorySearchText(data);int score=query.empty()?1:memoryRelevance(query,text);if(!query.empty()&&text.find(query)!=std::string::npos)score+=50;if(key.empty()&&score==0)continue;
                 bool accessible=true;
                 for(const auto& ref:data.value("sources",Json::array())){
@@ -58,7 +58,7 @@ inline SharedMemoryResult querySharedMemory(const std::vector<SharedMemoryRoot>&
                     // channel's revoked source, so follow their provenance too.
                     if(!external&&scope!="ha.memory")continue;
                     if(accessBudget==0){output.limited=true;accessible=false;break;}--accessBudget;
-                    const auto reference=querySharedMemory(roots,scope.ends_with("ha.archive"),"",external?id:root.tag+id,1,0,1,cancelled,depth+1,&accessBudget);
+                    const auto reference=querySharedMemory(roots,scope.ends_with("ha.archive"),"",external?id:root.tag+id,1,0,1,cancelled,depth+1,&accessBudget,true);
                     output.limited=output.limited||reference.limited;if(reference.rows.empty()){accessible=false;break;}
                 }
                 if(!accessible)continue;

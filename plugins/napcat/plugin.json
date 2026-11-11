@@ -2,8 +2,8 @@
   "id": "napcat",
   "name": "QQ · NapCat",
   "icon": "QQ",
-  "description": "与桌面共用同一角色；QQ 档案分目录加密保存，默认记忆互通、号主可使用桌面工具。支持接收图片/表情包、连续消息合并及将本次截图发回当前会话，支持手动离线，余额不足时静默并保留管理诊断。",
-  "version": "0.5.3",
+  "description": "与桌面共用同一角色；QQ 档案分目录加密保存，默认记忆互通、号主可使用桌面工具。支持接收图片/表情包、连续输入合并、同轮多条短消息顺序投递及将本次截图发回当前会话，支持手动离线，余额不足时静默并保留管理诊断。 支持按情景释义搜索素材库并发送图片/表情，无需每次读图；普通分段文字可分别发送。 支持原渠道主动回复、号主显式收藏收到的表情原图，以及私聊输入中状态。",
+  "version": "0.9.0",
   "api_version": 2,
   "library": "Hibernation_Napcat.dll",
   "capabilities": [
@@ -131,7 +131,7 @@
     },
     {
       "key": "mergeWindowMs",
-      "label": "连续消息合并窗口（毫秒，0 为关闭）",
+      "label": "收到最后一条后的静默等待（毫秒，0 为关闭合并）",
       "type": "number",
       "default": 1500,
       "min": 0,
@@ -164,6 +164,100 @@
       "min": 64,
       "max": 4000,
       "step": 10
+    },
+    {
+      "key": "mediaLibraryEnabled",
+      "label": "启用 QQ 图片／表情素材库",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "key": "mediaLibraryRoot",
+      "label": "素材库目录（含 catalog.json）",
+      "type": "text",
+      "default": "",
+      "maxLength": 2048
+    },
+    {
+      "key": "splitParagraphs",
+      "label": "QQ 普通回复按自然段分别发送",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "showTypingStatus",
+      "label": "私聊准备回复时显示正在输入",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "replyPacing",
+      "label": "自然回复等待与分条输入节奏",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "maxBurstWaitMs",
+      "label": "一组输入最多等待（毫秒）",
+      "type": "number",
+      "default": 10000,
+      "min": 1000,
+      "max": 30000,
+      "step": 500
+    },
+    {
+      "key": "mediaQuietMs",
+      "label": "图片／表情输入后的静默等待（毫秒）",
+      "type": "number",
+      "default": 3500,
+      "min": 0,
+      "max": 8000,
+      "step": 100
+    },
+    {
+      "key": "continuationQuietMs",
+      "label": "明显未完输入的静默等待（毫秒）",
+      "type": "number",
+      "default": 3500,
+      "min": 0,
+      "max": 8000,
+      "step": 100
+    },
+    {
+      "key": "replyGraceMs",
+      "label": "回复备妥后再等一会儿（毫秒，小爱可选择立即回复）",
+      "type": "number",
+      "default": 1600,
+      "min": 0,
+      "max": 8000,
+      "step": 100
+    },
+    {
+      "key": "replyMinIntervalMs",
+      "label": "分条发送最短间隔（毫秒）",
+      "type": "number",
+      "default": 900,
+      "min": 0,
+      "max": 5000,
+      "step": 100
+    },
+    {
+      "key": "replyMaxIntervalMs",
+      "label": "分条发送最长间隔（毫秒）",
+      "type": "number",
+      "default": 4000,
+      "min": 0,
+      "max": 10000,
+      "step": 100
+    },
+    {
+      "key": "replyCharactersPerSecond",
+      "label": "模拟输入速度（每秒字数）",
+      "type": "number",
+      "default": 18,
+      "min": 4,
+      "max": 80,
+      "step": 1
     }
   ],
   "settings_note": "默认记忆互通，原文仍按私聊/群成员分目录加密存放；号主可使用桌面已开放的工具，其他人默认只能聊天。更严密的安全性将强制隔离记忆、关闭 QQ 电脑操作并开启审核；关闭后恢复各项独立选择。群白名单与验签始终生效，电脑目录、应用白名单和屏幕观察开关沿用桌面设置。token 只放环境变量。",

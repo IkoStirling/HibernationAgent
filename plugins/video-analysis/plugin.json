@@ -1,0 +1,74 @@
+{
+  "library": "Hibernation_VideoAnalysis.dll",
+  "version": "0.3.0",
+  "description": "本地分镜、网页持续抽样陪看与有来源笔记；导航使用HTML，视频读取真实帧与播放进度。",
+  "capabilities": [
+    "media.storyboard",
+    "media.subtitle-search",
+    "media.co-watch",
+    "media.watch-notes",
+    "media.configured-transcription"
+  ],
+  "id": "video-analysis",
+  "api_version": 2,
+  "name": "视频理解",
+  "settings_ui": [
+    {
+      "key": "nodeExecutable",
+      "label": "Node.js 程序路径",
+      "default": "",
+      "type": "text"
+    },
+    {
+      "key": "ffmpegExecutable",
+      "label": "FFmpeg 程序路径",
+      "default": "",
+      "type": "text"
+    },
+    {
+      "key": "ffprobeExecutable",
+      "label": "FFprobe 程序路径",
+      "default": "",
+      "type": "text"
+    },
+    {
+      "key": "watchWindowSeconds",
+      "label": "陪看观察间隔／本地片段（秒，10–120）",
+      "default": 30,
+      "type": "number",
+      "min": 10,
+      "max": 120,
+      "step": 1
+    },
+    {
+      "key": "asrEnabled",
+      "label": "缺字幕时启用已配置转写服务（可能收费）",
+      "default": false,
+      "type": "toggle"
+    },
+    {
+      "key": "asrEndpoint",
+      "label": "转写完整接口地址（本地HTTP或远端HTTPS）",
+      "default": "",
+      "type": "text"
+    },
+    {
+      "key": "asrModel",
+      "label": "转写模型",
+      "default": "",
+      "type": "text"
+    },
+    {
+      "key": "asrKeyEnv",
+      "label": "转写密钥环境变量名",
+      "default": "",
+      "type": "text"
+    },
+    {
+      "key": "asrLanguage",
+      "label": "转写语言",
+      "default": "zh",
+      "type": "text"
+    }
+  ]
+}

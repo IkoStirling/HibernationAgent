@@ -1,0 +1,11 @@
+{
+  "id": "speech-style",
+  "name": "语癖切换",
+  "description": "选择轻量语言习惯与表达预设，只调整措辞，不改写身份、记忆、关系或工具权限。",
+  "version": "0.1.0",
+  "api_version": 2,
+  "library": "Hibernation_SpeechStyle.dll",
+  "capabilities": [
+    "role.expression-preference"
+  ]
+}

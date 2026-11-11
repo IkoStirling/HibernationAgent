@@ -1,0 +1,42 @@
+void conversationFlowTests(const std::filesystem::path& scratch){
+    auto s=settings({{"selfUserId","10001"},{"ownerUserId","20001"},{"allowedUsers","20002"}});const auto now=nowMs();
+    auto first=*parseEvent(event("20001","8801","补充说明，"),s,now-1400);
+    auto second=*parseEvent(event("20001","8802","下一部分"),s,now-500);
+    auto third=*parseEvent(event("20001","8803","最后一部分"),s,now);
+    auto other=*parseEvent(event("20002","8804","其他人的话"),s,now-2000);
+    Ledger ledger(scratch/"ledger");check(ledger.enqueue(first,32)=="queued"&&ledger.enqueue(second,32)=="queued"&&ledger.enqueue(third,32)=="queued"&&ledger.enqueue(other,32)=="queued","flow originals enqueued");
+    const auto due=ledger.settleInput(first.at("id"),600,5000,1000,1000);check(due>=now+500,"quiet period follows latest input rather than first input");
+    const auto available=ledger.next();check(available&&available->at("id")==other.at("id"),"waiting conversation blocks its children but not another sender");
+    const auto combined=ledger.batch(first.at("id"),600,5000);check(combined.at("input_parts").size()==3&&combined.at("input_message_ids").size()==3,"sliding burst retains all original boundaries");check(combined.at("input_parts")[1].at("text")=="下一部分","original input order retained");
+    check(ledger.settleInput(first.at("id"),600,5000,1000,1000)==0,"frozen recovery input is never regrouped");
+    check(qq_conversation::unfinished("还有，")&&!qq_conversation::unfinished("说完了。"),"explicit unfinished suffix is only a bounded waiting hint");
+    check(qq_conversation::typingDelay("短句",18,300,2000,0)==300&&qq_conversation::typingDelay(std::string(400,'a'),18,300,2000,0)==2000,"typing cadence stays bounded for short and long parts");
+    ledger.finish(other.at("id"),"silent");ledger.update(first.at("id"),{{"next_ms",0}});check(ledger.prepareReply(first.at("id"),Json::array({"第一条。","第二条。"})),"paced reply prepared");check(ledger.beginDelivery(first.at("id")).has_value(),"first part enters durable send");
+    check(!ledger.acknowledgeDelivery(first.at("id"),0,{{"message_id","sent-1"}},2000),"first confirmation schedules tail rather than completing bundle");check(!ledger.next(),"prepared tail does not send immediately");
+    {Ledger resumed(scratch/"ledger");check(!resumed.next(),"restart retains remaining typing delay and confirmed prefix");}
+    auto picture=event("20001","8806","");picture["message"].push_back({{"type","image"},{"data",{{"file","old-picture"},{"url","https://gchat.qpic.cn/fixture"}}}});auto historical=*parseEvent(picture,s,nowMs());historical["created_ms"]=now-600000;historical["attachments"][0]["received_ms"]=now-600000;Ledger history(scratch/"image-history");history.enqueue(historical,8);check(history.recentImages(third).size()==1&&history.recentImages(other).empty(),"ten-minute-old image pointer survives a coherent conversation without crossing sender");
+    auto capped=*parseEvent(event("20001","8805","还有，"),s,nowMs()-11000);Ledger bounded(scratch/"bounded");bounded.enqueue(capped,4);check(bounded.settleInput(capped.at("id"),600,1000,3500,3500)==0,"unfinished input cannot wait indefinitely");
+    std::cout<<"PASS sliding input wait, source boundaries, sender ordering, durable paced reply and bounded continuation\n";
+}
+void conversationFlowProcessTests(const std::filesystem::path& scratch){
+    FakeBot bot;bot.multiReplyMode=true;bot.multiReplyOutput={{"version",1},{"kind","reply"},{"text",nullptr},{"messages",Json::array({"一条短回复。","另一个必要的信息。"})},{"calls",Json::array()}};
+    _putenv_s("HA_NAPCAT_TEST_API","fixture-api-token-not-real");_putenv_s("HA_NAPCAT_TEST_EVENT","fixture-event-secret-not-real");const int port=freePort();auto cfg=coreConfig(scratch);cfg.pluginRoot=HA_PLUGIN_ROOT;
+    cfg.plugins={{"napcat",{{"enabled",true},{"selfUserId","10001"},{"ownerUserId","20001"},{"apiOrigin","http://127.0.0.1:"+std::to_string(bot.port)},{"apiTokenEnvironment","HA_NAPCAT_TEST_API"},{"eventSecretEnvironment","HA_NAPCAT_TEST_EVENT"},{"callbackPort",port},{"cooldownSeconds",1},{"mergeWindowMs",300},{"mediaQuietMs",300},{"continuationQuietMs",500},{"maxBurstWaitMs",2000},{"replyMinIntervalMs",400},{"replyMaxIntervalMs",800}}}};
+    cfg.plugins["napcat"]["reviewReplies"]=false;
+    Profile actor;actor.id="actor";actor.model.protocol=ayt::inference::Protocol::ChatCompletions;actor.model.origin="http://127.0.0.1:"+std::to_string(bot.port);actor.model.model="actor";actor.model.supportsStreaming=false;cfg.profiles.push_back(actor);
+    Application app(cfg);check(app.initialize(),"conversation flow host initialized");call(app,"POST","/api/model",{{"id","actor"}});httplib::Client client("127.0.0.1",port);
+    const auto post=[&](Json message){const auto body=message.dump();const auto response=client.Post("/onebot/events",{{"X-Signature",signature("fixture-event-secret-not-real",body)}},body,"application/json");check(response&&response->status==200,"flow callback accepted");};
+    const auto advance=[&](int ms){const auto until=std::chrono::steady_clock::now()+std::chrono::milliseconds(ms);while(std::chrono::steady_clock::now()<until){app.tick();std::this_thread::sleep_for(std::chrono::milliseconds(10));}};
+    post(event("20001","8811","给这组素材起名，"));advance(170);
+    auto image=event("20001","8812","");image["message"].push_back({{"type","image"},{"data",{{"file","fixture.gif"},{"url","http://127.0.0.1:"+std::to_string(bot.port)+"/original.gif"}}}});post(image);advance(180);post(event("20001","8813","这张只代表这个活动，不是其他约定。"));advance(120);check(bot.actorCalls==0,"actor waits until the burst is quiet");
+    pump(app,[&]{return bot.size()==2;},15000);
+    {std::lock_guard lock(bot.mutex);check(bot.actorCalls==1&&bot.reviewCalls==0,"one burst and one authored bundle use one actor call");const auto input=Json::parse(bot.captured.front().at("messages")[1].at("content").get<std::string>());const auto who=input.at("channel_identity");check(who.at("input_turn").at("parts").size()==3&&who.at("current_input_images").size()==1,"text/image/text source association reaches actor");const auto policy=bot.captured.front().at("messages")[0].at("content").get<std::string>();check(policy.find("日常回应默认一条短消息")!=policy.npos&&policy.find("优先通过messages返回2至4条")==policy.npos,"QQ policy requests proportional dialogue rather than mandatory multiple replies");}
+    bool spaced=false;for(const auto& record:rows(scratch/"channels/napcat/10001/transport","napcat")){const auto row=Json::parse(record.payload);if(row.value("message_id",std::string{})=="8811"){const auto receipts=row.at("delivery_receipts");spaced=receipts.size()==2&&receipts[1].at("confirmed_ms").get<std::int64_t>()-receipts[0].at("confirmed_ms").get<std::int64_t>()>=400;}}
+    check(spaced,"real plugin sends separate messages with persisted human typing intervals");
+    std::atomic<int> step=0;bot.customActor=[&](const Json&){const bool old=step++==0;return Json{{"version",1},{"kind","reply"},{"text",old?"OLD_UNSENT_REPLY":"补充之后只回这一句。"},{"calls",Json::array()},{"presentation",{{"reply_timing",old?"wait_for_followup":"immediate"}}}};};
+    post(event("20001","8814","这句话我还要补充"));pump(app,[&]{if(bot.requestsStarted<2)return false;const auto status=call(app,"GET","/api/capabilities");for(const auto& p:status.at("plugins"))if(p.at("id")=="napcat")return !p.at("current").at("busy").get<bool>();return false;},10000);
+    post(event("20001","8815","补充：按这条的意思回答即可。"));pump(app,[&]{return bot.size()==3;},15000);advance(400);
+    {std::lock_guard lock(bot.mutex);check(bot.sent.back().at("message").back().at("data").at("text")=="补充之后只回这一句。"&&bot.sent.size()==3,"new input supersedes an unsent candidate while immediate mode skips extra grace");check(bot.captured.back().dump().find("OLD_UNSENT_REPLY")==std::string::npos,"unsent candidate is excluded from renewed context and retained projection");}
+    bool superseded=false,immediate=false;for(const auto& record:rows(scratch/"channels/napcat/10001/transport","napcat")){const auto row=Json::parse(record.payload);if(row.value("message_id",std::string{})=="8814")superseded=row.at("status")=="superseded"&&row.at("delivery_cursor")==0;if(row.value("message_id",std::string{})=="8815")immediate=row.at("reply_grace_ms")==0;}check(superseded&&immediate,"turn timing and unpublished status have durable receipts");
+    app.stop();_putenv_s("HA_NAPCAT_TEST_API","");_putenv_s("HA_NAPCAT_TEST_EVENT","");std::cout<<"PASS actual text/image/text burst, paced messages, late continuation and model-selected immediate reply\n";
+}

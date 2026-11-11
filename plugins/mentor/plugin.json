@@ -1,18 +1,256 @@
 {
-  "id":"mentor", "name":"操作导师", "icon":"◇",
-  "description":"小爱遇到操作困难时可咨询导师。保留小爱的决策与表达，由应用核对工具和执行结果。",
-  "version":"0.2.0", "api_version":2, "library":"Hibernation_Mentor.dll", "dependencies":[],
-  "capabilities":["mentor.advice","mentor.execute"],
-  "settings_ui":[
-    {"key":"allowExecution","label":"允许导师通过已授权工具直接执行","type":"toggle","default":true},
-    {"key":"backend","label":"导师连接","type":"select","default":"chatgpt","options":[["chatgpt","ChatGPT · 本机 Codex 账号"],["none","暂不连接导师"]]},
-    {"key":"codexExecutable","label":"Codex 程序路径（留空自动寻找）","type":"text","default":"","maxLength":2048},
-    {"key":"model","label":"导师模型（留空使用 Codex 默认）","type":"text","default":"","maxLength":120},
-    {"key":"useSystemProxy","label":"使用当前 Windows 系统代理","type":"toggle","default":true},
-    {"key":"proxyOrigin","label":"专用 HTTP 代理地址（可留空）","type":"text","default":"","maxLength":256},
-    {"key":"maxRequestsPerHour","label":"导师每小时最多请求次数","type":"number","default":12,"min":1,"max":120,"step":1},
-    {"key":"cooldownSeconds","label":"两次咨询至少间隔（秒）","type":"number","default":60,"min":0,"max":3600,"step":1},
-    {"key":"timeoutSeconds","label":"单次咨询超时（秒）","type":"number","default":35,"min":5,"max":60,"step":1}
+  "id": "mentor",
+  "name": "导师",
+  "icon": "◇",
+  "description": "使用同一逻辑会话与导师交流；独立加密记忆、专属工作区，继承导师自身权限。",
+  "version": "0.6.0",
+  "api_version": 2,
+  "library": "Hibernation_Mentor.dll",
+  "dependencies": [],
+  "capabilities": [
+    "mentor.conversation",
+    "mentor.advice",
+    "mentor.execute"
   ],
-  "settings_note":"默认使用本机 Codex 的 ChatGPT 登录，无需 API Key。小爱可以询问方法，也可以把具体操作直接委托导师；委托后应用立即执行已授权工具，并返回每步真实回执。直接执行可单独关闭。导师收到必要目标、障碍、尝试和工具说明，不接收完整人设或档案。未登录或不可用时返回失败，不影响原连接。咨询和委托共享次数限制。"
+  "settings_ui": [
+    {
+      "key": "displayName",
+      "label": "导师称呼（已有名字可在这里保留）",
+      "type": "text",
+      "default": "导师"
+    },
+    {
+      "key": "allowExecution",
+      "label": "允许将任务委托导师执行（使用导师自身权限）",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "backend",
+      "label": "导师连接",
+      "type": "select",
+      "default": "chatgpt",
+      "options": [
+        [
+          "chatgpt",
+          "ChatGPT · 本机 Codex 账号"
+        ],
+        [
+          "none",
+          "暂不连接导师"
+        ]
+      ]
+    },
+    {
+      "key": "codexExecutable",
+      "label": "Codex 程序路径（留空自动寻找）",
+      "type": "text",
+      "default": "",
+      "maxLength": 2048
+    },
+    {
+      "key": "pythonExecutable",
+      "label": "Python 程序路径（留空自动寻找）",
+      "type": "text",
+      "default": "",
+      "maxLength": 2048
+    },
+    {
+      "key": "model",
+      "label": "固定档模型（默认 gpt-6.1-sol）",
+      "type": "text",
+      "default": "gpt-6.1-sol",
+      "maxLength": 120
+    },
+    {
+      "key": "useSystemProxy",
+      "label": "使用当前 Windows 系统代理",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "key": "proxyOrigin",
+      "label": "专用 HTTP 代理地址（可留空）",
+      "type": "text",
+      "default": "",
+      "maxLength": 256
+    },
+    {
+      "key": "maxRequestsPerHour",
+      "label": "导师每小时最多请求次数",
+      "type": "number",
+      "default": 12,
+      "min": 1,
+      "max": 120,
+      "step": 1
+    },
+    {
+      "key": "cooldownSeconds",
+      "label": "两次咨询至少间隔（秒）",
+      "type": "number",
+      "default": 60,
+      "min": 0,
+      "max": 3600,
+      "step": 1
+    },
+    {
+      "key": "timeoutSeconds",
+      "label": "单次咨询超时（秒）",
+      "type": "number",
+      "default": 120,
+      "min": 5,
+      "max": 300,
+      "step": 1
+    },
+    {
+      "default": "fixed",
+      "key": "routingMode",
+      "label": "导师模型路由",
+      "type": "select",
+      "options": [
+        [
+          "fixed",
+          "固定模型与推理强度（默认 High）"
+        ],
+        [
+          "character",
+          "由小爱选择闲聊 / 普通 / 复杂档"
+        ]
+      ]
+    },
+    {
+      "default": "high",
+      "key": "reasoningEffort",
+      "label": "固定档推理强度",
+      "type": "select",
+      "options": [
+        [
+          "low",
+          "Low · 低"
+        ],
+        [
+          "medium",
+          "Medium · 中"
+        ],
+        [
+          "high",
+          "High · 高"
+        ],
+        [
+          "xhigh",
+          "XHigh · 更高"
+        ]
+      ]
+    },
+    {
+      "maxLength": 120,
+      "default": "gpt-6.1-sol",
+      "key": "casualModel",
+      "label": "闲聊档模型",
+      "type": "text"
+    },
+    {
+      "default": "low",
+      "key": "casualEffort",
+      "label": "闲聊档推理强度",
+      "type": "select",
+      "options": [
+        [
+          "low",
+          "Low · 低"
+        ],
+        [
+          "medium",
+          "Medium · 中"
+        ],
+        [
+          "high",
+          "High · 高"
+        ],
+        [
+          "xhigh",
+          "XHigh · 更高"
+        ]
+      ]
+    },
+    {
+      "maxLength": 120,
+      "default": "gpt-6.1-sol",
+      "key": "normalModel",
+      "label": "普通档模型",
+      "type": "text"
+    },
+    {
+      "default": "medium",
+      "key": "normalEffort",
+      "label": "普通档推理强度",
+      "type": "select",
+      "options": [
+        [
+          "low",
+          "Low · 低"
+        ],
+        [
+          "medium",
+          "Medium · 中"
+        ],
+        [
+          "high",
+          "High · 高"
+        ],
+        [
+          "xhigh",
+          "XHigh · 更高"
+        ]
+      ]
+    },
+    {
+      "maxLength": 120,
+      "default": "gpt-6.1-sol",
+      "key": "complexModel",
+      "label": "复杂档模型",
+      "type": "text"
+    },
+    {
+      "default": "high",
+      "key": "complexEffort",
+      "label": "复杂档推理强度",
+      "type": "select",
+      "options": [
+        [
+          "low",
+          "Low · 低"
+        ],
+        [
+          "medium",
+          "Medium · 中"
+        ],
+        [
+          "high",
+          "High · 高"
+        ],
+        [
+          "xhigh",
+          "XHigh · 更高"
+        ]
+      ]
+    },
+    {
+      "default": "chat_web",
+      "type": "select",
+      "options": [
+        [
+          "chat_web",
+          "普通 Chat 网页桥接（需登录专用窗口）"
+        ],
+        [
+          "pause",
+          "暂停导师请求，等待工作额度恢复"
+        ]
+      ],
+      "key": "quotaFallback",
+      "label": "实验性额度不足回退"
+    }
+  ],
+  "settings_note": "默认固定使用 gpt-6.1-sol / High。由小爱选择时，闲聊 / 普通 / 复杂档默认分别为 Low / Medium / High，省略档位按复杂档处理；三档模型和强度可分别配置。低推理强度仍使用 Codex 工作通道。额度不足时默认尝试实验性普通 Chat 网页桥接，须先打开专用窗口并由用户登录；网页回退仅交流与建议，不执行导师原生操作，可改为暂停等待。使用本机 Codex 的 ChatGPT 登录，继承导师自己的权限配置。持续逻辑会话、独立加密记忆和工作区；原生审批不自动批准。咨询与委托共享次数、冷却和超时限制。"
 }

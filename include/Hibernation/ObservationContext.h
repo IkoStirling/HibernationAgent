@@ -18,14 +18,15 @@ inline std::string toolObservationKind(const std::string& tool,const nlohmann::j
     const bool appliedPuzzle=(tool=="pocket.start"||tool=="pocket.press"||tool=="pocket.leave")&&result.is_object()&&result.value("applied",false);
     // For this contract completed means the whole puzzle was solved, while
     // applied confirms the individual operation really changed the board.
-    const bool pending=result.is_object()&&result.contains("completed")&&result.at("completed")==false&&!appliedPuzzle;
+    const bool emptyGather=tool=="habitat.gather"&&result.is_object()&&result.value("finished",false)&&result.value("status",std::string{})=="no_matching_resource"&&result.value("collected",-1)==0;
+    const bool pending=result.is_object()&&result.contains("completed")&&result.at("completed")==false&&!appliedPuzzle&&!emptyGather;
     return pending?"tool_intent":"tool_observation";
 }
 inline bool revisitableObservationTool(const std::string& tool){
-    static const std::set<std::string> concrete={"workspace.list","workspace.read","workspace.view_image","computer.screenshot","computer.list_directory","television.observe","television.observe_sequence","television.search","reading.search","reading.open","atelier.read","napcat.view_image","canteen.inventory","canteen.menu","canteen.recipe","canteen.plan","canteen.supplies"};return concrete.contains(tool)||tool=="pixel.read"||tool=="pixel.preview";
+    static const std::set<std::string> concrete={"workspace.list","workspace.read","workspace.view_image","computer.screenshot","computer.list_directory","television.observe","television.observe_sequence","video.probe","video.storyboard","video.zoom","video.watch_next","video.web_observe","television.page","video.locate","television.search","reading.search","reading.open","atelier.read","napcat.view_image","canteen.inventory","canteen.menu","canteen.recipe","canteen.plan","canteen.supplies"};return concrete.contains(tool)||tool=="pixel.read"||tool=="pixel.preview";
 }
 inline bool continuityObservationTool(const std::string& tool){
-    static const std::set<std::string> effects={"habitat.gather","canteen.request_supplies","canteen.store","canteen.move_supply","canteen.eat_supply","canteen.cook","canteen.cancel","canteen.take","canteen.discard","workspace.write","workspace.edit","computer.open_application","television.open","television.open_page","television.play","television.pause","television.stop","atelier.write","atelier.append","habitat.create","habitat.act","habitat.arrange","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel"};
+    static const std::set<std::string> effects={"habitat.gather","canteen.request_supplies","canteen.store","canteen.move_supply","canteen.eat_supply","canteen.cook","canteen.cancel","canteen.take","canteen.discard","workspace.write","workspace.edit","computer.open_application","television.open","television.open_page","television.play","television.pause","television.stop","atelier.write","atelier.append","habitat.create","habitat.act","habitat.arrange","pocket.start","pocket.press","pocket.leave","rhythm.rest","rhythm.cancel","rhythm.wake","rhythm.configure"};
     return revisitableObservationTool(tool)||pixelObservationTool(tool)||pixelMutationTool(tool)||effects.contains(tool);
 }
 inline bool appraisalExperienceRecord(const nlohmann::json& record){
@@ -75,6 +76,7 @@ inline nlohmann::json compactObservation(const nlohmann::json& record,bool image
     using Json=nlohmann::json;Json result={{"kind",record.at("kind")},{"tool",record.at("tool")},{"created_at",record.value("created_at",std::int64_t(0))},{"context_role","previous_tool_observation"}};
     if(record.at("kind")=="tool_attempt"){result["context_role"]="previous_failed_attempt";result["meaning"]="这次实际尝试没有成功，不是等待完成，不证明写入、游戏推进或更大目标达成，也不表示变化是谁造成的。";}
     const auto& data=record.at("result");Json summary=Json::object();
+    if(record.at("tool").get<std::string>().starts_with("napcat."))for(const auto* field:{"attachment_id","message_id","origin","saved","sent","duplicate","name","meaning","asset_id"})if(data.contains(field)&&data.at(field).is_primitive()&&data.at(field).dump().size()<=1024)summary[field]=data.at(field);
     if(record.at("tool")=="mentor.execute"){
         for(const auto* field:{"delegated","operations_executed","operations_dispatched","operations_may_have_executed","steps_attempted","steps_succeeded","all_steps_succeeded","has_pending_effects","cancelled","task_completion"})if(data.contains(field)&&data.at(field).is_primitive())summary[field]=data.at(field);
         summary["receipts"]=Json::array();for(const auto& step:data.value("receipts",Json::array())){if(summary.at("receipts").size()>=4)break;const auto& receipt=step.at("receipt");auto meta=Json{{"tool",step.at("tool")},{"ok",receipt.value("ok",false)},{"source_id",receipt.value("source_id",std::string{})}};if(receipt.contains("error"))meta["error"]=receipt.at("error");if(receipt.contains("result"))meta["result"]=compactObservation(Json{{"kind","tool_observation"},{"tool",step.at("tool")},{"result",receipt.at("result")}},false).at("result");summary["receipts"].push_back(std::move(meta));}
@@ -106,6 +108,7 @@ inline nlohmann::json compactObservation(const nlohmann::json& record,bool image
     if(data.contains("applied")&&data.at("applied").is_boolean())summary["applied"]=data.at("applied");
     if(record.at("kind")=="tool_attempt")for(const auto* field:{"attempted","succeeded","outcome","error_code","expected_revision","target_kind","target","target_observed_after_attempt"})if(data.contains(field))summary[field]=data.at(field);
     for(const auto* field:{"sampled_frames","span_seconds","stop_reason","full_video_watched","audio_delivered"})if(data.contains(field)&&data.at(field).is_primitive())summary[field]=data.at(field);
+    if(record.at("tool").get<std::string>().starts_with("video."))for(const auto* field:{"window","watch_receipt","note","notes","subtitle_source","asr_status"})if(data.contains(field)&&data.at(field).dump().size()<=10000)summary[field]=data.at(field);
     if(data.contains("frames")&&data.at("frames").is_array()){
         summary["frames"]=Json::array();for(const auto& frame:data.at("frames")){if(summary.at("frames").size()>=3)break;Json meta=Json::object();for(const auto* field:{"index","frame_time_seconds","observed_at_ms"})if(frame.contains(field)&&frame.at(field).is_number())meta[field]=frame.at(field);summary["frames"].push_back(std::move(meta));}
         summary["images_delivered_to_model"]=imageDelivered;

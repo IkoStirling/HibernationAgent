@@ -1,0 +1,8 @@
+file(STRINGS "${INPUT}" files)
+file(MAKE_DIRECTORY "${DESTINATION}")
+foreach(source IN LISTS files)
+    if(NOT source STREQUAL "")
+        get_filename_component(name "${source}" NAME)
+        file(COPY_FILE "${source}" "${DESTINATION}/${name}" ONLY_IF_DIFFERENT)
+    endif()
+endforeach()

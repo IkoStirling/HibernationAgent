@@ -30,10 +30,11 @@ inline std::string signature(const std::string& secret,const std::string& body){
 inline bool authenticate(const std::string& secret,const std::string& body,const std::string& supplied){if(secret.size()<16||secret.size()>4096)return false;const auto expected=signature(secret,body);if(supplied.size()!=expected.size())return false;unsigned difference=0;for(size_t i=0;i<expected.size();++i)difference|=static_cast<unsigned char>(expected[i])^static_cast<unsigned char>(supplied[i]);return difference==0;}
 struct Settings {
     hibernation::ChannelAccess access;
-    std::string bot,owner,origin,apiEnvironment,eventEnvironment;
+    std::string bot,owner,origin,apiEnvironment,eventEnvironment,mediaLibraryRoot;
     std::set<std::string> users,groups;
     int port=18890,queueLimit=32,cooldownSeconds=5,mergeWindowMs=1500,maxAgeSeconds=1800,maxReplyCharacters=1500;
-    bool mentionOnly=true,replyAt=true;
+    int maxBurstWaitMs=10000,mediaQuietMs=3500,continuationQuietMs=3500,replyMinIntervalMs=900,replyMaxIntervalMs=4000,replyCharactersPerSecond=18,replyGraceMs=1600;
+    bool mentionOnly=true,replyAt=true,mediaLibraryEnabled=false,splitParagraphs=true,showTypingStatus=true,replyPacing=true;
 };
 // Only application-owned messages cross the native-plugin error boundary.
 // Never include exception text, token values or arbitrary configuration data.
@@ -69,7 +70,7 @@ inline std::string credentialProblem(const Settings& settings){
     return {};
 }
 inline Settings settings(const PluginJson& j){
-    configurationTypes(j,{"selfUserId","ownerUserId","apiOrigin","apiTokenEnvironment","eventSecretEnvironment","allowedUsers","allowedGroups"},{"groupMentionOnly","replyAtSender"});Settings s;
+    configurationTypes(j,{"selfUserId","ownerUserId","apiOrigin","apiTokenEnvironment","eventSecretEnvironment","allowedUsers","allowedGroups","mediaLibraryRoot"},{"groupMentionOnly","replyAtSender","mediaLibraryEnabled","splitParagraphs","showTypingStatus"});Settings s;s.mediaLibraryRoot=j.value("mediaLibraryRoot",std::string{});s.mediaLibraryEnabled=j.value("mediaLibraryEnabled",false);s.splitParagraphs=j.value("splitParagraphs",true);s.showTypingStatus=j.value("showTypingStatus",true);
     if(!j.contains("selfUserId")||j.at("selfUserId")=="")throw std::runtime_error("napcat_self_id_required");
     try{s.bot=digits(j.at("selfUserId"));}catch(...){throw std::runtime_error("napcat_self_id_invalid");}
     if(!j.contains("ownerUserId")||j.at("ownerUserId")=="")throw std::runtime_error("napcat_owner_id_required");
@@ -83,6 +84,11 @@ inline Settings settings(const PluginJson& j){
     try{s.port=integer("callbackPort",18890,1024,65535);}catch(...){throw std::runtime_error("napcat_callback_port_invalid");}
     s.queueLimit=integer("queueLimit",32,1,64);s.cooldownSeconds=integer("cooldownSeconds",5,1,300);s.maxAgeSeconds=integer("maxMessageAgeSeconds",1800,30,86400);s.maxReplyCharacters=integer("maxReplyCharacters",1500,64,4000);
     s.mergeWindowMs=integer("mergeWindowMs",1500,0,5000);
+    s.maxBurstWaitMs=integer("maxBurstWaitMs",10000,1000,30000);s.mediaQuietMs=integer("mediaQuietMs",3500,0,8000);s.continuationQuietMs=integer("continuationQuietMs",3500,0,8000);
+    s.replyMinIntervalMs=integer("replyMinIntervalMs",900,0,5000);s.replyMaxIntervalMs=integer("replyMaxIntervalMs",4000,0,10000);s.replyCharactersPerSecond=integer("replyCharactersPerSecond",18,4,80);
+    s.replyGraceMs=integer("replyGraceMs",1600,0,8000);
+    if(j.contains("replyPacing")&&!j.at("replyPacing").is_boolean())throw std::runtime_error("napcat_boolean");s.replyPacing=j.value("replyPacing",true);
+    if(s.replyMaxIntervalMs<s.replyMinIntervalMs||s.maxBurstWaitMs<s.mergeWindowMs)throw std::runtime_error("napcat_timing_range");
     try{s.users=idList(j.value("allowedUsers",std::string{}));}catch(...){throw std::runtime_error("napcat_users_invalid");}
     try{s.groups=idList(j.value("allowedGroups",std::string{}));}catch(...){throw std::runtime_error("napcat_groups_invalid");}
     s.access=hibernation::ChannelAccess::read(j);s.mentionOnly=j.value("groupMentionOnly",true);s.replyAt=j.value("replyAtSender",true);return s;
@@ -121,7 +127,7 @@ inline std::optional<PluginJson> parseEvent(const PluginJson& event,const Settin
 }
 inline std::string conversationScope(const PluginJson& row){return row.at("type").get<std::string>()+":"+row.at("group_id").get<std::string>()+":"+row.at("sender_id").get<std::string>();}
 inline std::string desktopOperationKey(const std::string& request,const std::string& tool,const PluginJson& args,const std::string& readToken){
-    const bool fresh=tool=="computer.screenshot"||tool=="widget.status"||tool=="body.observe";
+    const bool fresh=tool=="people.current"||tool=="people.search"||tool=="people.read"||tool=="computer.screenshot"||tool=="widget.status"||tool=="body.observe";
     return "qqcall-"+digest(request+":"+tool+":"+args.dump()+(fresh?":"+readToken:std::string{})).substr(0,48);
 }
 inline PluginJson identity(const PluginJson& row,const Settings& s){return {{"channel","qq"},{"transport","napcat"},{"self_user_id",s.bot},{"owner_user_id",s.owner},{"sender_user_id",row.at("sender_id")},{"sender_is_owner",row.at("sender_id")==s.owner},{"group_id",row.at("group_id")},{"message_type",row.at("type")},{"message_id",row.at("message_id")},{"memory_policy",s.access.isolateMemory?"only_this_conversation_and_sender":"shared_character_separate_archives"},{"desktop_control",s.access.controls(row.at("sender_id")==s.owner)},{"effective_security",s.access.json()}};}

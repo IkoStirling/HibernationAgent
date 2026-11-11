@@ -1,0 +1,16 @@
+{
+  "applicationVersion": "0.10.0",
+  "capability": "common.application.installation",
+  "engineRootCommit": "d92527cc66a0dd101c7dabb27d431576abdc8a6b",
+  "applicationModuleCommit": "f78c147d76588c39cfee691c4e366c6e221bcee5",
+  "networkModuleCommit": "58cc58c057fb353d4eec179891b470cc60567a6b",
+  "sourceSha256": {
+    "AYRuntime/AYApplication/installer/include/AYApplication/Installer.h": "9cb920a6e2382c912b52ac958a9ed5804b7c1498d5a0f7633122439463820c00",
+    "AYRuntime/AYApplication/installer/src/Installer.cpp": "0b05a661618d92a5f8ecc23412efde1a94e1e1d9513b86f02aee458f395319ab",
+    "AYRuntime/AYNetwork/http/include/AYNetwork/HttpClient.h": "004d08d09d897832b140d731ecffd688fc859b0031a64c3f0a87285ed04fdeba",
+    "AYRuntime/AYNetwork/http/src/HttpClient.cpp": "e76b945e7f9344088a8f4fdb33a59778567d110e0ae9c4c0f37ed1f9bd3b5cf9",
+    "AYRuntime/AYNetwork/http/src/WinHttpTransport.cpp": "2b5a89ebb77dc9fb7bac3aa23fc3f182f3b0f02e05e03bbff0c7cac119a908d1"
+  },
+  "validatedApplicationSha256": "90ab497a203774777a93d0e3ae34ecae836829aebbd4fd159644fdc8ae473f50",
+  "validationReport": "E:\\Aliyat\\Validation\\EngineDeployment-20261101\\report.html"
+}

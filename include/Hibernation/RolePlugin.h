@@ -6,6 +6,8 @@
 #include <string>
 namespace hibernation {
 using PluginJson=nlohmann::json;
+// Host-only delivery adapter. Never declared in the model's tool catalogue.
+class IChannelReplySink {public:virtual ~IChannelReplySink()=default;virtual PluginJson enqueueChannelReply(const PluginJson& envelope)=0;};
 struct PluginHostContext {
     std::filesystem::path dataRoot,projectRoot;
     bool desktopEnabled=false;

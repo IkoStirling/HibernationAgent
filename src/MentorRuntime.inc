@@ -8,14 +8,21 @@
             if(saved.value.contains("final")){auto replay=saved.value.at("final");replay["replayed_execution"]=true;return replay;}
             return {{"ok",false},{"error",{{"code","mentor_execution_interrupted"},{"retryable",false}}},{"execution",saved.value.value("receipts",Json::array())},{"operations_may_have_executed",saved.value.value("phase",std::string{})=="executing"},{"guide","上次委托被中断。已返回保存的真实回执，不重放可能已发生的操作；先观察当前情况再决定。"}};
         }
-        auto state=Json{{"version",1},{"phase","consulting"},{"receipts",Json::array()},{"started_ms",serviceNowMs()},{"trace_id",traceId}};
+        auto state=Json{{"version",1},{"phase","executing"},{"receipts",Json::array()},{"started_ms",serviceNowMs()},{"trace_id",traceId}};
         commit({mutation("ha.mentor-execution",key,saved,state,traceId)},traceId);
         Json access=Json::object();if(desktop){const auto capabilities=desktop->capabilities();for(const auto* field:{"applications","read_roots","screen_capture","application_capture","shell_access"})if(capabilities.contains(field))access[field]=capabilities.at(field);}
         plugins->event({{"kind","mentor.context"},{"turn_id",context.eventId.empty()?traceId:context.eventId},{"tools",tools()},{"execution_authorized",true},{"computer_access",access}});
         auto plan=plugins->invoke("mentor.execute",args,cancelled);
         const auto persist=[&](const Json& final){auto before=get("ha.mentor-execution",key);state["phase"]="finished";state["finished_ms"]=serviceNowMs();state["final"]=final;commit({mutation("ha.mentor-execution",key,before,state,traceId)},traceId);return final;};
         if(!plan.value("ok",false))return persist(plan);
-        const auto& proposal=plan.at("result");state["plan"]=proposal;const auto steps=proposal.value("proposals",Json::array());
+        const auto& proposal=plan.at("result");state["plan"]=proposal;
+        // Native mentor operations have already run under its own Codex policy.
+        // Never dispatch them a second time through the character tool router.
+        if(proposal.value("execution_mode",std::string{})=="native_mentor"||proposal.value("execution_mode",std::string{})=="chat_web_advice"){
+            if(proposal.value("host_execution_required",true)||!proposal.value("proposals",Json::array()).empty())return persist(toolFailure("mentor_native_contract"));
+            state["receipts"]=proposal.value("receipts",Json::array());return persist(plan);
+        }
+        const auto steps=proposal.value("proposals",Json::array());
         for(const auto& step:steps)if(!mentor::operational(step.at("tool"))||directPresentationTool(step.at("tool")))return persist(toolFailure("mentor_operation_not_allowed"));
         bool pending=false,interrupted=false,uncertain=false;std::size_t attempted=0,succeeded=0,immediate=0;
         for(const auto& step:steps){

@@ -37,6 +37,11 @@ try{
  $later=Message @((Call physical state.propose @{activity='engaging';intensity=0;source_id='${event_id}'}),(Silent));Check ((Result).result.state.focus-eq'FOCUS_PRIVATE_MARKER'-and(Result).result.state.evidence-eq$later.source_event_id) 'later activity evidence changes without replacing the earlier focus provenance'
  $null=Message @((Call original memory.archive_read @{id=$sourceA}),(Call retain memory.remember @{kind='inference';text='APPRAISAL_PRIVATE_MARKER 这次感觉的来源';source_ids=@($sourceA)}),(Silent));$memory=(Result).result.id;Check ([bool]$memory) 'appraised origin can be restricted through the existing memory-access boundary'
  $retry=Message @((Call saved-snapshot state.observe @{}),(Call forget memory.forget @{id=$memory}),@{fixture_status=503},(Call saved-snapshot state.observe @{}),(Silent))
+ $retry|Select-Object validation,call_error,tool_results|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $root restricted-retry-trace.json) -Encoding utf8
+ Check ((Api '/api/chat').call_failed-and$retry.call_error.code-eq'context_authorization_changed'-and$retry.tool_results.Count-eq2-and$retry.tool_results[-1].tool-eq'memory.forget'-and$retry.tool_results[-1].ok) 'revoking a retained source stops the old cached stream before any further model request'
+ # Restart with a fresh authorized projection, then exercise genuine transient
+ # recovery. The pre-revocation state receipt must never be resent for a cache hit.
+ $null=Message @((Call saved-snapshot state.observe @{}),@{fixture_status=503},(Call saved-snapshot state.observe @{}),(Silent))
  $retried=Result
  Check (!(Api '/api/chat').call_failed-and!$retried.result.focus-and!($retried|ConvertTo-Json -Depth 40).Contains('FOCUS_PRIVATE_MARKER')) 'a transient retry refreshes the cached query; its new receipt does not re-expose restricted focus'
  $null=Api '/api/access' @{id=$memory;accessible=$false};$null=Message @((Call restricted state.appraise @{source_id=$sourceA;valence=1}),(Silent));Check ((Result).error.code-eq'appraisal_source_not_available'-and(Api '/api/state').continuous_state.target_valence-eq-.4) 'a hidden origin cannot be reappraised or restored by naming its old id'
@@ -52,7 +57,8 @@ try{
  $null=Message @((Call denied state.appraise @{source_id='${event_id}';valence=1}),(Silent)) @{decision='deny';reason='other';guidance='本测试不批准这次提案。'}
  Check ((Api '/api/chat').call_failed-and(Api '/api/state').continuous_state.target_valence-eq-.4) 'semantic rejection never applies an emotional proposal'
  $saved=(Api '/api/state').continuous_state;Stop-Backend;Start-Backend;$restored=(Api '/api/state').continuous_state
- Check ($restored.version-eq3-and$restored.target_valence-eq-.4-and$restored.appraisal_source_id-eq$sourceB-and[Math]::Abs($restored.mood-$saved.mood)-lt.01) 'real restart preserves the current feeling without an offline mood jump'
+ @{saved=$saved;restored=$restored;expected_source_id=$sourceB;mood_delta=[Math]::Abs($restored.mood-$saved.mood)}|ConvertTo-Json -Depth 25|Set-Content -LiteralPath (Join-Path $root restart-state-evidence.json) -Encoding utf8NoBOM
+ Check ($restored.version-eq4-and$restored.affect.version-eq1-and$restored.target_valence-eq-.4-and$restored.appraisal_source_id-eq$sourceB-and[Math]::Abs($restored.mood-$saved.mood)-lt.01) 'real restart preserves the current feeling without an offline mood jump'
  $null=Message @((Call original memory.archive_read @{id=$sourceA}),(Call replay state.appraise @{source_id=$sourceA;valence=.6}),(Silent));Check ((Result).result.deduplicated-and(Result).result.state.target_valence-eq-.4) 'persistent duplicate protection also survives a process restart'
  Check (@((Api '/api/state').reviews|Where-Object status -eq pending).Count-eq0-and(Api '/api/state').stage.id-eq'initial') 'appraisal does not create a developmental stage or relationship update'
  Stop-Backend;$bytes=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $cfg.dataRoot archive/records.sqlite)));Check (!$bytes.Contains('APPRAISAL_PRIVATE_MARKER')-and!$bytes.Contains('FOCUS_PRIVATE_MARKER')) 'the private source, focus and appraisal archive use encrypted storage'

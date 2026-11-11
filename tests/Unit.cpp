@@ -3,6 +3,7 @@
 #include <Hibernation/TurnProtocol.h>
 #include <Hibernation/ModelJson.h>
 #include <Hibernation/NativeToolBridge.h>
+#include <Hibernation/ContinuousTasks.h>
 #include <Hibernation/ChannelProfiles.h>
 #include <Hibernation/RoleState.h>
 #include <Hibernation/Vault.h>
@@ -243,6 +244,23 @@ TEST_CASE(background_mock_generation_never_spends_budget_or_calls_a_real_reviewe
     reactions.start(actor,reviewer,persona,Json::object(),Json::array(),"denied",reserve);const auto deniedReaction=collect(reactions);
     CHECK(deniedReaction&&deniedReaction->status=="model_call_budget");CHECK(reservations==2);
 }
+TEST_CASE(overflow_native_catalog_preserves_all_scoped_capabilities){
+    Json tools=Json::array();const Json parameters={{"type","object"},{"properties",{{"path",{{"type","string"}}}}},{"required",Json::array({"path"})},{"additionalProperties",false}};
+    for(int i=0;i<145;++i)tools.push_back({{"name","example.tool"+std::to_string(i)},{"parameters",parameters}});
+    tools.push_back({{"name","napcat.send_image"},{"parameters",parameters}});
+    NativeToolBridge bridge(tools);CHECK(bridge.definitions.size()==128);CHECK(bridge.fullCatalog.size()==146);
+    CHECK(bridge.catalog.contains(nativeToolName("napcat.send_image")));
+    const Json args={{"tool","example.tool144"},{"arguments_json","{\"path\":\"test.txt\"}"}};
+    const auto routed=bridge.candidate({{"provider-one",NativeToolBridge::routerName,args.dump()}},3);
+    CHECK(routed.ok);CHECK(routed.value.at("calls")[0].at("tool")=="example.tool144");
+    CHECK(routed.value==bridge.candidate({{"provider-retry",NativeToolBridge::routerName,args.dump()}},3).value);
+    auto unknown=args;unknown["tool"]="not.authorized";CHECK(!bridge.candidate({{"a",NativeToolBridge::routerName,unknown.dump()}},3).ok);
+    auto bad=args;bad["arguments_json"]="{\"path\":\"x\",\"authority\":true}";CHECK(!bridge.candidate({{"a",NativeToolBridge::routerName,bad.dump()}},3).ok);
+    bad["arguments_json"]="[]";CHECK(!bridge.candidate({{"a",NativeToolBridge::routerName,bad.dump()}},3).ok);
+    CHECK(!bridge.candidate({{"a",nativeToolName("example.tool144"),"{\"path\":\"x\"}"}},3).ok);
+    CHECK(!continuous::ambientBudget("solitude","task-owned"));CHECK(continuous::ambientBudget("solitude",""));CHECK(!continuous::ambientBudget("user_message",""));
+    CHECK(continuous::budgetDeferred("background_daily_input_budget"));CHECK(continuous::budgetDeferred("local_hourly_budget"));CHECK(!continuous::budgetDeferred("task_source_or_workspace_changed"));
+}
 TEST_CASE(native_proposals_use_local_names_schemas_and_retry_stable_execution_slots){
     const Json parameters={{"type","object"},{"properties",{{"path",{{"type","string"}}},{"label",{{"type","string"}}}}},{"required",Json::array({"path"})},{"additionalProperties",false}};
     const NativeToolBridge bridge(Json::array({{{"name","workspace.read_file"},{"description","Read an authorized file"},{"parameters",parameters}}}));
@@ -340,7 +358,7 @@ TEST_CASE(behavior_changes_gradually_and_does_not_override_autonomy){
 }
 TEST_CASE(legacy_state_migrates_without_jumping_or_resetting_activity_dwell){
     RoleState state;state.restore({{"version",1},{"energy",0.31},{"mood",0.4},{"updated_ms",10000},{"entered_ms",5000},{"activity","resting"},{"desired_activity","reflecting"}},86410000);
-    CHECK(state.snapshot().at("energy")==0.31);CHECK(state.snapshot().at("mood")==0.4);CHECK(state.snapshot().at("version")==3);state.tick(86410001);CHECK(state.snapshot().at("activity")=="reflecting");
+    CHECK(state.snapshot().at("energy")==0.31);CHECK(state.snapshot().at("mood")==0.4);CHECK(state.snapshot().at("version")==4);state.tick(86410001);CHECK(state.snapshot().at("activity")=="reflecting");
 }
 TEST_CASE(memory_retrieval_matches_chinese_topics_and_forgetting_closes_derived_sources){
     CHECK(memoryRelevance("那座钟塔后来怎样了", "钟塔外的雨声还没有停止")>memoryRelevance("那座钟塔后来怎样了", "桌上的杯子是蓝色"));CHECK(memoryRelevance("RAIN", "rain outside")>0);
@@ -353,7 +371,7 @@ TEST_CASE(next_day_metadata_and_model_switch_preserve_role_and_memories){
     auto send=[](Application& app,const char* request,const char* text){CHECK_INT_EQ(app.request({"POST","/api/message",Json{{"request_id",request},{"text",text}}.dump()}).status,202);CHECK(ayt::test::waitUntil([&]{app.tick();return !Json::parse(app.request({"GET","/api/chat",""}).body).at("busy").get<bool>();}));};
     {Application app(cfg);CHECK(app.initialize());send(app,"day-one","钟塔为什么停在三点？");}
     {ayt::storage::RecordStore store;CHECK(store.open(cfg.dataRoot/"archive/records.sqlite",{openVaultCodec(cfg.dataRoot),true}));for(const auto* scope:{"ha.life","ha.state"}){auto rows=store.query({{scope}},{scope,"current"});CHECK(static_cast<bool>(rows));const auto& row=rows.records[0];auto value=Json::parse(row.payload);const auto before=ayt::app::services::serviceNowMs()-86400000;if(std::string(scope)=="ha.life"){value["updated_ms"]=before;value["entered_ms"]=before;value["energy"]=0.17;value["willingness"]=0.22;value["conversation_mode"]="brief";}else{value["lastInteractionMs"]=before;value["lastUserInteractionMs"]=before;}CHECK(static_cast<bool>(store.commit({{scope,"current",row.revision,1,value.dump(),"clock-fixture"}},"simulated-one-day-gap",before)));}}
-    {Application app(cfg);CHECK(app.initialize());CHECK_INT_EQ(app.request({"POST","/api/model",R"({"id":"other"})"}).status,200);send(app,"day-two","昨天那个钟塔问题呢？");auto state=Json::parse(app.request({"GET","/api/state",""}).body);CHECK(state.at("model").at("id")=="other");CHECK(state.at("stage").at("id")=="initial");const auto traceId=state.at("state").at("lastTraceId");const auto trace=Json::parse(app.request({"POST","/api/trace",Json{{"id",traceId}}.dump()}).body);CHECK(trace.at("time_context").at("offline_ms").get<std::int64_t>()>=86400000);CHECK(!trace.at("time_context").at("offline_experiences_inferred").get<bool>());CHECK(trace.at("time_context").at("elapsed_since_previous_ms").get<std::int64_t>()>=86400000);CHECK(trace.at("continuous_state").at("energy").get<double>()<0.171);CHECK(trace.at("persona_version")==4);CHECK(Json::parse(app.request({"GET","/api/memories",""}).body).at("memories").size()==2);}
+    {Application app(cfg);CHECK(app.initialize());CHECK_INT_EQ(app.request({"POST","/api/model",R"({"id":"other"})"}).status,200);send(app,"day-two","昨天那个钟塔问题呢？");auto state=Json::parse(app.request({"GET","/api/state",""}).body);CHECK(state.at("model").at("id")=="other");CHECK(state.at("stage").at("id")=="initial");const auto traceId=state.at("state").at("lastTraceId");const auto trace=Json::parse(app.request({"POST","/api/trace",Json{{"id",traceId}}.dump()}).body);CHECK(trace.at("time_context").at("offline_ms").get<std::int64_t>()>=86400000);CHECK(!trace.at("time_context").at("offline_experiences_inferred").get<bool>());CHECK(trace.at("time_context").at("elapsed_since_previous_ms").get<std::int64_t>()>=86400000);CHECK(trace.at("continuous_state").at("energy").get<double>()<0.171);CHECK(trace.at("persona_version")==Json::parse(readFile(cfg.characterRoot/"persona.json")).at("version"));CHECK(Json::parse(app.request({"GET","/api/memories",""}).body).at("memories").size()==2);}
 }
 TEST_CASE(audio_clock_drives_utf8_reveal_and_page_changes_without_extra_holds){
     TextPlayback playback;playback.reset("你好🙂。下一句话。",4,80,10);
@@ -448,7 +466,9 @@ TEST_CASE(strict_provider_schema_and_optional_nulls_preserve_permission_validati
     const Json parameters={{"type","object"},{"additionalProperties",false},{"required",Json::array({"query"})},{"properties",{{"query",{{"type","string"}}},{"limit",{{"type","integer"},{"minimum",1}}}}}};
     const Json catalog=Json::array({{{"name","memory.search"},{"parameters",parameters}}});const auto schema=turnProviderSchema(catalog);CHECK(static_cast<bool>(ayt::serializer::validateJsonSchema(schema)));
     Json turn={{"version",1},{"kind","call"},{"text",nullptr},{"calls",Json::array({{{"id","c"},{"tool","memory.search"},{"args",{{"query","x"},{"limit",nullptr}}}}})},{"presentation",{{"speech",false},{"bubble",false}}}};
-    turn["carry_forward"]=nullptr;turn["appraisal"]=nullptr;CHECK(static_cast<bool>(ayt::serializer::validateJsonDocument(turn.dump(),schema)));CHECK(validateTurn(turn.dump()).ok);auto args=normalizeToolArguments(turn.at("calls")[0].at("args"),parameters);CHECK(!args.contains("limit"));CHECK(args.at("query")=="x");
+    turn["presentation"]["reply_timing"]=nullptr;turn["carry_forward"]=nullptr;turn["appraisal"]=nullptr;turn["messages"]=nullptr;turn["feeling"]=nullptr;CHECK(static_cast<bool>(ayt::serializer::validateJsonDocument(turn.dump(),schema)));
+    for(const auto* field:{"messages","feeling"}){auto missing=turn;missing.erase(field);CHECK(!ayt::serializer::validateJsonDocument(missing.dump(),schema));}
+    CHECK(validateTurn(turn.dump()).ok);auto args=normalizeToolArguments(turn.at("calls")[0].at("args"),parameters);CHECK(!args.contains("limit"));CHECK(args.at("query")=="x");
     args=normalizeToolArguments({{"query",nullptr},{"unknown",nullptr}},parameters);CHECK(args.contains("query"));CHECK(args.contains("unknown"));CHECK(!ayt::serializer::validateJsonDocument(args.dump(),parameters.dump()));
     turn["calls"][0]["tool"]="shell.run";CHECK(!ayt::serializer::validateJsonDocument(turn.dump(),schema));
 }
@@ -607,6 +627,11 @@ TEST_CASE(quiet_rest_restart_records_only_actual_elapsed_time_and_never_replays_
 TEST_CASE(television_layout_keeps_the_real_media_view_inside_its_frame){
     for(const int width:{320,480,900,1280})for(const int height:{220,320,500,900})for(const bool framed:{false,true}){const auto layout=televisionLayout(width,height,framed);CHECK(layout.screen.width()>0&&layout.screen.height()>0);CHECK(layout.screen.left>=0&&layout.screen.top>=0&&layout.screen.right<=width&&layout.screen.bottom<=height);CHECK(layout.footer.top>=layout.screen.bottom);if(framed){CHECK(layout.play.left>layout.screen.right);CHECK(layout.power.right<=width&&layout.stop.bottom<height);}}
 }
+TEST_CASE(television_auto_login_does_not_reserve_a_button_in_the_frame){
+    CHECK(replayProtectedOperation("television.login"));
+    for(const bool framed:{false,true}){const auto layout=televisionLayout(480,320,framed);CHECK(layout.login.width()==0&&layout.login.height()==0);if(!framed)CHECK(layout.footer.right==466);}
+}
+
 TEST_CASE(audio_output_observations_preserve_unknowns_and_never_confirm_user_audibility){
     Json volume={{"known",true},{"muted",false},{"master",.75},{"channels",Json::array({1.0,1.0})}};
     Json normal={{"checked_at_ms",1000},{"query_state","ok"},{"console",{{"available",true},{"volume",volume}}},{"multimedia",{{"available",true},{"volume",volume}}},{"own_sessions",Json::array()}};
@@ -962,7 +987,7 @@ TEST_CASE(subjective_appraisal_has_its_own_clock_and_does_not_move_the_body_or_j
 }
 TEST_CASE(appraisal_pause_restart_and_legacy_migration_preserve_existing_values){
     RoleState state;state.restore(Json{{"version",2},{"mood",.43},{"target_mood",.42},{"target_valence",-.6},{"evidence","old-experience"},{"stimulus_age_ms",120000}},1000);
-    auto before=state.snapshot();CHECK(before.at("version")==3&&before.at("mood")==.43&&before.at("target_valence")==-.6);CHECK(before.at("appraisal_source_id")==""&&before.at("appraisal_age_ms")==120000);
+    auto before=state.snapshot();CHECK(before.at("version")==4&&before.at("mood")==.43&&before.at("target_valence")==-.6);CHECK(before.at("appraisal_source_id")==""&&before.at("appraisal_age_ms")==120000);
     state.tick(86401000,false);const auto paused=state.snapshot();CHECK(paused.at("appraisal_age_ms")==before.at("appraisal_age_ms"));CHECK(paused.at("mood")==before.at("mood"));
     RoleState restored;restored.restore(paused,172801000);const auto after=restored.snapshot();for(const auto* key:{"mood","energy","attention","target_valence","appraisal_valence","appraisal_source_id","appraisal_age_ms"})CHECK(after.at(key)==paused.at(key));
 }

@@ -3,21 +3,41 @@
     std::uint64_t pluginAttentionEpoch=0,lastPluginAttentionEpoch=0;
     bool worldJournalInitialized=false;std::vector<std::string> worldJournalPending;
     std::int64_t nextWorldJournal=0;
-    static bool rhythmLifecycle(const Json& event){const auto kind=event.value("kind",std::string{});return event.value("plugin",std::string{})=="rhythm"&&(kind=="rhythm.rest_started"||kind=="rhythm.rest_finished"||kind=="rhythm.rest_interrupted"||kind=="rhythm.rest_cancelled");}
-    static bool worldExperienceKind(const Json& event){if(suppliesExperience(event))return true;const auto kind=event.value("kind",std::string{});return (event.value("plugin",std::string{})=="canteen"&&(kind=="canteen.ready"||kind=="canteen.taken"||kind=="canteen.expired"||kind=="canteen.discarded"))||(event.value("plugin",std::string{})=="reading"&&kind=="reading.observed")||(event.value("plugin",std::string{})=="pocket"&&(kind=="pocket.solved"||kind=="pocket.left"))||(event.value("plugin",std::string{})=="atelier"&&(kind=="atelier.created"||kind=="atelier.revised"))||(event.value("plugin",std::string{})=="widget"&&kind=="widget.move_finished")||(event.value("plugin",std::string{})=="habitat"&&(kind=="habitat.consumed"||kind=="habitat.inspected"||kind=="habitat.arranged"||(kind=="habitat.action_cancelled"&&event.value("partial_change",false))||kind=="habitat.planted"||(kind=="habitat.appeared"&&event.value("item",Json::object()).value("creator",std::string{})=="model")))||(rhythmLifecycle(event)&&(kind=="rhythm.rest_started"||kind=="rhythm.rest_finished"||(kind=="rhythm.rest_interrupted"&&event.value("elapsed_seconds",0.0)>=1)));}
-    static bool worldStateChangeKind(const Json& event){const auto kind=event.value("kind",std::string{});return event.value("plugin",std::string{})=="canteen"||pixelPresentationCheckpoint(event)||worldExperienceKind(event)||rhythmLifecycle(event)||(event.value("plugin",std::string{})=="pocket"&&(kind=="pocket.started"||kind=="pocket.changed"))||(event.value("plugin",std::string{})=="habitat"&&(kind=="habitat.appeared"||kind=="habitat.disappeared"||kind=="habitat.collected"));}
+    std::int64_t nextLegacyWorldScan=0;
+    static bool rhythmLifecycle(const Json& event){const auto kind=event.value("kind",std::string{});return event.value("plugin",std::string{})=="rhythm"&&(kind=="rhythm.rest_started"||kind=="rhythm.rest_finished"||kind=="rhythm.rest_interrupted"||kind=="rhythm.rest_cancelled"||kind=="rhythm.sleep_started"||kind=="rhythm.sleep_ended"||kind=="rhythm.sleep_cancelled");}
+    static bool worldExperienceKind(const Json& event){if(suppliesExperience(event))return true;const auto kind=event.value("kind",std::string{});return (event.value("plugin",std::string{})=="canteen"&&(kind=="canteen.ready"||kind=="canteen.taken"||kind=="canteen.expired"||kind=="canteen.discarded"||kind=="canteen.cancelled"||kind=="canteen.chain_interrupted"))||(event.value("plugin",std::string{})=="reading"&&kind=="reading.observed")||(event.value("plugin",std::string{})=="pocket"&&(kind=="pocket.solved"||kind=="pocket.left"))||(event.value("plugin",std::string{})=="atelier"&&(kind=="atelier.created"||kind=="atelier.revised"))||(event.value("plugin",std::string{})=="widget"&&kind=="widget.move_finished")||(event.value("plugin",std::string{})=="habitat"&&(kind=="habitat.consumed"||kind=="habitat.inspected"||kind=="habitat.arranged"||(kind=="habitat.action_cancelled"&&event.value("partial_change",false))||kind=="habitat.planted"||(kind=="habitat.appeared"&&event.value("item",Json::object()).value("creator",std::string{})=="model")))||(rhythmLifecycle(event)&&(kind=="rhythm.rest_started"||kind=="rhythm.rest_finished"||kind=="rhythm.sleep_started"||kind=="rhythm.sleep_ended"||(kind=="rhythm.rest_interrupted"&&event.value("elapsed_seconds",0.0)>=1)));}
+    static bool worldStateChangeKind(const Json& event){const auto kind=event.value("kind",std::string{});return event.value("plugin",std::string{})=="video-analysis"||event.value("plugin",std::string{})=="canteen"||(event.value("plugin",std::string{})=="rhythm"&&kind=="rhythm.preferences_changed")||pixelPresentationCheckpoint(event)||worldExperienceKind(event)||rhythmLifecycle(event)||(event.value("plugin",std::string{})=="pocket"&&(kind=="pocket.started"||kind=="pocket.changed"))||(event.value("plugin",std::string{})=="habitat"&&(kind=="habitat.appeared"||kind=="habitat.disappeared"||kind=="habitat.collected"));}
     void journalWorldEvents(std::int64_t now){
         if(now<nextWorldJournal)return;
-        if(!worldJournalInitialized&&worldJournalPending.empty()){RecordQuery q;q.scope="ha.plugin-events";q.contains="\"journaled\":false";q.limit=256;const auto rows=store.query({{"ha.plugin-events"}},q);if(!rows)throw std::runtime_error("world_outbox_read");for(const auto& row:rows.records)worldJournalPending.push_back(row.id);worldJournalInitialized=rows.records.size()<q.limit;}
-        for(int i=0;i<4&&!worldJournalPending.empty();++i){const auto key=worldJournalPending.front();auto raw=get("ha.plugin-events",key);if(!raw.revision||raw.value.value("journaled",true)){worldJournalPending.erase(worldJournalPending.begin());continue;}
-            const auto kind=raw.value.at("kind").get<std::string>();if(!fact("world:"+key,"world."+kind,{{"kind",kind},{"action_id",key}},raw.value.at("created_at"))){nextWorldJournal=now+1000;return;}
-            auto value=raw.value;value["journaled"]=true;commit({mutation("ha.plugin-events",key,raw,value,key)},key);worldJournalPending.erase(worldJournalPending.begin());
+        if(!worldJournalInitialized&&worldJournalPending.empty()){
+            auto index=get("ha.world-outbox","current",{{"migrated",false},{"pending",Json::array()}});
+            for(const auto& id:index.value.at("pending"))worldJournalPending.push_back(id.get<std::string>());
+            worldJournalInitialized=index.value.value("migrated",false);
+            if(!worldJournalInitialized&&worldJournalPending.empty()){
+                if(now<nextLegacyWorldScan)return;
+                RecordQuery q;q.scope="ha.plugin-events";q.contains="\"journaled\":false";q.limit=128;q.maxPayloadBytes=64*1024*1024;q.maxScanBytes=512*1024*1024;q.maxScanRecords=1000000;
+                const auto rows=store.query({{"ha.plugin-events"}},q);
+                if(!rows){nextLegacyWorldScan=now+60000;const auto diagnostic=get("ha.diagnostics","world-outbox");const Json detail={{"status",static_cast<int>(rows.status)},{"foreground_continues",true}};if(diagnostic.value.value("detail",Json::object())!=detail)commit({mutation("ha.diagnostics","world-outbox",diagnostic,{{"detail",detail},{"created_ms",now}})},"world-outbox-retry");return;}
+                auto value=index.value;value["pending"]=Json::array();for(const auto& row:rows.records){worldJournalPending.push_back(row.id);value["pending"].push_back(row.id);}value["migrated"]=rows.records.size()<q.limit;
+                if(!index.revision||value!=index.value)commit({mutation("ha.world-outbox","current",index,value)},"world-outbox-migration");worldJournalInitialized=value.at("migrated");
+            }
+        }
+        for(int i=0;i<4&&!worldJournalPending.empty();++i){
+            const auto key=worldJournalPending.front();auto raw=get("ha.plugin-events",key);auto index=get("ha.world-outbox","current",{{"migrated",false},{"pending",Json::array()}});auto pending=index.value.at("pending");pending.erase(std::remove(pending.begin(),pending.end(),Json(key)),pending.end());
+            std::vector<RecordMutation> changes;
+            if(raw.revision&&!raw.value.value("journaled",true)){
+                const auto kind=raw.value.at("kind").get<std::string>();if(!fact("world:"+key,"world."+kind,{{"kind",kind},{"action_id",key}},raw.value.at("created_at"))){nextWorldJournal=now+1000;return;}
+                auto value=raw.value;value["journaled"]=true;changes.push_back(mutation("ha.plugin-events",key,raw,value,key));
+            }
+            if(pending!=index.value.at("pending")){auto value=index.value;value["pending"]=std::move(pending);changes.push_back(mutation("ha.world-outbox","current",index,value,key));}
+            if(!changes.empty())commit(std::move(changes),key);worldJournalPending.erase(worldJournalPending.begin());
         }
     }
     void notifyPluginAttention(std::int64_t now){
+        if(now>=nextPluginCharacter){const auto plan=activityQueue();plugins->event({{"kind","runtime.activity_state"},{"pending",!plan.at("active").is_null()||!plan.at("entries").empty()}});}
         if(now>=nextPluginCharacter){nextPluginCharacter=now+1000;const auto current=life.snapshot();plugins->event({{"kind","runtime.character"},{"energy",current.at("energy")},{"activity",current.at("activity")}});}
         if(now<nextPluginAttention&&pluginAttentionEpoch==lastPluginAttentionEpoch)return;nextPluginAttention=now+100;bool active=!journalHealthy;
-        for(const auto& job:jobs())if(job.spec.kind!="operator.tool"){
+        for(const auto& job:jobs())if(job.spec.kind!="operator.tool"&&job.spec.id!="autonomy.personal-pursuit"){
             const bool immediate=job.spec.id=="chat"||job.spec.id=="event"||job.spec.id=="solitude.once";
             const auto receipt="job:"+job.spec.id+":"+std::to_string(job.runToken);
             if(job.state==JobState::Running||(job.state==JobState::Pending&&(immediate||job.spec.dueAtMs<=now))||(!job.result.empty()&&!projected.contains(receipt)&&job.state!=JobState::Pending))active=true;
@@ -30,7 +50,9 @@
     void appendWorldExperience(std::vector<RecordMutation>& changes,const Json& event,const std::string& source,std::int64_t now){
         if(const auto text=suppliesExperience(event)){appendObservedExperience(changes,event,source,*text,now);return;}
         if(event.value("plugin",std::string{})=="canteen"){
-            const auto kind=event.value("kind",std::string{});const auto meal=event.value("batch",Json::object());if(!meal.is_object()||!meal.contains("id")||!meal.contains("name"))return;
+            const auto kind=event.value("kind",std::string{});
+            if(kind=="canteen.cancelled"||kind=="canteen.chain_interrupted"){const auto job=event.value("job",Json::object());if(job.contains("batch_id"))appendObservedExperience(changes,event,source,kind=="canteen.cancelled"?"我安排的这批料理停止了制作；已经完成的准备不会倒退。":"我安排的这批料理因材料变化而中断；没有当作成品。",now);return;}
+            const auto meal=event.value("batch",Json::object());if(!meal.is_object()||!meal.contains("id")||!meal.contains("name"))return;
             const auto name=excerpt(meal.at("name").get<std::string>(),120);std::string text;
             if(kind=="canteen.ready")text=meal.value("origin",std::string{})=="character"?"我安排制作的一份「"+name+"」已经做好，留在食堂成品架上。":"食堂自行备好了一份「"+name+"」，留在成品架上。";
             else if(kind=="canteen.taken")text="一份「"+name+"」从食堂成品架移到了桌面。";
@@ -59,8 +81,8 @@
         }
         if(event.value("plugin",std::string{})=="widget"&&event.value("kind",std::string{})=="widget.move_finished"){appendObservedExperience(changes,event,source,"我走到了桌面上的另一个位置。",now);return;}
         if(rhythmLifecycle(event)){
-            if(!worldExperienceKind(event))return;const auto kind=event.at("kind").get<std::string>();const double elapsed=event.value("elapsed_seconds",0.0);if(!std::isfinite(elapsed)||elapsed<0||elapsed>1800)return;
-            const auto text=kind=="rhythm.rest_started"?std::string("角色在桌面上开始了一段安静休息。"):"角色结束了这一段安静休息，实际经过约"+std::to_string(static_cast<int>(std::round(elapsed)))+"秒。";
+            if(!worldExperienceKind(event))return;const auto kind=event.at("kind").get<std::string>();const double elapsed=event.value("elapsed_seconds",0.0);if(!std::isfinite(elapsed)||elapsed<0||elapsed>(event.value("circadian",false)?43200:1800))return;
+            const auto text=(kind=="rhythm.rest_started"||kind=="rhythm.sleep_started")?std::string("角色在桌面上开始了一段安静休息。"):"角色结束了这一段安静休息，实际经过约"+std::to_string(static_cast<int>(std::round(elapsed)))+"秒。";
             appendObservedExperience(changes,event,source,text,now);return;
         }
         const auto kind=event.value("kind",std::string{});if(event.value("plugin",std::string{})!="habitat"||(kind!="habitat.consumed"&&kind!="habitat.inspected"&&kind!="habitat.arranged"&&!(kind=="habitat.action_cancelled"&&event.value("partial_change",false))&&kind!="habitat.planted"))return;
@@ -74,12 +96,13 @@
         const auto key=id("experience");auto recent=get("ha.world","recent",Json::array());pushIndex(recent.value,key,8);
         auto factual=event;factual.erase("journaled");factual.erase("wake_model");Json observation={{"kind","outer_event"},{"text",text},{"plugin_event_id",source},{"observation",factual},{"created_at",now}};
         changes.push_back({archiveScope,key,0,1,observation.dump(),source});changes.push_back(mutation("ha.world","recent",recent,recent.value,source));
+        appendPersonalEffectOutcome(changes,event,key,now);
     }
     void applyRhythmState(const Json& event,const std::string& source,std::int64_t now){
         if(!rhythmLifecycle(event))return;const auto kind=event.at("kind").get<std::string>();std::string issue;
-        if(kind=="rhythm.rest_started"){if(life.propose("resting",std::nullopt,source,now,issue))saveLife();return;}
-        if(kind=="rhythm.rest_finished"||kind=="rhythm.rest_interrupted"){
+        if(kind=="rhythm.rest_started"||kind=="rhythm.sleep_started"){if(proposeLife("resting",std::nullopt,source,now,issue))saveLife();return;}
+        if(kind=="rhythm.rest_finished"||kind=="rhythm.rest_interrupted"||kind=="rhythm.sleep_ended"){
             const auto current=life.snapshot();const auto evidence=current.value("evidence",std::string{});if(evidence.empty()||current.at("desired_activity")!="resting")return;
-            const auto prior=get("ha.plugin-events",evidence);if(prior.revision&&prior.value.value("plugin",std::string{})=="rhythm"&&prior.value.value("token",std::string{})==event.value("token",std::string{}))if(life.propose("idle",std::nullopt,source,now,issue))saveLife();
+            const auto prior=get("ha.plugin-events",evidence);if(prior.revision&&prior.value.value("plugin",std::string{})=="rhythm"&&prior.value.value("token",std::string{})==event.value("token",std::string{}))if(proposeLife("idle",std::nullopt,source,now,issue))saveLife();
         }
     }

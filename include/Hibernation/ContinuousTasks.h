@@ -8,6 +8,8 @@
 namespace hibernation::continuous {
 using Json=nlohmann::json;
 inline bool terminal(std::string_view status){return status=="completed"||status=="abandoned";}
+inline bool budgetDeferred(std::string_view code){return code=="background_daily_input_budget"||code=="background_daily_call_budget"||code=="local_hourly_budget"||code=="model_call_budget"||code=="background_budget"||code=="background_budget_reserved";}
+inline bool ambientBudget(std::string_view kind,std::string_view taskId){return taskId.empty()&&(kind=="solitude"||kind=="outer_event"||kind=="task_complete"||kind=="story_end");}
 inline bool taskTool(std::string_view name){return name.starts_with("task.");}
 inline bool safeId(const std::string& id){return !id.empty()&&id.size()<=80&&std::all_of(id.begin(),id.end(),[](unsigned char c){return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-';});}
 inline bool completionEvidence(const Json& record){
@@ -20,7 +22,7 @@ inline bool completionEvidence(const Json& record){
 }
 inline Json statusView(const Json& task,std::int64_t revision){
     Json result={{"id",task.at("id")},{"revision",revision}};
-    for(const auto* key:{"goal","completion_criterion","status","summary","next_step","steps","max_steps","failure_count","next_ms","created_ms","updated_ms","last_issue","origin_kind"})if(task.contains(key))result[key]=task.at(key);
+    for(const auto* key:{"goal","completion_criterion","status","summary","next_step","steps","max_steps","failure_count","next_ms","created_ms","updated_ms","last_issue","deferred_reason","origin_kind"})if(task.contains(key))result[key]=task.at(key);
     return result;
 }
 inline Json tools(){

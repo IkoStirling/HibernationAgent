@@ -20,6 +20,9 @@
       "type": "toggle",
       "default": false
     },
+    {"key":"autonomyPursuitEnabled","label":"接续自己已有的打算","type":"toggle","default":true},
+    {"key":"autonomyPursuitMaxSeconds","label":"每次自行做事的最长时段（秒）","type":"number","default":90,"min":5,"max":100,"step":5},
+    {"key":"autonomyPursuitCooldownSeconds","label":"自己接续打算的最短间隔（秒）","type":"number","default":120,"min":10,"max":3600,"step":10},
     {"key":"autonomyRefillSeconds","label":"空闲活动预备间隔（秒）","type":"number","default":60,"min":30,"max":600,"step":5},
     {
       "key": "autonomyIdleSeconds",

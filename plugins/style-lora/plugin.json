@@ -1,8 +1,8 @@
 {
   "id":"style-lora", "name":"对白提炼 · 薄 LoRA", "icon":"✎",
   "description":"用明确认可的表达对照训练独立风格模型。训练、选择版本和实际启用分别控制，原始记忆不参与自动训练。",
-  "version":"0.1.0", "api_version":2, "library":"Hibernation_StyleLora.dll",
-  "dependencies":[], "capabilities":["style.local-training","style.reviewed-editing"],
+  "version":"0.2.0", "api_version":2, "library":"Hibernation_StyleLora.dll",
+  "dependencies":[], "capabilities":["style.local-training","style.reviewed-editing","style.candidate-workshop"],
   "settings_ui":[
     {"key":"applyEnabled","label":"启用 LoRA 对白编辑（需要独立审核连接）","type":"toggle","default":false},
     {"key":"pythonExecutable","label":"训练环境 Python 完整路径","type":"text","default":"","maxLength":2048},

@@ -38,6 +38,11 @@ TEST_CASE(peak_overlays_restore_exact_user_baseline_and_preserve_strict_review){
     a["settings"]["mode"]="force-economy";CHECK(apply(a,"https://api.deepseek.com","deepseek-flash",baseline,8,2,valley).pricing.at("applied").get<bool>());
     CHECK(apply(a,"https://other.example","deepseek-flash",baseline,8,2,peak).context==baseline);a["enabled"]=false;CHECK(apply(a,"https://api.deepseek.com","deepseek-flash",baseline,8,2,peak).context==baseline);
 }
+TEST_CASE(economy_does_not_silently_reduce_explicit_protocol_recovery){
+    const auto peak=timeAt(2026,10,27,1);auto a=attachment(peak);a["settings"]["mode"]="force-economy";
+    const auto effective=apply(a,"https://api.deepseek.com","deepseek-flash",{{"protocolRepairs",2},{"reviewPolicy","layered"},{"reviewAttempts",2}},8,2,peak);
+    CHECK(effective.context.at("protocolRepairs")==2);CHECK(effective.context.at("reviewAttempts")==2);CHECK(effective.maxToolRounds==3);
+}
 #ifdef HA_TEST_PLUGIN_ROOT
 TEST_CASE(actual_dll_refreshes_asynchronously_and_manual_mode_does_not_need_model_calls){
     httplib::Server server;std::atomic<int> requests=0;server.Get("/zh-cn/quick_start/pricing/",[&](const auto&,auto& response){++requests;response.set_content(fixture(),"text/html");});const auto port=server.bind_to_any_port("127.0.0.1");std::thread listener([&]{server.listen_after_bind();});server.wait_until_ready();

@@ -1,0 +1,8 @@
+{
+  "license": "Apache-2.0",
+  "source_modified": false,
+  "upstream": "https://github.com/SAOS-3624/dsh-video-storyboard",
+  "snapshot": "2026-11-04",
+  "archive_sha256": "4db696b8a4deead1fa610238878a261c7d0924431f97273a85dd5915dd4a7ab1",
+  "version": "0.6.6"
+}

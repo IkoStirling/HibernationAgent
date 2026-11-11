@@ -1,6 +1,7 @@
     bool projectionSourceAllowed(const Source& source,const MemoryVisibility& policy,const Json& dialogue,bool retained=true)const{
         if(!policy.source(source))return false;
         const auto row=get(source.scope,source.id);if(!row.revision||(retained&&row.revision!=source.revision))return false;
+        if(source.scope==archiveScope&&unpublishedChannelReply(row.value))return false;
         if(row.value.contains("sources")&&!policy.allows(row.value))return false;
         if(!retained)return true;
         if(isLegacyMetaReply(row.value))return false;
@@ -26,15 +27,16 @@
         run.maxBytes=std::min(run.maxBytes,(selected.model.maxRequestBytes-overhead)/2);
         run.enabled=true;run.epoch=id("epoch");run.fullFrame=Json::parse(request.messages.at(1).text);
         auto identity=cfg.channel?cfg.channel->identity:Json::object();
-        for(const auto* field:{"received_images","current_input_images","input_message_ids","message_id"})identity.erase(field);
+        for(const auto* field:{"received_images","current_input_images","input_message_ids","message_id","input_turn"})identity.erase(field);
         run.key="session-"+contentDigest(Json{{"profile",selected.id},{"origin",selected.model.origin},{"base_path",selected.model.basePath},{"model",selected.model.model},{"identity",identity}}.dump());
-        run.compatibility=contentDigest(Json{{"system",request.messages.front().text},{"tools",catalog},{"protocol",static_cast<int>(selected.model.protocol)},{"schema",selected.model.supportsJsonSchema},{"object",selected.model.supportsJsonObject},{"native",selected.model.supportsToolCalls},{"vision",selected.model.supportsVision},{"effort",selected.model.reasoningEffort},{"control",control.describe()}}.dump());
+        run.compatibilityParts={{"system",contentDigest(request.messages.front().text)},{"tools",contentDigest(catalog.dump())},{"adapter",contentDigest(Json::array({static_cast<int>(selected.model.protocol),selected.model.supportsJsonSchema,selected.model.supportsJsonObject,selected.model.supportsToolCalls,selected.model.supportsVision,selected.model.reasoningEffort}).dump())},{"actor_control",contentDigest(session::actorControl(control).dump())}};
+        run.compatibility=contentDigest(run.compatibilityParts.dump());
         const auto fresh=run.fullFrame;const auto initialSources=context.sources;const auto initialNarrative=context.narrativeSources;
         try{
             const auto stored=get("ha.prompt-sessions",run.key);run.head=stored.value;run.reason="new_session";
             if(stored.revision){
                 if(run.head.at("version")!=2)throw std::runtime_error("format_changed");
-                if(run.head.at("compatibility")!=run.compatibility)throw std::runtime_error("configuration_changed");
+                if(run.head.at("compatibility")!=run.compatibility){const auto old=run.head.value("compatibility_parts",Json::object());if(old.empty())run.compatibilityChanges.push_back("previous_components_unknown");else for(auto it=run.compatibilityParts.begin();it!=run.compatibilityParts.end();++it)if(!old.contains(it.key())||old.at(it.key())!=it.value())run.compatibilityChanges.push_back(it.key());throw std::runtime_error("configuration_changed");}
                 if(run.head.at("fence")!=projectionFence())throw std::runtime_error("authority_changed");
                 if(run.head.at("segments").size()>=run.maxTurns)throw std::runtime_error("turn_boundary");
                 if(!projectionSourcesAllowed(run.head.at("sources")))throw std::runtime_error("source_changed");
@@ -58,7 +60,7 @@
             request.messages={request.messages.front(),ayt::inference::Message{"user",cacheOrderedEvent(fresh)}};
         }
         if(!run.reused){auto wire=run.fullFrame;wire["projection"]={{"version",1},{"mode","full"},{"epoch",run.epoch}};request.messages[1].text=cacheOrderedEvent(wire);}
-        trace["session_projection"]={{"enabled",true},{"mode",run.reused?"append":"baseline"},{"reason",run.reason},{"epoch",run.epoch},{"retained_bytes",run.retainedBytes},{"retained_sources",run.reused?run.head.at("sources"):Json::array()},{"head_key",run.key},{"current_event_index",run.eventIndex},{"max_bytes",run.maxBytes},{"max_turns",run.maxTurns},{"fence",projectionFence()}};
+        trace["session_projection"]={{"enabled",true},{"mode",run.reused?"append":"baseline"},{"reason",run.reason},{"compatibility_changes",run.compatibilityChanges},{"epoch",run.epoch},{"retained_bytes",run.retainedBytes},{"retained_sources",run.reused?run.head.at("sources"):Json::array()},{"head_key",run.key},{"current_event_index",run.eventIndex},{"max_bytes",run.maxBytes},{"max_turns",run.maxTurns},{"fence",projectionFence()}};
         return run;
     }
     bool sessionStillAuthorized(const session::Prepared& run,const ProposalContext& context,const Json& trace)const{
@@ -85,22 +87,26 @@
         auto head=run.reused?run.head:Json{{"version",2},{"epoch",run.epoch},{"segments",Json::array()}};
         auto sources=refs;sources.push_back({{"scope",archiveScope},{"id",key},{"revision",1},{"kind","turn_outcome"},{"access","narrative"}});if(sources.size()>256){trace["failure_continuation"]["reason"]="source_capacity";return;}
         const auto segmentId="failure-segment-"+traceId;auto frame=run.failureFrame;frame.erase("authorized_context");
-        head["segments"].push_back(segmentId);head["sources"]=sources;head["compatibility"]=run.compatibility;head["fence"]=projectionFence();head["bytes"]=run.retainedBytes+session::bytes(added);head["updated_ms"]=serviceNowMs();
+        head["segments"].push_back(segmentId);head["sources"]=sources;head["compatibility"]=run.compatibility;head["compatibility_parts"]=run.compatibilityParts;head["fence"]=projectionFence();head["bytes"]=run.retainedBytes+session::bytes(added);head["updated_ms"]=serviceNowMs();
         const auto before=get("ha.prompt-sessions",run.key);updates.push_back(mutation("ha.prompt-sessions",run.key,before,head,traceId));
         updates.push_back({"ha.prompt-segments",segmentId,0,1,Json{{"epoch",run.epoch},{"messages",session::encode(added)},{"frame",frame},{"outcome","reply_not_approved"}}.dump(),traceId});
         trace["failure_continuation"]["projection_saved"]=true;trace["failure_continuation"]["reason"]="facts_only_append";
     }
     void appendSessionProjection(session::Prepared& run,const ProposalContext& context,const Json& output,const std::string& answerId,const std::string& traceId,std::vector<RecordMutation>& updates){
-        if(!run.enabled||run.aborted||!run.captured||!context.taskId.empty()||!context.createdTaskId.empty()||!context.skillId.empty()||session::images(run.capturedMessages))return;
+        if(!run.enabled||run.aborted||!run.captured||!context.taskId.empty()||!context.createdTaskId.empty()||!context.skillId.empty())return;
         const auto refs=projectionSources(context);if(!projectionSourcesAllowed(refs))return;
-        std::vector<ayt::inference::Message> added(run.capturedMessages.begin()+run.eventIndex,run.capturedMessages.end());
-        added.push_back({"assistant",Json{{"version",1},{"kind",output.at("visible_reply")==""?"silence":"reply"},{"text",output.at("visible_reply")==""?Json(nullptr):output.at("visible_reply")},{"calls",Json::array()}}.dump()});
+        std::vector<ayt::inference::Message> added(run.capturedMessages.begin()+run.eventIndex,run.capturedMessages.end());added=session::textOnlyHistory(std::move(added));
+        Json authored={{"version",1},{"kind",output.at("visible_reply")==""?"silence":"reply"},{"text",output.at("visible_reply")==""?Json(nullptr):output.at("visible_reply")},{"calls",Json::array()}};
+        if(output.contains("messages")&&output.at("visible_reply")!="")authored["messages"]=output.at("messages");
+        added.push_back({"assistant",authored.dump()});
         added.insert(added.end(),run.postlude.begin(),run.postlude.end());
         if(run.retainedBytes+session::bytes(added)>run.maxBytes)return;
         auto head=run.reused?run.head:Json{{"version",2},{"epoch",run.epoch},{"segments",Json::array()}};
-        auto sources=refs;if(!answerId.empty())sources.push_back({{"scope",archiveScope},{"id",answerId},{"revision",1},{"kind","assistant_message"},{"access","narrative"}});if(sources.size()>256)return;
+        auto sources=refs;
+        if(!answerId.empty()){const auto parts=replyMessageParts(output,"visible_reply");for(std::size_t index=0;index<parts.size();++index)sources.push_back({{"scope",archiveScope},{"id",index==0?answerId:answerId+"-m"+std::to_string(index+1)},{"revision",1},{"kind","assistant_message"},{"access","narrative"}});}
+        if(sources.size()>256)return;
         const auto key="segment-"+traceId;auto frame=run.fullFrame;frame.erase("authorized_context");
         Json segment={{"epoch",run.epoch},{"messages",session::encode(added)},{"frame",frame}};
-        head["segments"].push_back(key);head["sources"]=sources;head["compatibility"]=run.compatibility;head["fence"]=projectionFence();head["bytes"]=run.retainedBytes+session::bytes(added);head["updated_ms"]=serviceNowMs();
+        head["segments"].push_back(key);head["sources"]=sources;head["compatibility"]=run.compatibility;head["compatibility_parts"]=run.compatibilityParts;head["fence"]=projectionFence();head["bytes"]=run.retainedBytes+session::bytes(added);head["updated_ms"]=serviceNowMs();
         const auto before=get("ha.prompt-sessions",run.key);updates.push_back(mutation("ha.prompt-sessions",run.key,before,head,traceId));updates.push_back({"ha.prompt-segments",key,0,1,segment.dump(),traceId});
     }

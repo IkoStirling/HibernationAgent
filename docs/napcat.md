@@ -1,5 +1,30 @@
 # NapCat QQ 插件
 
+## 图片／表情素材库与分段消息（0.9.3）
+
+开启 `mediaLibraryEnabled` 并将 `mediaLibraryRoot` 指向含 `catalog.json` 的独立目录。
+起始库位于程序 `plugins/napcat/media`，原样复用小爱的站立与躺下 PNG；建议复制到
+存档素材目录后扩充，避免更新程序覆盖自定义资源。每项以稳定 `id` 关联相对 `file`、
+`name`、`meaning`、`tags`、`situations`、`avoid` 与 `sticker`。示例见起始库目录。
+标签只供选择贴图，不改变角色心情、动作或事实；模型也可以不发。
+
+`napcat.media_search` 只搜索文字释义，不读图、不联网；`napcat.media_send` 接受素材
+ID，原样发送 PNG/JPEG/GIF/WebP 到当前会话，无需每次做图像分析。GIF 不抽帧重编码。
+群聊对全群可见；不接受路径、URL或其他收件人。最多128项、单文件2MiB，拒绝目录
+逃逸与链接；缺失、坏目录和非图片返回失败，不伪造发送成功。每次输入最多尝试发送
+两张库内素材；相同内容的重复提案复用实际回执，未知送达结果不会自动重发。
+发送图片不需要桌面控制权限，但仍须通过当前会话准入和正常审核，不能操作其他会话。
+素材库只收录明确愿意分享的素材，本版不自动收集私聊收到的图片。
+
+`splitParagraphs` 默认开启。模型返回 `messages` 时原样保留其消息边界；只返回 `text`
+时，QQ按空行分隔的自然段投递，最多6条，沿用原有逐条回执与暂停／离线保护。
+代码围栏中的空行不分条，过大的段落仍保留原单条兼容路径；单条长文本不为凑条数
+强行截断。不额外调用模型、不逐条重新审核，桌面文字与语音不受这项QQ排版兜底影响。
+连接失败使用中性“⌁ 暂未取得回复”状态提示，余额不足的已有离线／静默策略保持。
+
+协议依据：[NapCat 官方图片转换](https://github.com/NapNeko/NapCatQQ/blob/main/packages/napcat-onebot/api/msg.ts)。
+本地检查使用 FakeBot，不向真实QQ账号发测试消息；真实客户端的贴图显示仍需日常确认。
+
 提供文本私聊、白名单群内 @ 对话。复用当前选中的角色模型、审核连接、结构化返回校验及全局模型调用预算；不另设一个 QQ 人格。默认不启用，不会自动登录 QQ、加好友、加群或发送测试消息。
 
 ## 启用
@@ -111,7 +136,7 @@ AYNetwork/WIC 路径。QQ 的小组件截图也可直接 target=widget，由主�
 
 ## 队列与故障
 
-- HTTP 回调先写入加密收件箱再返回 `{}`，不利用 OneBot 快速操作回复，网络线程不调用模型。队列满返回 503；同一会话发言人默认 5 秒冷却，冷却内新消息返回 429。重复的同一条已接受消息可直接确认。
+- HTTP 回调先写入加密收件箱再返回 `{}`，不利用 OneBot 快速操作回复，网络线程不调用模型。队列满返回 503；同一会话发言人默认 5 秒模型处理冷却，冷却内新消息仍先排队保存。重复的同一条已接受消息可直接确认。
 - 按机器人/会话/消息 ID 去重；同 ID 但内容或发言人不符时拒绝。默认只处理 30 分钟内的事件及队列消息，时间必须合理。最多保留 64 个待处理任务、256 个不同对话范围；原始历史不随队列删除。
 - 一次处理一条 QQ 消息。桌面正在交谈或输入时，QQ 等待；收到共享暂停信号后停止模型和发送，消息仍留在加密队列。每次实际 actor/reviewer/摘要调用都使用主后台的小时预算。
 - 未完成的入站请求用稳定请求 ID 恢复，已生成的回复优先使用发件箱，不再次生成。模型处理最多尝试 3 次，核心内部另有受预算约束的格式修复和有限重试。
@@ -155,3 +180,88 @@ QQ 继承主后台 `contextControl`，不会另起一套记忆或状态框架。
 手动离线与余额离线分别保存；余额恢复只解除自动原因，保留用户手动离线与后台暂停。Dashboard 显示原因并可立即检查余额（至少间隔 5 秒）。恢复后不补发离线期间的 QQ 消息。服务重启会重新查询，自动原因和原始档案继续保留。
 
 目前自动余额查询仅适配官方 https://api.deepseek.com（及显式标记 balance-fixture 的本机测试服务）。其他服务的 402 仍会触发离线，但不猜测余额地址、不发送付费试探请求；管理页可手动重试，或切换连接。余额和 API 密钥不进入角色上下文，原始余额响应不写日志。官方接口：https://api-docs.deepseek.com/api/get-user-balance/ 。
+
+
+## 同轮多条消息（0.6.0）
+
+### 主动回复的去向（0.8.0）
+
+程序保存每个计划或持续任务的来源渠道。QQ 创建的定时计划、号主动作接续和持续目标回复返回原私聊或原群聊；桌面创建的计划返回桌面。用户消息触发的事件型计划按实际触发会话投递。普通无绑定的独处主动发言使用最近一天内实际接入的聊天渠道，过期后使用桌面；绑定计划不会因为后来换地方聊天而改收件人。电视播放完成沿用开启播放的渠道。
+
+后台接续同样遵守原渠道权限：群聊／非共享号主私聊仅使用该会话有界来源和有限的公开状态，不继承桌面历史、私人问题、图片或保留的会话前缀；角色与审核上下文均适用。工具仍取原渠道授权与本次任务／Skill权限的交集。共享号主私聊继续按配置延续同一角色记忆。QQ 主动回复也遵循 QQ 自己的 reviewReplies，不因为在主后台执行而套用桌面审核开关。手动暂停、离线或余额离线会取消尚未交给传输层的旧回复，恢复后不补发；尚未生成结果的计划仍依原调度规则恢复。
+
+QQ 主动回复不会触发桌面语音、小组件气泡或进入桌面对话列表。生成后的完整消息数组先与原始回复一起提交到加密 `ha.outgoing`，再由程序专用投递接口送入 NapCat 的加密发送账本；模型不能提供或更换收件人。主账本的 queued 表示传输层已接管，不代表 QQ 已确认；最终发送游标和成功回执仍在 NapCat 账本。重启复用同一投递标识，防止重复投递；权限撤销、离线、暂停或无法确认的发送不会回落到桌面播报。后台尚未接管的结果最多保留一天，已接管结果沿用 QQ 消息时效和发送规则。
+
+### 收藏收到的图片和表情
+
+收藏始终是显式工具行为：收到附件、读取附件、回复对话本身都不会自动调用收藏，也不会自动生成素材条目。小爱可以判断值得保留时主动调用，用户也可以在对话中要求它收藏；不要求每张图片都收藏。
+
+启用图片／表情素材库时，号主会话增加 `napcat.media_save`。参数为当前 `channel_identity.received_images` 中的 id、name、meaning，以及可选 tags、situations、avoid、sticker。只接受当前号主实际发送、程序已索引的附件；不接受任意网址、磁盘路径或收件人。可以依据已读图的结果或号主描述整理释义，不能将文件名当作画面事实。
+
+原图通过已有 QQ 图片来源白名单获取，单图最多 2 MiB，支持 PNG/JPEG/GIF/WebP，GIF 不转为静态首帧。保存到 `dataRoot/channels/napcat/<机器人号>/media`，与不可变程序版本及人工维护素材库分开；相同内容按散列去重，最多 128 项。用途说明和标签保存在素材目录的 catalog.json，来源消息、发言人、附件标识及文件散列留在加密传输账本；素材文件本身是普通图片文件，不冒充加密记忆。
+
+`media_search` 合并自己的收藏与原配置的人工素材；返回文字释义，不把图片发送给模型。`media_send` 按返回的稳定 ID 发送原图，继续使用同一输入的发送预算、当前会话约束和回执去重。QQ 内置 face 不是图片，无法直接收藏成图片素材；下载失败、文件过大、目录异常或达到数量上限均返回明确失败，不宣称已收藏。
+
+### 私聊输入状态、对白容错与开发待办
+
+默认启用 `showTypingStatus`：处理已接入的私聊时调用 NapCat 官方 `set_input_status`，文字输入事件使用官方示例的 event_type=1；较长处理每 12 秒最多刷新一次，群聊不调用。完成、取消、暂停或离线后不再刷新，状态由 QQ 原生时效消退；不猜测不存在的清除状态码。接口失败只影响状态提示，不阻止对话，插件诊断保留最后 HTTP 状态。可在插件设置中关闭。依据：[NapCat 官方实现](https://github.com/NapNeko/NapCatQQ/blob/main/packages/napcat-onebot/action/extends/SetInputStatus.ts)。
+
+QQ 的独立回复审核仍由 `reviewReplies` 控制，严密安全模式仍强制审核。关闭审核时，纯对白可用已有有界兼容器包装成合法 reply，减少因模型直接返回自然语言而多调用一次修复；它不能把工具标记、JSON 片段或不合格工具参数当作对白放行，也不会据此执行操作。工具参数、收件人、来源和目录权限继续程序验证。
+
+号主私聊或桌面对话中可通过 `development.request` 转交小爱程序的开发需求。title 和 details 绑定当前原始消息、渠道和调用记录，先保存到加密 ha.development，再送入小爱现有的导师逻辑会话。同一原始消息的同一提案去重，最多 128 项。目标由程序固定，模型不能指定外部会话或进程；不自动修改代码。`recorded` 仅本地保存，`delivered`／`developer_notified` 只有导师原生 turn/start 接受后才为 true；`completed` 仅导师已经回应，不代表需求已开发部署。`development.status` 可凭返回编号查询实际结果，不调用模型。忙碌或连接失败保留 pending 和原因，不伪造通知；重启后已派发但未完成的请求标为 uncertain，不盲目重发。非号主和群聊不能使用这一私密入口。本机认证的 GET /api/development-requests 可检查持久回执；原始聊天保留在原档案。
+
+最终函数回复允许附带精确的 version=1、kind=reply、calls=[] 协议外壳，也允许只提交有效 messages 而省略 text。它们仍统一验证为同一个最终对白；非空 calls、错误 kind、未知字段、冲突文本及空消息继续拒绝，不把格式容错转换成工具执行权限。
+
+本轮修复清单（2026-11-02）：主动回复按原渠道投递；显式收藏并复用收到的原图／GIF；私聊原生输入中提示；QQ 自然语言对白容错；号主开发待办。通过本机模拟服务验证后，使用引擎安装与原重启脚本应用；不向真实 QQ 发送测试消息。
+
+模型可以为一次回复提供 `messages`，自然分成 1 至 6 条短消息。日常默认一条短应答，确有第二层信息才分两三条；详细解释与创作仍可长答，不要求每次凑条数。单条最多 2000 个 Unicode 码点，全部加上两个换行的兼容汇总文本最多 6000 码点。程序完整验证并审核整个回复后，才按模型提供的边界发送；不把任意长文强制切碎，也不为每条另调用模型。旧单条 `text` 返回继续使用原 `maxReplyCharacters` 限制，新数组验证通过后不再截短。
+
+### 输入轮次与自然节奏（0.9）
+
+连续输入按同一会话、同一发言人等待最近一条后的静默时间；图片及明显未完片段可多等一会儿，最多8条、64KiB、10秒便进入处理，避免无限等待。等待根消息时，其后同会话片段不会抢先启动另一个模型请求，其他发言人仍可处理。每条原始消息、图片编号和时间保留在加密账本，合并后的 `channel_identity.input_turn.parts` 继续保留对应关系；停顿不等于语义上已经说完。
+
+小爱在同一次模型返回中判断本次是提问、指令、补充、应声还是素材，决定短答、长答或 silence；不额外调用一个模型判断意图。可选 `presentation.reply_timing` 为 `natural`（默认）、`immediate`（确认可以立即回应）、`wait_for_followup`（回复备妥后至少等3秒）。默认回复备妥后再等1600毫秒。第一条尚未发送时收到新补充，旧候选记为 superseded，保留原始生成记录和工具事实，再围绕补充处理。独立 `ha.channel-delivery` 标记使本会话、共享桌面历史和保留上下文均不会把这段未发出的候选当成实际对白；已经开始发送的分条仍遵守确认游标与原发送约束。
+
+分条发送默认模拟每秒18字，间隔900～4000毫秒，带稳定的小幅变化；延迟写入账本，重启不丢失剩余间隔，也不重发确认前缀。等待使用下一次可执行时间，不占住后台睡眠等待。私聊继续使用原生“输入中”，群聊不冒充该状态。配置入口在 NapCat 插件设置：`replyPacing`、`replyGraceMs`、`replyCharactersPerSecond`、`replyMinIntervalMs`、`replyMaxIntervalMs`；输入侧为 `mergeWindowMs`、`mediaQuietMs`、`continuationQuietMs`、`maxBurstWaitMs`。关闭 `replyPacing` 可恢复无额外人工等待；关闭合并窗口不禁用明确的回复间隔设置。
+
+图片对话后只保存可追溯的文字回执、来源、当时对白和明确“旧像素本次未重发”的历史标记到上下文投影，后续不反复携带图像。近期窗口按用户轮次和回复组计数，工具观察限额独立，不让多次读图挤掉此前指令。历史身份元数据不再复制一份长原文，分段编号及图片关联仍保留，正文与原档案不截断。
+
+短期图片回看索引从5分钟8张扩为同一会话、同一发言人近30分钟最多16张，传输索引仍有32项上限；新增的是文字指针，不自动下载或向模型发送图片。仍可访问的图片可按需重读，已收藏图片附带其局部用法；不把素材释义扩大成人格、关系或全局价值约定。已经保存的图像、原始聊天与记忆均保留，不为表达修复批量删档；永久收藏仍必须由小爱主动调用。
+
+同一输入对应一个加密投递账本，保存不可变的消息数组、下条游标和每条 QQ 实际成功回执。群聊仅第一条附带 @；截图仍沿用已有媒体工具的独立去重回执，不随每条文字重复发送。每条发送前，桌面后台重新检查当前渠道身份、权限、暂停、离线、作息睡眠与存档操作状态；不再需要旧模型会话租约仍然有效。
+
+成功回执与游标一起提交。重启后，已确认的前缀不会重发；若上次崩溃时某一条还在发送，或传输超时、返回 5xx 等无法确认交付，则整批记为结果不明并停止余条，不盲目重试。只有明确 HTTP 401、403、429 拒绝，才有限重试当前条；不会重发先前成功条。部分失败保留已有回执和失败索引，不记为整批已完成。
+
+后台暂停仍保留尚未处理的输入，但已经准备的回复及其余条在暂停时取消，恢复不会补播旧尾条；发送中的迟到成功回执可以留存，但不能使已取消尾条复活。离线或睡眠、权限变化也停止旧回复的余条。已提交给 QQ 的消息无法撤回。
+
+Windows 开机自启动、隐藏实例管理及原生二维码窗口：参见 [desktop-startup-napcat.md](desktop-startup-napcat.md)。运行时安装包与登录数据保持独立；当前支持接入已有目录，自动下载和升级尚未实现。
+
+## 2026-11-05 complete tools and outgoing work products
+
+Large native tool catalogs no longer silently hide entries after the provider's
+128-function ceiling. QQ send tools receive direct slots; a bounded catalog router
+can call any remaining tool in the current authorized catalog. It normalizes into
+the original canonical call before schema/source/review/permission/execution
+checks. It cannot call an undeclared or out-of-scope target or mix a final reply
+with operations.
+
+`napcat.send_image(source_id)` accepts a current successful screenshot,
+`pixel.preview`, or `workspace.view_image` observation. Sources still require the
+same request trace, revision and local archive; paths/base64/user IDs are never
+model arguments. Previewing/exporting alone is not delivery.
+
+`napcat.send_file(mount,path)` sends an existing file from host-authorized drafts
+or materials, up to 8 MiB, to the current QQ conversation. The engine AYIO
+Workspace validates each read and rejects traversal/reparse/private paths. This
+uses the local NapCat upload_private_file/upload_group_file API with its validated
+workspace filename; no arbitrary external file root or recipient is exposed.
+One encrypted durable outbox entry records the result; duplicate proposals reuse
+the receipt and unknown outcomes are not automatically resent. No plaintext
+conversation/image scratch files are created. Synthetic FakeBot tests cover the
+actual upload route, recipient binding, duplicate calls and preview image send.
+
+Owner-private channel context now includes filtered host-owned ongoing tasks,
+instead of querying its physically separate, empty QQ task store. History and
+source access checks remain in force.
+
+文件上传参数依据：[NapCat 官方 API 目录](https://napneko.github.io/onebot/api) 的 upload_private_file / upload_group_file。

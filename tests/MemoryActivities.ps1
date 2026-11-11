@@ -1,4 +1,5 @@
 param([string]$ProjectRoot=(Join-Path $PSScriptRoot '..'),[string]$BuildRoot='')
+. (Join-Path $PSScriptRoot ProjectedRequest.ps1)
 $ErrorActionPreference='Stop';$ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot);if(!$BuildRoot){$BuildRoot=Join-Path $ProjectRoot out/release};$BuildRoot=[IO.Path]::GetFullPath($BuildRoot)
 Add-Type -Path (Join-Path $PSScriptRoot PrivateDesktop.cs)
 Add-Type -Path (Join-Path $PSScriptRoot NativeChatTest.cs)
@@ -40,9 +41,14 @@ try{
  Check ($feedback[0].ok-and$feedback[0].result.memories[0].id-eq$digestId) 'keyword retrieval finds digest even when keyword is absent from summary'
  Check ($feedback[1].ok-and$feedback[1].result.records[0].offset-eq0-and$feedback[1].result.records[0].next_offset-le256-and$feedback[1].result.records[0].truncated) 'archive reads are byte bounded and UTF8 aligned'
  Check ($feedback[1].result.records[0].authorship.reported_by-eq'counterpart'-and$feedback[0].result.memories[0].authorship.reported_by-eq'derived_record') 'retrieved originals distinguish the counterpart from derived recollection'
- $capture=Get-Content (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 60;$authorized=($capture.messages[1].content|ConvertFrom-Json -Depth 50).authorized_context
- Check (@($authorized|Where-Object {$_.id-eq$first.event_id-and$_.data.summary_not_original}).Count-eq1) 'later context uses labeled digest rather than full old transcript'
- $projected=@($authorized|Where-Object id -eq $first.event_id)[0];Check ($projected.authorship.reported_by-eq'counterpart'-and$projected.authorship.record_kind-eq'user_message'-and$projected.authorship.derived) 'summary projection preserves the original reporting speaker without making it character speech'
+ $capture=Get-Content (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 90;$authorized=@(Model-AuthorizedRows $capture)
+ # Owner continuity deliberately retains bounded exact long-message packets.
+ # The independent digest still needs its original revision and derived label;
+ # do not erase an authorized cached original merely to satisfy an old layout.
+ $projected=@($authorized|Where-Object id -eq $digestId)[0]
+ Check ($projected.data.kind-eq'summary'-and$projected.data.compacted_from.id-eq$first.event_id-and$projected.data.compacted_from.revision-eq1) 'current projected context retains the sourced digest independently of an authorized long original'
+ $original=@($authorized|Where-Object id -eq $first.event_id)[0]
+ Check ($projected.authorship.reported_by-eq'derived_record'-and$projected.authorship.derived-and$original.authorship.reported_by-eq'counterpart'-and!$original.authorship.derived) 'digest and retained original preserve their distinct authorship instead of becoming character speech'
  Plan @((Calls @((Tool 'read' 'memory.archive_read' @{id=$first.event_id}))),(Calls @((Tool 'again' 'memory.compact' @{id=$first.event_id}))),(Reply '没有重复整理。'));$null=Message '重复整理检查';Check ((Feedback)[0].result.deduplicated-and(Feedback)[0].result.id-eq$digestId) 'same source and revision compaction is idempotent'
  Review @($approve,'invalid digest','invalid digest',$approve);Plan @((Calls @((Tool 'bad-digest' 'memory.compact' @{id='${event_id}'}))),(Reply '先保留原文。'));$null=Message '不能生成有效摘要的独立测试';Check (!(Feedback)[0].ok) 'malformed manager output fails closed after bounded repair'
  Review @($approve);Plan @((Calls @((Tool 'hidden' 'memory.archive_read' @{id='trace-chat-1'}),(Tool 'sql' 'memory.sql' @{query='SELECT * FROM records'}))),(Reply '没有读取内部资料。'));$null=Message '内部范围检查';$feedback=Feedback;Check ($feedback[0].result.records.Count-eq0-and!$feedback[1].ok) 'character cannot query internal traces or arbitrary SQL'

@@ -46,8 +46,9 @@
     }
     bool currentIntention(const Json& link,const MemoryVisibility* supplied=nullptr)const{
         std::lock_guard lock(personalMutex);const auto row=get("ha.personal",link.at("id"));
-        if(!row.revision||row.value.value("kind",std::string{})!="intention"||row.value.value("status",std::string{})!="active"||row.value.value("edit_revision",row.revision)!=link.at("revision"))return false;
+        if(!row.revision||row.value.value("kind",std::string{})!="intention"||!intention_life::available(row.value,serviceNowMs())||row.value.value("edit_revision",row.revision)!=link.at("revision"))return false;
         const auto local=supplied?MemoryVisibility{}:visibility();const auto& policy=supplied?*supplied:local;for(const auto& ref:row.value.value("evidence_sources",row.value.value("sources",Json::array())))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")}))return false;
+        for(const auto& ref:row.value.value("decision_sources",Json::array()))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")}))return false;
         return true;
     }
     std::string recordIntentionAttempt(const Json& result){
@@ -67,7 +68,7 @@
         // Reading self does not turn its underlying evidence into write authority.
         for(const auto& thread:view.value("threads",Json::array())){
             const auto row=get("ha.personal",thread.at("id"));if(!row.revision)continue;
-            for(const auto* field:{"evidence_sources","sources","resolution_sources"})for(const auto& ref:row.value.value(field,Json::array())){
+            for(const auto* field:{"evidence_sources","sources","resolution_sources","decision_sources"})for(const auto& ref:row.value.value(field,Json::array())){
                 const Source source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")};context.narrativeSources[source.scope+":"+source.id]=source;
             }
         }
@@ -97,6 +98,7 @@
             if((status=="active"&&!active)||(status=="closed"&&active))continue;
             bool allSources=true;for(const auto& ref:row.value.value("evidence_sources",row.value.value("sources",Json::array())))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")})){allSources=false;break;}if(!allSources)continue;
             for(const auto& ref:row.value.value("resolution_sources",Json::array()))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")})){allSources=false;break;}if(!allSources)continue;
+            for(const auto& ref:row.value.value("decision_sources",Json::array()))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")})){allSources=false;break;}if(!allSources)continue;
             auto visible=row.value;Json episodes=Json::array();
             for(const auto& episode:row.value.at("episodes")){
                 bool allowed=true;for(const auto& ref:episode.at("sources"))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")})){allowed=false;break;}
@@ -111,6 +113,7 @@
             auto value=personal::context(visible,row.value.value("edit_revision",row.revision));value["id"]=*it;value["source_ids"]=Json::array();for(const auto& ref:latest.at("sources"))value["source_ids"].push_back(ref.at("id"));
             if(!active){value["resolution"]=visible.value("resolution",std::string{});value["resolved_ms"]=visible.value("resolved_ms",std::int64_t(0));}
             if(visible.value("kind",std::string{})=="intention"){
+                value["availability"]=!active?"closed":intention_life::available(visible,serviceNowMs())?"available":"paused";
                 value["attempts"]=Json::array();for(const auto& key:get("ha.personal-attempts",it->get<std::string>(),Json::array()).value){
                     const auto attempt=get(archiveScope,key);if(!attempt.revision||!policy.source(Source{key,attempt.revision,"personal_attempt",archiveScope})||!policy.allows(attempt.value))continue;
                     auto fact=attempt.value.at("observation").at("attempt");fact["narrative_sources"]=attempt.value.value("narrative_sources",Json::array());
@@ -125,8 +128,15 @@
         for(auto& match:matches){if(values.size()>=limit)break;values.push_back(std::move(match.second));}
         return {{"threads",values},{"matching_count",matches.size()},{"omitted_count",matches.size()-values.size()},{"guide","这里是有来源的兴趣、偏好和未完打算，不是待完成的作业。stance/note是最近感受，leaning/basis是缓慢积累的倾向；recent_changes保留不同看法。experience_contexts是这些看法曾基于的实际游戏、作品或材料，不表示它们仍在当前场景，也不把它们硬定为下一步目标；旧局的步数不能套到新局。需要过去实际结果时可用memory.archive_search按对象id查阅，只在相关时再接续。self.observe可按query找旧关注，status=closed能找做完或放下的缘由，查询不会恢复旧任务。"}};
     }
-    Json personalDialogueContext(const std::string& input,bool privateTime,const Json& bodyAtInput=Json::object())const{
-        auto view=cfg.channel&&cfg.channel->sharedOwner?cfg.channel->sharedPersonal:personalContext();if(privateTime)return view;
+    Json personalPlanningContext()const{return intention_life::planningView(personalContext("",24),get("ha.autonomy","personal-offers",Json::object()).value);}
+    void recordPersonalOffer(const Json& values,std::int64_t now){
+        if(values.empty())return;auto before=get("ha.autonomy","personal-offers",Json::object());auto changed=before.value;
+        for(const auto& row:values)changed[row.at("id").get<std::string>()]={{"revision",row.at("revision")},{"at_ms",now}};
+        while(changed.size()>128){auto oldest=changed.begin();for(auto it=changed.begin();it!=changed.end();++it)if(it.value().value("at_ms",std::int64_t(0))<oldest.value().value("at_ms",std::int64_t(0)))oldest=it;changed.erase(oldest);}
+        commit({mutation("ha.autonomy","personal-offers",before,changed,"planning-offer")},"planning-offer");
+    }
+    Json personalDialogueContext(const std::string& input,bool privateTime,const Json& bodyAtInput=Json::object(),const std::string& focus="")const{
+        auto view=cfg.channel&&cfg.channel->sharedOwner?cfg.channel->sharedPersonal:personalContext("",focus.empty()?8:24);if(privateTime)return focus.empty()?view:intention_life::focusView(std::move(view),focus);
         const auto plan=activityQueue(),previous=bodyAtInput.value("activity_queue",Json::object());
         for(auto& thread:view["threads"]){
             const auto text=thread.value("topic",std::string{})+" "+thread.value("note",std::string{});
@@ -143,8 +153,17 @@
         auto before=get("ha.personal",key);const auto revision=before.value.value("edit_revision",before.revision);const auto expected=args.value("expected_revision",std::int64_t(0));if(expected!=revision)return toolFailure("personal_revision_conflict");
         const auto refs=checkedSources(args.at("source_ids"),context);if(refs.is_null()||refs.empty())return toolFailure("personal_source_not_available");
         const auto policy=visibility();if(before.revision)for(const auto& ref:before.value.value("evidence_sources",before.value.value("sources",Json::array())))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")}))return toolFailure("personal_previous_source_not_available");
+        if(before.revision)for(const auto& ref:before.value.value("decision_sources",Json::array()))if(!policy.source(Source{ref.at("id"),ref.at("revision"),ref.at("kind"),ref.at("scope")}))return toolFailure("personal_previous_source_not_available");
         Json changed;
-        if(name=="self.notice"){
+        if(name=="self.reconsider"){
+            if(!before.revision||before.value.value("kind",std::string{})!="intention"||before.value.value("status",std::string{})!="active")return toolFailure("personal_active_intention_required");
+            const auto old=before.value.value("intention_pause",Json::object());
+            const bool same=old.value("choice",std::string{})==args.at("choice").get<std::string>()&&old.value("note",std::string{})==args.at("note").get<std::string>()&&(args.at("choice")=="resume"||old.value("when",std::string("soon"))==args.value("when",std::string("soon")));
+            if(same&&personal::sameEvidence(old.value("sources",Json::array()),refs))return toolSuccess({{"id",key},{"revision",revision},{"deduplicated",true},{"thread",personal::context(before.value,revision)}});
+            if(before.value.value("decision_sources",Json::array()).size()+refs.size()>128)return toolFailure("personal_decision_history_limit");
+            changed=intention_life::reconsidered(before.value,args,refs,serviceNowMs());changed["edit_revision"]=revision+1;
+            commit({mutation("ha.personal",key,before,changed,traceId)},traceId);
+        }else if(name=="self.notice"){
             const auto kind=args.at("kind").get<std::string>(),stance=args.at("stance").get<std::string>();
             if((kind=="preference"&&stance!="like"&&stance!="avoid")||(kind=="interest"&&stance!="curious")||(kind=="intention"&&stance!="want"))return toolFailure("personal_stance_kind");
             if(before.revision&&(before.value.at("kind")!=kind||before.value.at("topic")!=args.at("topic")))return toolFailure("personal_topic_identity");

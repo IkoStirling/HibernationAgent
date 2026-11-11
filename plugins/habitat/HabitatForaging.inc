@@ -32,6 +32,9 @@
         if(count<0||count>8)return toolFailure("gather_quantity_invalid");
         const auto id=nextId("gather");gather_={{"id",id},{"region",region},{"needs",needs},{"requested",count},{"collected",0},{"results",PluginJson::array()},{"phase","finding"},{"deadline",world_.clock()+180},{"destination",args.value("destination",std::string(recipe.empty()?"backpack":"pantry"))}};
         if(count==0){finishGather("completed");return toolSuccess({{"completed",true},{"gather_id",id},{"collected",0}});}
+        if(bsimmer::supplies::nearest(gatherTargets(),actorX_,actorY_,region,needs).empty()){
+            finishGather("no_matching_resource");return toolSuccess({{"finished",true},{"completed",false},{"status","no_matching_resource"},{"gather_id",id},{"requested",count},{"collected",0}});
+        }
         return toolSuccess({{"accepted",true},{"completed",false},{"gather_id",id},{"requested",count}});
     }
     void advanceGather(){

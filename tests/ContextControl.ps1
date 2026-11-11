@@ -7,7 +7,7 @@ function Await([scriptblock]$Probe,$Name){$end=[DateTime]::UtcNow.AddSeconds(35)
 function Api($Path,$Data=$null){$p=@{Uri=$script:origin+$Path;Headers=@{Authorization='Bearer context-control-fixture-only'};TimeoutSec=12};if($null-ne$Data){$p.Method='Post';$p.ContentType='application/json';$p.Body=[Text.Encoding]::UTF8.GetBytes(($Data|ConvertTo-Json -Depth 70 -Compress))};Invoke-RestMethod @p}
 function Plan($Items,$Review=$false){$file=if($Review){'review-plan.json'}else{'plan.json'};@{nonce=[Guid]::NewGuid().ToString('N');responses=@($Items|ForEach-Object {@{response=$_}})}|ConvertTo-Json -Depth 60|Set-Content -LiteralPath (Join-Path $providerRoot $file) -Encoding utf8}
 function Native($Id,$Name,$Arguments){@{fixture_native_calls=@(@{id=$Id;name=$Name;arguments=$Arguments})}}
-function Message($Text){$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$Text};Await {!(Api '/api/chat').busy} 'turn';$job=@((Api '/api/state').jobs|Where-Object id -eq chat)[0];$info=$job.result|ConvertFrom-Json;Api '/api/trace' @{id=$info.trace_id}}
+function Message($Text){$inputMessage=@{request_id=[Guid]::NewGuid().ToString('N');text=$Text};$null=Api '/api/message' $inputMessage;Await {!(Api '/api/chat').busy} 'turn';$saved=Api '/api/message' $inputMessage;if(!$saved.duplicate-or!$saved.request.trace_id){throw 'Completed request trace missing'};Api '/api/trace' @{id=$saved.request.trace_id}}
 function SetPolicy($Control){$settings=(Api '/api/dashboard').settings;$settings.contextControl=$Control;$null=Api '/api/settings' @{settings=$settings}}
 function Size($Trace){$sum=0;foreach($call in @($Trace.turns)+@($Trace.reviews)){$f=$call.request_footprint;$sum+=$f.text_bytes+$f.tool_schema_bytes+$f.output_schema_bytes};return $sum}
 try{

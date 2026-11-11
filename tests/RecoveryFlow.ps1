@@ -1,4 +1,5 @@
 param([string]$ProjectRoot=(Join-Path $PSScriptRoot '..'),[string]$BuildRoot='')
+. (Join-Path $PSScriptRoot ProjectedRequest.ps1)
 $ErrorActionPreference='Stop';$ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot);$BuildRoot=[IO.Path]::GetFullPath($BuildRoot)
 Add-Type -Path (Join-Path $PSScriptRoot PrivateDesktop.cs)
 $root=Join-Path $ProjectRoot ('artifacts/recovery-flow-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Force $root|Out-Null
@@ -40,8 +41,8 @@ try{
  Plan @((Reply ('旧水果'*1000)));Message '之前聊过的一个长话题'
  Plan @((Reply '图片还没有发送。'));Message '请检查图片是不是已经发出去了。'
  Plan @((Reply '正在核对发送记录。'));Message '没有收到图片。'
- $wire=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 65;$context=$wire.messages[1].content|ConvertFrom-Json -Depth 60;$texts=@($context.authorized_context|ForEach-Object {$_.data.text})
+ $wire=Get-Content -LiteralPath (Join-Path $root provider/last-request.json) -Raw|ConvertFrom-Json -Depth 90;$context=Model-CurrentEvent $wire;$texts=@($context.authorized_context|ForEach-Object {$_.data.text})
  Check ($texts-contains'请检查图片是不是已经发出去了。'-and$texts-contains'图片还没有发送。'-and$texts-contains'没有收到图片。') 'small real context keeps the immediately preceding request and reply'
- Check (@($texts|Where-Object {$_-like'*旧水果*'}).Count-eq0) 'older long fruit dialogue yields its context budget to the current exchange'
+ $latest=@(foreach($message in $wire.messages){$event=Model-Event $message;if($event){$event}})[-1];$fresh=@($latest.authorized_context|ForEach-Object {$_.data.text});Check (@($fresh|Where-Object {$_-like'*旧水果*'}).Count-eq0) 'older long dialogue is not resent in the latest incremental context'
  Stop-Backend;@{completed=$true;checks=$checks;root=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root acceptance.json);Write-Output "Recovery flow passed: $checks checks. Evidence: $root"
 }finally{foreach($process in @($service,$provider)){if($process){$process.Refresh();if(!$process.HasExited){Stop-Process -Id $process.Id}}};if($desktop){$desktop.Dispose()}}

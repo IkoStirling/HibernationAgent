@@ -15,10 +15,10 @@ function Call($Id,$Tool,$Arguments){@{version=1;kind='call';text=$null;calls=@(@
 function Message($Items){Plan $Items;Plan @($script:approval) -Review;$null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text='合成相处：刚才那段未写完的故事可以先留在这里。'};Await {!(Api '/api/chat').busy} 'fixture dialogue';Check (!(Api '/api/chat').call_failed) 'fixture dialogue succeeds'}
 function Auto($Enabled){$settings=(Api '/api/dashboard').settings|ConvertTo-Json -Depth 65|ConvertFrom-Json -AsHashtable;$settings.plugins.widget.autonomousMode=$Enabled;$null=Api '/api/settings' @{settings=$settings};Await {(Api '/api/activities/status').enabled-eq$Enabled} 'autonomy setting';if(!$Enabled){Await {!(Api '/api/activities/status').generating} 'planner stopped'}}
 function Note($Id){@{id=$Id;expected_revision=0;kind='intention';topic='未写完的小故事';note='AUTONOMOUS_PRIVATE_MARKER 想在下次有空时续上那个没画完的圆';stance='want';source_ids=@($script:workSource)}}
-function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int]$ReviewHttpStatus=200,$Close=$null,$Appraisal=$null,[switch]$Singleton){
+function Batch($Note,$During=$null,$Verdict=$null,[string]$ExpectedError='',[int]$ReviewHttpStatus=200,$Close=$null,$Appraisal=$null,[switch]$Singleton,$Feeling=$null,$Schedule=$null){
  Auto $false;$before=(Api '/api/activities/status').personal_carry_feedback.generation;$calls=Requests;$reviews=Requests $true
  $carry=@($Note|Where-Object {$null-ne$_});$closures=@($Close|Where-Object {$null-ne$_});if($Singleton-and$Note){$carry=$Note};if($Singleton-and$Close){$closures=$Close}
- Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='AUTONOMY_PRIVATE_PURPOSE'});carry_forward=$carry;close_threads=$closures;appraisal=$Appraisal}) $(if($During){1800}else{0})
+ Plan @(@{version=1;commands=@(@{kind='wait';seconds=1;purpose='AUTONOMY_PRIVATE_PURPOSE'});carry_forward=$carry;close_threads=$closures;appraisal=$Appraisal;feeling=$Feeling;schedule=$Schedule}) $(if($During){1800}else{0})
  if($Verdict-and!$ExpectedError){$ExpectedError='activity_review_rejected'}
  Plan @($(if($Verdict){$Verdict}else{$script:approval})) -Review -HttpStatus $ReviewHttpStatus;Auto $true
  Await {(Requests)-gt$calls} 'background request';$context=(Capture).messages[1].content|ConvertFrom-Json -Depth 65
@@ -44,16 +44,26 @@ try{
  $hiddenEncounter=@((Api '/api/chat').messages|Where-Object role -eq user)[0].id
  Message @((Call old memory.archive_read @{id=$hiddenEncounter}),(Call protect memory.remember @{kind='conversation';text='用于检查已受限旧交谈的轮换边界';source_ids=@($hiddenEncounter)}),(Silent));$encounterMemory=((Capture).messages[-1].content|ConvertFrom-Json -Depth 65).tool_results[0].result.id
  Check ([bool]$encounterMemory) 'an actual older encounter has its own access-controlled original source';$null=Api '/api/access' @{id=$encounterMemory;accessible=$false}
- $note=Note own-continuation;$first=Batch $note $null $null '' 200 $null @{source_id=$workSource;valence=.35} -Singleton
+ $feeling=@{source_id=$workSource;stimulus=@{emotions=@{joy=.7};desires=@{play=.3}}}
+ $future=@{id='own-later-story';topic='稍后再看看这个未画完的圆';memory='medium';when=@{type='at';after_minutes=60};source_ids=@($workSource)}
+ $note=Note own-continuation;$first=Batch $note $null $null '' 200 $null @{source_id=$workSource;valence=.35} -Singleton -Feeling $feeling -Schedule $future
+ Check (@($first.feedback.results|Where-Object {$_.tool-eq'self.feel'-and$_.ok}).Count-eq1) 'background accepts sourced multi-axis feeling in the existing reviewed batch'
+ Check (@($first.feedback.results|Where-Object {$_.tool-eq'schedule.create'-and$_.ok}).Count-eq1-and(Api '/api/dashboard').remembered_schedules.active-eq1) 'background can actually persist its own later plan without an extra model round'
+ Check ($first.context.schedule_configuration.available-and$first.context.schedule_configuration.max_new_per_batch-eq1) 'planner knows it may arrange one sourced future activity'
  Check ($first.feedback.results[0].ok-and$first.feedback.results[0].revision-eq1) 'background actor can save its own sourced intention'
  Check ($first.actor_calls-eq1-and$first.review_calls-eq1) 'private carry uses the existing actor and review calls without another model request'
- $reviewCapture=Get-Content -LiteralPath (Join-Path $root provider/review-last-request.json) -Raw|ConvertFrom-Json -Depth 70;$canonical=(Model-ReviewEvent $reviewCapture).candidate
+ $firstReviewCapture=Get-Content -LiteralPath (Join-Path $root provider/review-last-request.json) -Raw|ConvertFrom-Json -Depth 70
+ $canonical=(Model-ReviewEvent $firstReviewCapture).candidate
  Check ($canonical.carry_forward-is[Array]-and$canonical.carry_forward.Count-eq1-and$canonical.carry_forward[0].id-eq$note.id) 'review sees the canonical single-item array before the actual private save'
  Check (@($first.feedback.results|Where-Object {$_.tool-eq'state.appraise'-and$_.ok}).Count-eq1-and(Api '/api/state').continuous_state.target_valence-eq.35) 'autonomous feeling uses its real experience and the same existing actor and review pass'
  Check (@($first.context.evidence|Where-Object {$_.id-eq$workSource-and$_.kind-eq'tool_observation'-and$_.data.result.written}).Count-eq1) 'planner receives a bounded real writing receipt rather than invented evidence'
  $previous=@($first.context.evidence|Where-Object {$_.kind-eq'user_message'-and$_.context_role-eq'earlier_encounter'})[0];Check ($previous.id-and$previous.not_a_current_request-and$first.context.evidence.Count-le8) 'a previous real encounter gets a bounded opportunity alongside current world evidence'
  Check (@($first.context.evidence|Where-Object id -eq $hiddenEncounter).Count-eq0) 'rotating prior conversations cannot restore a restricted original encounter'
- $repeat=$note.Clone();$repeat.expected_revision=1;$again=Batch $repeat
+ $repeat=$note.Clone();$repeat.expected_revision=1;$again=Batch $repeat -Feeling $feeling -Schedule $future
+ Check (@($again.context.schedule_configuration.existing|Where-Object id -eq 'own-later-story').Count-eq1) 'the next planner sees its own accessible existing plan before deciding again'
+ Check (@($again.feedback.results|Where-Object {$_.tool-eq'self.feel'-and$_.ok-and$_.deduplicated}).Count-eq1) 'a repeated background feeling cannot stack the same experience'
+ Check (@($again.feedback.results|Where-Object {$_.tool-eq'schedule.create'-and!$_.ok}).Count-eq1-and(Api '/api/dashboard').remembered_schedules.active-eq1) 'repeated creation returns failure without multiplying the plan'
+ Check ($again.actor_calls-eq1-and$again.review_calls-eq1) 'combined feeling and later-plan proposals use no additional actor or review round'
  Check ($again.feedback.results[0].ok-and$again.feedback.results[0].deduplicated-and$again.feedback.results[0].revision-eq1) 'same source and meaning do not strengthen or version the intention again'
  Check ($again.context.previous_carry_forward_results.generation-eq$first.feedback.generation) 'next planning request receives the actual prior private-operation outcome'
  $next=@($again.context.evidence|Where-Object {$_.kind-eq'user_message'-and$_.context_role-eq'earlier_encounter'})[0];Check ($next.id-and$next.id-ne$previous.id) 'successful accepted planning rotates to an earlier unoffered encounter without reinforcing the same one'

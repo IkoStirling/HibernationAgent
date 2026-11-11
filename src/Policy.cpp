@@ -1,6 +1,11 @@
+#include <Hibernation/DesktopIntegration.h>
 #include <Hibernation/Application.h>
 #include <Hibernation/MemoryWorkshop.h>
 #include <Hibernation/ContextControl.h>
+#include <Hibernation/BackgroundBudget.h>
+#include <Hibernation/ContinuityMind.h>
+#include <Hibernation/SpeechStyle.h>
+#include <Hibernation/ReplyMessages.h>
 #include <Hibernation/SkillRegistry.h>
 #include <AYSerializer/JsonSchema.h>
 #include <algorithm>
@@ -11,13 +16,13 @@
 
 namespace hibernation {
 std::string outputSchema() {
-    return R"({"type":"object","additionalProperties":false,"required":["visible_reply","actions","memories","state_update","stage_proposal"],"properties":{
-      "visible_reply":{"type":"string","maxLength":6000},
+    auto schema=Json::parse(R"({"type":"object","additionalProperties":false,"required":["visible_reply","actions","memories","state_update","stage_proposal"],"properties":{
+      "visible_reply":{"anyOf":[{"type":"null"},{"type":"string","maxLength":6000}]},
       "actions":{"type":"array","maxItems":4,"items":{"type":"object","additionalProperties":false,"required":["kind","path","content"],"properties":{"kind":{"enum":["write_draft","read_material"]},"path":{"type":"string","minLength":1,"maxLength":240},"content":{"type":"string","maxLength":8192}}}},
       "memories":{"type":"array","maxItems":8,"items":{"type":"object","additionalProperties":false,"required":["kind","text","source_ids"],"properties":{"kind":{"enum":["conversation","story","outer","inference","summary"]},"text":{"type":"string","minLength":1,"maxLength":1024},"source_ids":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"string","minLength":1,"maxLength":200}}}}},
       "state_update":{"type":"object","additionalProperties":false,"properties":{"attention":{"type":"string","maxLength":240},"open_questions":{"type":"array","maxItems":8,"items":{"type":"string","maxLength":240}}}},
       "stage_proposal":{"anyOf":[{"type":"null"},{"type":"object","additionalProperties":false,"required":["stage_id","reason","evidence_ids"],"properties":{"stage_id":{"type":"string","maxLength":64},"reason":{"type":"string","minLength":1,"maxLength":1024},"evidence_ids":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"string","minLength":1,"maxLength":200}}}}]}
-    }})";
+    }})");schema["properties"]["messages"]=replyMessagesSchema();return schema.dump();
 }
 bool safeRelative(std::string_view path) {
     if(path.empty()||path.size()>240||path.front()=='/'||path.back()=='/'||path.find_first_of("\\:*?\"<>|\0",0,9)!=std::string_view::npos) return false;
@@ -36,7 +41,7 @@ bool safeRelative(std::string_view path) {
 }
 ValidatedOutput validateOutput(std::string_view text,const ProposalContext& context) {
     if(!ayt::serializer::validateJsonDocument(text,outputSchema())) return {false,"output_schema",{}};
-    auto value=Json::parse(text);
+    auto normalized=normalizeReplyMessages(Json::parse(text),"visible_reply",true);if(!normalized.ok)return {false,normalized.error,{}};auto value=std::move(normalized.value);
     const auto visible=value.at("visible_reply").get<std::string>();if(context.eventKind=="user_message" && visible.find_first_not_of(" \t\r\n")==std::string::npos) return {false,"empty_reply",{}};
     if(std::any_of(visible.begin(),visible.end(),[](unsigned char c){return c<32&&c!='\t'&&c!='\r'&&c!='\n';}))return {false,"reply_control_character",{}};
     for(const auto& action:value.at("actions")) {
@@ -76,10 +81,10 @@ Config loadConfig(const std::filesystem::path& path) {
     const auto text=readFile(path,64*1024);
     if(!ayt::serializer::validateJsonDocument(text,"{}")) throw std::runtime_error("config_json");
     const auto j=Json::parse(text);
-    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","reflectOnActivities","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer","frontend","contextControl","skills","memoryWorkshop","dashboard","continuousTasks"};
+    const std::set<std::string> allowed={"schemaVersion","dataRoot","characterRoot","uiRoot","port","credentialEnvironment","contextBytes","recentMessageCount","maxMemoriesInContext","solitudeIntervalMs","idleBeforeSolitudeMs","reflectOnActivities","maxStartsPerHour","profiles","pluginRoot","plugins","draftsRoot","materialsRoot","remoteStorage","maxToolRounds","review","computer","frontend","desktopIntegration","contextControl","backgroundBudget","skills","memoryWorkshop","dashboard","continuousTasks","cognition"};
     for(auto it=j.begin();it!=j.end();++it) if(!allowed.contains(it.key())) throw std::runtime_error("config_unknown_field");
     if(j.at("schemaVersion")!=1) throw std::runtime_error("config_version");
-    Config c;c.memoryWorkshop=j.value("memoryWorkshop",c.memoryWorkshop);workshop::validateSettings(c.memoryWorkshop);c.dashboardLayout=j.value("dashboard",Json::object());workshop::validateDashboard(c.dashboardLayout);c.contextControl=j.value("contextControl",Json::object());ContextControl::read(c.contextControl);c.frontend=j.value("frontend",c.frontend);if(!c.frontend.is_object())throw std::runtime_error("frontend_config");for(auto it=c.frontend.begin();it!=c.frontend.end();++it)if((it.key()!="startupAnimation"&&it.key()!="reducedMotion")||!it.value().is_boolean())throw std::runtime_error("frontend_config");const auto base=std::filesystem::absolute(path).parent_path();
+    Config c;c.cognition=mind::Settings::read(j.value("cognition",Json::object())).json();c.backgroundBudget=background::Policy::read(j.value("backgroundBudget",Json::object())).json();c.memoryWorkshop=j.value("memoryWorkshop",c.memoryWorkshop);workshop::validateSettings(c.memoryWorkshop);c.dashboardLayout=j.value("dashboard",Json::object());workshop::validateDashboard(c.dashboardLayout);c.contextControl=j.value("contextControl",Json::object());ContextControl::read(c.contextControl);c.desktopIntegration=DesktopIntegration::settings(j.value("desktopIntegration",Json::object()));c.frontend=j.value("frontend",c.frontend);if(!c.frontend.is_object())throw std::runtime_error("frontend_config");for(auto it=c.frontend.begin();it!=c.frontend.end();++it)if((it.key()!="startupAnimation"&&it.key()!="reducedMotion")||!it.value().is_boolean())throw std::runtime_error("frontend_config");const auto base=std::filesystem::absolute(path).parent_path();
     auto integer=[](const Json& object,const char* key,std::int64_t fallback,std::int64_t minimum,std::int64_t maximum){
         auto it=object.find(key);if(it==object.end())return fallback;if(!it->is_number_integer())throw std::runtime_error("config_integer");
         if(it->is_number_unsigned()&&it->get<std::uint64_t>()>static_cast<std::uint64_t>(maximum))throw std::runtime_error("config_range");
@@ -100,11 +105,13 @@ Config loadConfig(const std::filesystem::path& path) {
     const auto skillPath=std::filesystem::u8path(c.skills.value("root",std::string{}));
     c.skillsRoot=skillPath.empty()?c.projectRoot/"skills":std::filesystem::absolute(skillPath.is_absolute()?skillPath:base/skillPath).lexically_normal();
     c.plugins=j.value("plugins",Json::object());if(!c.plugins.is_object()||c.plugins.size()>32||c.plugins.dump().size()>16384)throw std::runtime_error("plugin_settings");
+    if(c.plugins.contains("speech-style"))c.plugins["speech-style"]=speechStyle::normalize(c.plugins.at("speech-style"));
     auto environmentName=[](const std::string& value){if(value.empty())return true;if(value.size()>128||(!std::isalpha(static_cast<unsigned char>(value[0]))&&value[0]!='_'))return false;for(unsigned char x:value)if(!std::isalnum(x)&&x!='_')return false;std::string upper=value;std::transform(upper.begin(),upper.end(),upper.begin(),[](unsigned char x){return static_cast<char>(std::toupper(x));});return !std::set<std::string>{"PATH","HOME","TEMP","TMP","USERPROFILE","SYSTEMROOT","COMSPEC","CODEX_HOME"}.contains(upper);};
     for(const auto& plugin:c.plugins){if(!plugin.is_object())throw std::runtime_error("plugin_settings");for(auto it=plugin.begin();it!=plugin.end();++it){auto name=it.key();std::transform(name.begin(),name.end(),name.begin(),[](unsigned char x){return static_cast<char>(std::tolower(x));});if(name=="apikey"||name=="api_key"||name=="password"||name=="authorization"||name=="accesstoken"||name=="secret")throw std::runtime_error("plaintext_plugin_secret");}if(!environmentName(plugin.value("credentialEnvironment",std::string{})))throw std::runtime_error("credential_environment");}
     c.computer=j.value("computer",c.computer);if(!c.computer.is_object()||c.computer.dump().size()>16384)throw std::runtime_error("computer_config");
-    for(auto it=c.computer.begin();it!=c.computer.end();++it)if(it.key()!="enabled"&&it.key()!="allowScreenCapture"&&it.key()!="applications"&&it.key()!="readRoots")throw std::runtime_error("computer_field");
-    for(const auto* field:{"enabled","allowScreenCapture"})if(c.computer.contains(field)&&!c.computer.at(field).is_boolean())throw std::runtime_error("computer_boolean");
+    for(auto it=c.computer.begin();it!=c.computer.end();++it)if(it.key()!="enabled"&&it.key()!="allowScreenCapture"&&it.key()!="applications"&&it.key()!="readRoots"&&it.key()!="limitedShellEnabled"&&it.key()!="autonomousObservationEnabled"&&it.key()!="autonomousObservationIntervalSeconds")throw std::runtime_error("computer_field");
+    for(const auto* field:{"enabled","allowScreenCapture","limitedShellEnabled","autonomousObservationEnabled"})if(c.computer.contains(field)&&!c.computer.at(field).is_boolean())throw std::runtime_error("computer_boolean");
+    if(c.computer.contains("autonomousObservationIntervalSeconds")){const auto& v=c.computer.at("autonomousObservationIntervalSeconds");if(!v.is_number_integer()||v.get<double>()<30||v.get<double>()>86400)throw std::runtime_error("autonomous_observation_interval");}
     auto identifier=[](const Json& value){if(!value.is_string())return false;const auto id=value.get<std::string>();return !id.empty()&&id.size()<=40&&id.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-_")==std::string::npos;};
     if(c.computer.contains("applications")){auto& apps=c.computer["applications"];if(!apps.is_array()||apps.size()>32)throw std::runtime_error("computer_applications");std::set<std::string> ids;for(auto& app:apps){if(!app.is_object()||!identifier(app.at("id"))||!ids.insert(app.at("id")).second||!app.at("name").is_string()||app.at("name").get<std::string>().size()>160)throw std::runtime_error("computer_application");for(auto it=app.begin();it!=app.end();++it)if(it.key()!="id"&&it.key()!="name"&&it.key()!="path"&&it.key()!="builtin")throw std::runtime_error("computer_application_field");if(app.contains("builtin")){if(app.contains("path")||(app.at("builtin")!="notepad"&&app.at("builtin")!="calculator"))throw std::runtime_error("computer_application_builtin");}else{const auto text=app.at("path").get<std::string>();if(text.empty()||text.size()>2048||text.find_first_of("\r\n")!=std::string::npos||text.find('\0')!=std::string::npos)throw std::runtime_error("computer_application_path");auto path=std::filesystem::u8path(text);if(!path.is_absolute()||path.extension()!=L".exe")throw std::runtime_error("computer_application_path");}}}
     auto& roots=c.computer["readRoots"];if(roots.is_null())roots=Json::array();if(!roots.is_array()||roots.size()>8)throw std::runtime_error("computer_roots");std::set<std::string> ids={"materials","drafts"};for(auto& root:roots){if(!root.is_object()||!identifier(root.at("id"))||!ids.insert(root.at("id")).second)throw std::runtime_error("computer_root");for(auto it=root.begin();it!=root.end();++it)if(it.key()!="id"&&it.key()!="path")throw std::runtime_error("computer_root_field");const auto text=root.at("path").get<std::string>();if(text.empty()||text.size()>2048||text.find_first_of("\r\n")!=std::string::npos||text.find('\0')!=std::string::npos)throw std::runtime_error("computer_root_path");auto path=std::filesystem::u8path(text);path=std::filesystem::absolute(path.is_absolute()?path:base/path).lexically_normal();auto native=path.u8string();root["path"]=std::string(reinterpret_cast<const char*>(native.data()),native.size());}
@@ -136,7 +143,7 @@ Config loadConfig(const std::filesystem::path& path) {
         profile.model.supportsJsonSchema=p.value("supportsJsonSchema",false);profile.model.supportsJsonObject=p.value("supportsJsonObject",false);profile.model.supportsStreaming=p.value("supportsStreaming",true);profile.model.legacyMaxTokens=p.value("legacyMaxTokens",false);
         profile.model.supportsVision=p.value("supportsVision",false);
         profile.model.supportsToolCalls=p.value("supportsToolCalls",false);profile.model.reasoningEffort=p.value("reasoningEffort",std::string{});if(!std::set<std::string>{"","none","minimal","low","medium","high","xhigh","max"}.contains(profile.model.reasoningEffort))throw std::runtime_error("profile_reasoning_effort");
-        profile.model.proxyOrigin=p.value("proxyOrigin",std::string{});profile.model.useSystemProxy=p.value("useSystemProxy",true);
+        profile.model.proxyOrigin=p.value("proxyOrigin",std::string{});profile.model.useSystemProxy=p.value("useSystemProxy",false);
         if(!profile.model.proxyOrigin.empty()&&(!profile.model.proxyOrigin.starts_with("http://")||!ayt::net::http::validOrigin(profile.model.proxyOrigin)))throw std::runtime_error("profile_proxy");
         const auto timeout=integer(p,"timeoutMs",30000,100,120000);profile.maxOutputTokens=static_cast<std::uint32_t>(integer(p,"maxOutputTokens",2048,1,8192));
         if(timeout<100||timeout>120000||!profile.maxOutputTokens||profile.maxOutputTokens>8192) throw std::runtime_error("profile_limit");
@@ -144,8 +151,8 @@ Config loadConfig(const std::filesystem::path& path) {
     }
     if(c.profiles.empty()||c.profiles.size()>16||!std::any_of(c.profiles.begin(),c.profiles.end(),[](const auto& p){return p.enabled&&p.model.protocol==ayt::inference::Protocol::Mock;})) throw std::runtime_error("mock_required");
     const auto review=j.value("review",Json::object());if(!review.is_object())throw std::runtime_error("review_config");
-    for(auto it=review.begin();it!=review.end();++it)if(it.key()!="enabled"&&it.key()!="profileId"&&it.key()!="maxRewrites"&&it.key()!="retainConversationFocus")throw std::runtime_error("review_field");
-    c.reviewEnabled=review.value("enabled",false);c.retainConversationFocus=review.value("retainConversationFocus",false);c.reviewProfileId=review.value("profileId",std::string{});c.maxReviewRewrites=static_cast<std::size_t>(integer(review,"maxRewrites",2,0,3));
+    for(auto it=review.begin();it!=review.end();++it)if(it.key()!="enabled"&&it.key()!="profileId"&&it.key()!="maxRewrites"&&it.key()!="retainConversationFocus"&&it.key()!="roleOnly")throw std::runtime_error("review_field");
+    c.reviewRoleOnly=review.value("roleOnly",false);c.reviewEnabled=review.value("enabled",false);c.retainConversationFocus=review.value("retainConversationFocus",false);c.reviewProfileId=review.value("profileId",std::string{});c.maxReviewRewrites=static_cast<std::size_t>(integer(review,"maxRewrites",2,0,3));
     if(c.reviewEnabled&&std::none_of(c.profiles.begin(),c.profiles.end(),[&](const auto& p){return p.id==c.reviewProfileId&&p.enabled&&p.model.protocol!=ayt::inference::Protocol::Mock;}))throw std::runtime_error("review_profile");
     if(!workshop::validateRoots(c))throw std::runtime_error("workshop_backup_root");
     return c;

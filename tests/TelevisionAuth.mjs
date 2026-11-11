@@ -1,0 +1,28 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const source=fs.readFileSync(new URL('../ui/television-bridge.js',import.meta.url),'utf8');
+let calls=0,fail=false,loggedIn=false,clock=100000;
+const visible=new Set();
+const element={getBoundingClientRect:()=>({width:50,height:20})};
+const ctx=vm.createContext({window:{},location:{hostname:'fixture.local',origin:'https://fixture.local'},document:{querySelectorAll:s=>visible.has(s)?[element]:[]},getComputedStyle:()=>({visibility:'visible',display:'block'}),Date:{now:()=>clock},AbortController,setTimeout,clearTimeout,fetch:async(url,options)=>{
+ calls++;assert.equal(url,'https://api.bilibili.com/x/web-interface/nav');assert.equal(options.credentials,'include');assert.equal(options.cache,'no-store');
+ if(fail)throw Error('synthetic offline');
+ return {ok:true,json:async()=>({code:0,data:{isLogin:loggedIn,uname:'PRIVATE_SENTINEL',mid:'PRIVATE_SENTINEL'}})};
+}});
+const api=vm.runInContext(source,ctx);const options={signed_in_selector:'.yes',signed_out_selector:'.no'};
+assert.equal(api.auth(options).state,'unknown');assert.equal(calls,0);
+visible.add('.no');assert.equal(api.auth(options).state,'signed_out');
+visible.add('.yes');assert.equal(api.auth(options).state,'unknown');
+visible.delete('.no');assert.equal(api.auth(options).state,'signed_in');
+api.auth({signed_in_selector:'x'.repeat(257)});assert.equal(calls,0);
+ctx.location={hostname:'www.bilibili.com.evil.invalid',origin:'https://www.bilibili.com.evil.invalid'};api.auth();assert.equal(calls,0);
+ctx.location={hostname:'www.bilibili.com',origin:'https://www.bilibili.com'};
+assert.equal(api.auth().state,'unknown');api.auth();assert.equal(calls,1,'one in-flight request');
+await new Promise(resolve=>setTimeout(resolve,5));
+let state=api.auth();assert.equal(state.state,'signed_out');assert(!JSON.stringify(state).includes('PRIVATE_SENTINEL'));assert.equal(calls,1);
+clock+=16000;loggedIn=true;api.auth();await new Promise(resolve=>setTimeout(resolve,5));assert.equal(api.auth().state,'signed_in');
+clock+=16000;fail=true;api.auth();await new Promise(resolve=>setTimeout(resolve,5));assert.equal(api.auth().state,'unknown','network error cannot mean signed out');
+clock+=100;api.auth();assert.equal(calls,3,'failures are throttled');
+clock+=50000;assert.equal(api.auth().state,'unknown','stale cache is unknown');await new Promise(resolve=>setTimeout(resolve,5));
+console.log('PASS configured selectors, ambiguity, host boundary, Bilibili boolean, caching, failure, expiration, privacy');

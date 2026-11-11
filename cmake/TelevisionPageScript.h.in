@@ -1,0 +1,2 @@
+#pragma once
+inline constexpr char televisionBridgeSource[]=R"HA_TV_JS(@HA_TV_BRIDGE_JS@)HA_TV_JS";

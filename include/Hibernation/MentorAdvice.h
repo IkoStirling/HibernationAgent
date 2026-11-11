@@ -37,7 +37,7 @@ inline std::optional<Json> validate(const std::string& text,const Json& availabl
         proposals.push_back({{"tool",name},{"args",Json::parse(argsText)},{"instruction",step.at("instruction")}});
     }
     value["proposals"]=std::move(proposals);value["advisory_only"]=true;value["operations_executed"]=false;
-    value["guide"]="这是导师的建议，不是已经完成的操作、记忆事实或新的权限。由你选择后通过现有工具执行，按真实回执判断结果。";return value;
+    value["guide"]="这是导师与你本次交流的回应或建议，由你自主理解和回应。涉及操作的建议不代表已执行，不提供新的权限或经历事实；需要操作时仍通过现有工具并依据真实回执判断。";return value;
 }
 inline std::optional<std::string> finalMessage(const std::string& events){
     std::optional<std::string> answer;bool completed=false,failed=false;std::size_t start=0;

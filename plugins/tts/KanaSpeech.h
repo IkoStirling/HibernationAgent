@@ -9,8 +9,8 @@ inline std::filesystem::path speechDirectory(){
     HMODULE module=nullptr;GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&speechDirectory),&module);
     std::wstring name(32768,L'\0');const auto n=GetModuleFileNameW(module,name.data(),static_cast<DWORD>(name.size()));if(!n||n>=name.size())throw std::runtime_error("speech_directory");name.resize(n);return std::filesystem::path(name).parent_path();
 }
-inline PluginJson kanaRuntime(){
-    const auto dir=speechDirectory();std::ifstream in(dir/"runtime.json",std::ios::binary|std::ios::ate);if(!in||in.tellg()<0||in.tellg()>8192)throw std::runtime_error("speech_runtime_missing");in.seekg(0);auto cfg=PluginJson::parse(in);
+inline PluginJson kanaRuntime(const std::filesystem::path& dataRoot={}){
+    const auto dir=speechDirectory();const auto external=dataRoot/"runtime"/"speech"/"runtime.json";const auto file=!dataRoot.empty()&&std::filesystem::exists(external)?external:dir/"runtime.json";std::ifstream in(file,std::ios::binary|std::ios::ate);if(!in||in.tellg()<0||in.tellg()>8192)throw std::runtime_error("speech_runtime_missing");in.seekg(0);auto cfg=PluginJson::parse(in);
     for(const auto* key:{"pythonExecutable","modules"}){const auto value=std::filesystem::u8path(cfg.at(key).get<std::string>());if(!value.is_absolute()||!std::filesystem::exists(value))throw std::runtime_error("speech_runtime_missing");}
     if(!std::filesystem::is_regular_file(dir/"kana_worker.py")||!std::filesystem::is_regular_file(dir/"kana_reading.py"))throw std::runtime_error("speech_runtime_missing");return cfg;
 }
@@ -30,28 +30,29 @@ inline PluginJson openSpeechFile(const std::filesystem::path& file){
 // touch disk; the loopback service requires a fresh per-worker bearer token.
 class KanaSynthesizer {
     std::future<ayt::platform::ProcessResult> process_;
-    std::atomic<bool> stopping_=false,running_=false;
+    std::atomic<bool> stopping_=false,running_=false,readyState_=false;
     std::atomic<unsigned> starts_=0;
     std::string origin_,token_;
     std::filesystem::path boot_,ready_;
     void clean(){std::error_code ec;for(const auto& file:{boot_,ready_})if(!file.empty())std::filesystem::remove(file,ec);if(!ready_.empty()){auto pending=ready_;pending.replace_extension(".pending.dpapi");std::filesystem::remove(pending,ec);}boot_.clear();ready_.clear();}
-    void stop(){stopping_=true;if(process_.valid()){try{process_.get();}catch(...){}}running_=false;origin_.clear();token_.clear();clean();}
+    void stop(){readyState_=false;stopping_=true;if(process_.valid()){try{process_.get();}catch(...){}}running_=false;origin_.clear();token_.clear();clean();}
 public:
     ~KanaSynthesizer(){stop();}
     void close(){stop();}
     unsigned starts()const{return starts_.load();}
     bool running()const{return running_.load();}
+    bool ready()const{return readyState_.load()&&running_.load();}
     bool warm(const std::filesystem::path& dataRoot,const std::function<bool()>& cancelled){
         if(!origin_.empty()&&running_)return true;
         stop();
         try{
-            const auto runtime=kanaRuntime();const auto root=dataRoot/"runtime"/"speech";std::filesystem::create_directories(root);const auto id=speechNonce();boot_=root/(id+".boot.dpapi");ready_=root/(id+".ready.dpapi");token_=speechNonce()+speechNonce();
-            sealSpeechFile(boot_,{{"version",1},{"token",token_},{"ready",pathUtf8(ready_)}});
+            const auto runtime=kanaRuntime(dataRoot);const auto root=dataRoot/"runtime"/"speech";std::filesystem::create_directories(root);const auto id=speechNonce();boot_=root/(id+".boot.dpapi");ready_=root/(id+".ready.dpapi");token_=speechNonce()+speechNonce();
+            sealSpeechFile(boot_,{{"version",1},{"token",token_},{"ready",pathUtf8(ready_)},{"modules",runtime.at("modules")}});
             ayt::platform::ProcessOptions options;options.executable=std::filesystem::u8path(runtime.at("pythonExecutable").get<std::string>());options.arguments={"-B",pathUtf8(speechDirectory()/"kana_worker.py"),"--serve",pathUtf8(boot_)};options.outputLimit=4096;options.cancellationRequested=[this]{return stopping_.load();};
             stopping_=false;running_=true;++starts_;process_=std::async(std::launch::async,[this,options]{try{auto result=ayt::platform::runProcess(options);running_=false;return result;}catch(...){running_=false;throw;}});
             const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
             while(running_&&!cancelled()&&std::chrono::steady_clock::now()<deadline){
-                if(std::filesystem::exists(ready_)){const auto response=openSpeechFile(ready_);const int port=response.at("port");if(response.at("version")!=1||port<1||port>65535)break;origin_="http://127.0.0.1:"+std::to_string(port);clean();return true;}
+                if(std::filesystem::exists(ready_)){const auto response=openSpeechFile(ready_);const int port=response.at("port");if(response.at("version")!=1||port<1||port>65535)break;origin_="http://127.0.0.1:"+std::to_string(port);readyState_=true;clean();return true;}
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
         }catch(...){}

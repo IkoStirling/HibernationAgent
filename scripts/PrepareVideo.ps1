@@ -12,11 +12,18 @@ $envLines=& cmd.exe /d /c ('"'+$VcVars+'" >nul && set');if($LASTEXITCODE){throw 
 New-Item -ItemType Directory -Path (Join-Path $SdkRoot 'lib'),(Join-Path $SdkRoot 'bin') -Force|Out-Null
 foreach($name in @('avcodec-62','avformat-62','avutil-60','swresample-6')){
  $binary=Join-Path $EngineBin ($name+'.dll');if(!(Test-Path -LiteralPath $binary)){throw "Engine media binary missing: $name"}
+ $imports=& dumpbin.exe /nologo /imports $binary;if($LASTEXITCODE){throw 'Runtime import inspection failed.'}
+ if(($imports -join "`n")-match'(?i)\b(ucrtbased|vcruntime[0-9]+(?:_[0-9]+)?d|msvcp[0-9]+(?:_[0-9]+)?d)\.dll\b'){throw "FFmpeg binary uses a Debug CRT: $binary. Supply -EngineBin with a verified Release shared build matching these headers."}
  $exports=& dumpbin.exe /nologo /exports $binary;if($LASTEXITCODE){throw 'Export inspection failed.'}
  $symbols=@($exports|ForEach-Object{if($_ -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\w+)\s*$'){$matches[1]}});if($symbols.Count-lt10){throw 'Unexpected FFmpeg export table.'}
  $definition=Join-Path $SdkRoot ('lib/'+$name+'.def');@(('LIBRARY "'+$name+'.dll"'),'EXPORTS')+$symbols|Set-Content -LiteralPath $definition -Encoding ascii
  & lib.exe /nologo /machine:x64 ('/def:'+$definition) ('/out:'+(Join-Path $SdkRoot ('lib/'+$name+'.lib')))|Out-Null;if($LASTEXITCODE){throw 'Import library creation failed.'}
 }
 foreach($name in @('avcodec-62','avformat-62','avutil-60','swresample-6')){Copy-Item -LiteralPath (Join-Path $EngineBin ($name+'.dll')) -Destination (Join-Path $SdkRoot 'bin') -Force}
-@{version='8.1.2';headers='https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz';sha256=$expected;binarySource=$EngineBin;note='Reuses existing engine FFmpeg DLLs; import libraries derived from their exports.'}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $SdkRoot 'provenance.json') -Encoding utf8
-Write-Output 'FFmpeg decode SDK prepared from verified upstream headers and existing engine binaries.'
+$licenses=Join-Path $SdkRoot licenses;New-Item -ItemType Directory -Force $licenses|Out-Null
+foreach($name in @('COPYING.LGPLv2.1','LICENSE.md')){Copy-Item -LiteralPath (Join-Path $source $name) -Destination $licenses -Force}
+$distribution=Split-Path $EngineBin
+if(Test-Path -LiteralPath (Join-Path $distribution LICENSE)){Copy-Item -LiteralPath (Join-Path $distribution LICENSE) -Destination (Join-Path $licenses binary-LICENSE.txt) -Force}
+if(Test-Path -LiteralPath (Join-Path $distribution README.txt)){Copy-Item -LiteralPath (Join-Path $distribution README.txt) -Destination (Join-Path $licenses binary-README.txt) -Force}
+@{version='8.1.2';headers='https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz';sha256=$expected;binarySource=$EngineBin;note='Release shared FFmpeg DLLs checked for Debug CRT imports; import libraries derived from their exports.'}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $SdkRoot 'provenance.json') -Encoding utf8
+Write-Output 'FFmpeg decode SDK prepared from verified upstream headers and checked Release shared binaries.'

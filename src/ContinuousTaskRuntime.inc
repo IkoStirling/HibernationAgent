@@ -42,6 +42,7 @@
         for(const auto* key:{"self_user_id","sender_user_id","message_type"})if(origin.value(key,std::string{})!=context.channelIdentity.value(key,std::string{}))return false;return true;
     }
     Json taskListing(const ProposalContext* context=nullptr,bool closed=true,std::size_t limit=32)const{
+        if(cfg.channel)return cfg.channel->sharedTasks;
         std::lock_guard guard(continuousTaskMutex);Json values=Json::array();
         const auto index=get("ha.tasks","index",Json::array()).value;for(auto it=index.rbegin();it!=index.rend()&&values.size()<limit;++it){const auto row=get("ha.tasks",*it);if(!row.revision||(!closed&&continuous::terminal(row.value.at("status").get<std::string>())))continue;if(context&&(!taskForCaller(row.value,*context)||!taskAccessible(row.value)))continue;values.push_back(continuous::statusView(row.value,row.revision));}
         return {{"enabled",cfg.continuousTasks.value("enabled",true)},{"tasks",values},{"guide","目标和简短检查点持续保存；安排不等于完成。QQ号主私聊建立的获准目标在桌面后台执行，不自动向QQ主动发送；可在原会话查询进度。"}};
@@ -62,7 +63,7 @@
         std::lock_guard guard(continuousTaskMutex);const auto row=get("ha.tasks",context.taskId);
         return cfg.continuousTasks.value("enabled",true)&&row.revision&&row.value.at("status")=="running"&&row.value.at("active_step")==context.taskStep&&row.value.at("bindings")==taskBindings()&&taskAccessible(row.value);
     }
-    LocalReply controlContinuousTask(const Json& body){
+    LocalReply controlContinuousTask(const Json& body,bool compactReply=false){
         if(!body.is_object()||body.size()!=3||!body.contains("id")||!body.at("id").is_string()||!body.contains("expected_revision")||!body.at("expected_revision").is_number_integer()||!body.contains("action")||!body.at("action").is_string())return error(400,"task_control_arguments");
         const auto key=body.at("id").get<std::string>(),action=body.at("action").get<std::string>();if(!continuous::safeId(key)||(action!="pause"&&action!="resume"&&action!="cancel"))return error(400,"task_control_arguments");
         std::lock_guard guard(continuousTaskMutex);auto before=get("ha.tasks",key);if(!before.revision)return error(404,"task_missing");if(body.at("expected_revision")!=before.revision)return error(409,"task_revision_conflict");auto value=before.value;
@@ -74,6 +75,7 @@
             if(action!="resume"&&(job.state==JobState::Running||job.state==JobState::Pending))queue->pauseJob(job.spec.id,true,serviceNowMs());
             if(action=="resume"&&job.state==JobState::Paused){forgetBackgroundYield(job.spec.id);forgetPauseOwnership(job.spec.id);auto resumed=job.spec;resumed.dueAtMs=serviceNowMs()+2000;if(!schedule(resumed))return error(409,"task_resume_busy");}
         }
+        if(compactReply)return reply(200,{{"revision",before.revision+1}});
         return reply(200,continuous::statusView(value,before.revision+1));
     }
     Json taskTool(const std::string& name,const Json& args,ProposalContext& context,const std::string& traceId){
@@ -128,6 +130,9 @@
         std::lock_guard guard(continuousTaskMutex);const auto key=payload.at("continuous_task").get<std::string>();auto before=get("ha.tasks",key);if(!before.revision)return;auto value=before.value;
         if(value.value("settled_token",std::int64_t(-1))==job.runToken||value.value("active_step",0)!=payload.value("task_step",0))return;
         value["settled_token"]=job.runToken;
+        if(value.at("status")=="running"&&result.value("status",std::string{})=="deferred"&&result.value("reason",std::string{})=="circadian_sleep"){
+            value["status"]="ready";value["deferred_reason"]="circadian_sleep";value["next_ms"]=serviceNowMs()+1000;value["updated_ms"]=serviceNowMs();commit({mutation("ha.tasks",key,before,value,"task.runner")},"continuous-task-sleep-deferred");return;
+        }
         if(value.at("status")=="running"){
             if(!taskAccessible(value)||value.at("bindings")!=taskBindings()){
                 value["status"]="blocked";value["last_issue"]="task_source_or_workspace_changed";commit({mutation("ha.tasks",key,before,value,"task.runner")},"continuous-task-settle-denied");return;
@@ -138,8 +143,10 @@
                 const auto observed=taskEvidence(key);const auto fingerprint=observed.empty()?std::string{}:observed.back().at("id").get<std::string>();const bool progress=fingerprint!=value.value("progress_fingerprint",std::string{});value["progress_fingerprint"]=fingerprint;value["no_progress"]=progress?0:value.value("no_progress",0)+1;if(desired=="continue"&&value.at("no_progress").get<int>()>=3){value["status"]="blocked";value["last_issue"]="task_no_progress";}
             }else{
                 const auto code=result.value("call_error",Json::object()).value("code",std::string("task_checkpoint_missing"));const int failures=value.value("failure_count",0)+1;value["failure_count"]=failures;value["last_issue"]=code;
-                const bool temporary=code=="rate_limited"||code=="connection_failed"||code=="timeout"||code=="provider_unavailable"||code=="model_call_budget"||code=="background_budget"||code=="background_budget_reserved";
-                value["status"]=temporary&&failures<3?"ready":"blocked";value["next_ms"]=serviceNowMs()+60000;if(code=="model_call_budget"||code=="background_budget_reserved")value["next_ms"]=std::max(value.at("next_ms").get<std::int64_t>(),modelBudgetStatus().value("resets_at_ms",serviceNowMs()+60000));
+                const bool budget=continuous::budgetDeferred(code);
+                const bool temporary=budget||code=="rate_limited"||code=="connection_failed"||code=="timeout"||code=="provider_unavailable"||code=="model_call_budget"||code=="background_budget"||code=="background_budget_reserved";
+                value["status"]=budget||temporary&&failures<3?"ready":"blocked";if(budget){value["failure_count"]=0;value["deferred_reason"]=code;}value["next_ms"]=serviceNowMs()+60000;if(budget)value["next_ms"]=std::max(value.at("next_ms").get<std::int64_t>(),code=="background_daily_input_budget"||code=="background_daily_call_budget"?backgroundBudgetStatus().value("resets_at_ms",serviceNowMs()+60000):modelBudgetStatus().value("resets_at_ms",serviceNowMs()+60000));
+                if(code=="model_call_budget"||code=="background_budget_reserved")value["next_ms"]=std::max(value.at("next_ms").get<std::int64_t>(),modelBudgetStatus().value("resets_at_ms",serviceNowMs()+60000));
                 // Retain the stable step identity and its receipts on retry.
             }
         }
@@ -148,7 +155,7 @@
     bool activeContinuousTask(const Json& payload,Json& view,ProposalContext& context)const{
         if(!payload.contains("continuous_task"))return true;std::lock_guard guard(continuousTaskMutex);auto row=get("ha.tasks",payload.at("continuous_task"));
         if(!cfg.continuousTasks.value("enabled",true)||!row.revision||row.value.at("status")!="running"||row.value.at("active_step")!=payload.at("task_step")||!taskAccessible(row.value)||row.value.at("bindings")!=taskBindings())return false;
-        context.taskId=row.value.at("id");context.taskStep=row.value.at("active_step");for(const auto& name:row.value.at("allowed_tools"))context.taskTools.insert(name.get<std::string>());view=continuous::statusView(row.value,row.revision);return true;
+        context.taskId=row.value.at("id");context.taskStep=row.value.at("active_step");context.channelIdentity=row.value.value("channel_identity",Json::object());for(const auto& name:row.value.at("allowed_tools"))context.taskTools.insert(name.get<std::string>());view=continuous::statusView(row.value,row.revision);return true;
     }
     bool recoverableTaskCheckpoint(const Json& payload)const{
         if(!payload.contains("continuous_task"))return false;Json view;ProposalContext context;
@@ -156,7 +163,7 @@
     }
     void continuousTasksTick(std::int64_t now){
         if(cfg.channel||now<nextContinuousTaskTick)return;nextContinuousTaskTick=now+500;
-        if(!cfg.continuousTasks.value("enabled",true)||runtimePaused||inputActive||napcatActive()||worker->running()||!journalHealthy||workshopBusy())return;
+        if(!cfg.continuousTasks.value("enabled",true)||runtimePaused||circadianAsleep()||inputActive||napcatActive()||worker->running()||!journalHealthy||workshopBusy())return;
         for(const auto& job:jobs())if(job.spec.id=="task.runner"&&(job.state==JobState::Pending||job.state==JobState::Running||job.state==JobState::Paused)){
             const auto payload=Json::parse(job.spec.payload);const auto task=get("ha.tasks",payload.value("continuous_task",std::string{}));const auto status=task.value.value("status",std::string{});
             if(status=="ready"||status=="running"||job.state==JobState::Running)return;
@@ -165,11 +172,15 @@
         for(const auto& entry:speechPresentation)if(entry.second.value("state",std::string{})=="waiting"||entry.second.value("state",std::string{})=="speaking")return;
         const auto activities=activityQueue();if(!activities.at("active").is_null()||!activities.at("entries").empty())return;
         std::lock_guard guard(continuousTaskMutex);
-        for(const auto& key:get("ha.tasks","index",Json::array()).value){auto before=get("ha.tasks",key);if(!before.revision)continue;auto value=before.value;const auto state=value.at("status").get<std::string>();if(state!="ready"&&state!="running")continue;if(now<value.at("next_ms").get<std::int64_t>())continue;
+        for(const auto& key:get("ha.tasks","index",Json::array()).value){auto before=get("ha.tasks",key);if(!before.revision)continue;auto value=before.value;auto state=value.at("status").get<std::string>();
+            if(state=="blocked"&&continuous::budgetDeferred(value.value("last_issue",std::string{}))&&taskAccessible(value)&&value.at("bindings")==taskBindings()&&now<value.at("deadline_ms").get<std::int64_t>()){
+                value["status"]="ready";value["failure_count"]=0;value["next_ms"]=now;value["deferred_reason"]="budget_recovered";commit({mutation("ha.tasks",key,before,value,"task.runner")},"continuous-task-budget-recovered");before=get("ha.tasks",key);value=before.value;state="ready";
+            }
+            if(state!="ready"&&state!="running")continue;if(now<value.at("next_ms").get<std::int64_t>())continue;
             std::string issue;if(cfg.maxToolRounds<2)issue="task_requires_two_tool_rounds";else if(!taskAccessible(value))issue="task_source_or_authority_unavailable";else if(value.at("bindings")!=taskBindings())issue="task_workspace_changed";else if(now>=value.at("deadline_ms").get<std::int64_t>())issue="task_deadline";else if(value.value("active_step",0)==0&&value.at("steps")>=value.at("max_steps"))issue="task_step_budget";
             if(!issue.empty()){value["status"]="blocked";value["last_issue"]=issue;commit({mutation("ha.tasks",key,before,value,"task.runner")},"continuous-task-blocked");continue;}
             if(value.value("active_step",0)==0){value["steps"]=value.at("steps").get<int>()+1;value["active_step"]=value.at("steps");value["checkpoint"]=nullptr;}
-            value["status"]="running";value["updated_ms"]=now;commit({mutation("ha.tasks",key,before,value,"task.runner")},"continuous-task-step-started");
+            value.erase("deferred_reason");value["status"]="running";value["updated_ms"]=now;commit({mutation("ha.tasks",key,before,value,"task.runner")},"continuous-task-step-started");
             Json refs=value.at("instructions");const auto evidence=taskEvidence(key);for(std::size_t i=evidence.size()>6?evidence.size()-6:0;i<evidence.size();++i)refs.push_back(evidence[i]);
             Json payload={{"force",true},{"continuous_task",key},{"task_step",value.at("active_step")},{"topic",value.at("goal")},{"references",refs}};
             auto job=spec("task.runner","role.solitude",payload,now);job.maxAttempts=2;

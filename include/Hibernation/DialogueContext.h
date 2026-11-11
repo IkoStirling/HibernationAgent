@@ -6,6 +6,13 @@
 #include <string>
 
 namespace hibernation {
+inline nlohmann::json compactChannelDialogue(nlohmann::json data){
+    if(!data.contains("channel_identity")||!data.at("channel_identity").is_object())return data;
+    const auto& original=data.at("channel_identity");nlohmann::json who=nlohmann::json::object();
+    for(const auto* key:{"channel","transport","self_user_id","sender_user_id","sender_is_owner","message_type","group_id","message_id","input_message_ids","current_input_images","input_turn"})if(original.contains(key))who[key]=original.at(key);
+    if(who.contains("input_turn")&&who.at("input_turn").contains("parts"))for(auto& part:who["input_turn"]["parts"]){part.erase("text");part["text_in_message"]=true;}
+    data["channel_identity"]=std::move(who);return data;
+}
 inline bool assistantDialogueRecord(const nlohmann::json& value) {
     return value.value("kind",std::string{})=="assistant_message"||
         (value.value("kind",std::string{})=="summary"&&value.value("original_kind",std::string{})=="assistant_message");

@@ -42,7 +42,7 @@ public static class ChatWindowTest {
  [DllImport("ole32.dll")]static extern int OleGetClipboard(out System.Runtime.InteropServices.ComTypes.IDataObject data);
  [DllImport("ole32.dll")]static extern int OleSetClipboard(System.Runtime.InteropServices.ComTypes.IDataObject data);
  [DllImport("ole32.dll")]static extern int OleFlushClipboard();
- [DllImport("user32.dll")]static extern bool OpenClipboard(IntPtr x);
+ [DllImport("user32.dll",SetLastError=true)]static extern bool OpenClipboard(IntPtr x);
  [DllImport("user32.dll")]static extern bool CloseClipboard();
  [DllImport("user32.dll")]static extern IntPtr GetClipboardData(uint format);
  [DllImport("user32.dll")]static extern uint GetClipboardSequenceNumber();
@@ -58,5 +58,29 @@ public static class ChatWindowTest {
  public static long Send(IntPtr h,uint m,long w=0,long l=0){IntPtr result;if(SendMessageTimeout(h,m,new IntPtr(w),new IntPtr(l),2,1500,out result)==IntPtr.Zero)throw new Exception("own_window_message_timeout");return result.ToInt64();}
  public static void SetText(IntPtr h,string text){SendText(h,12,IntPtr.Zero,text);}
  public static string Text(IntPtr h){var text=new StringBuilder(300000);ReadText(h,13,new IntPtr(text.Capacity),text);return text.ToString();}
- public static string CopySelection(IntPtr h){string copied=null;Exception failure=null;var thread=new Thread(()=>{OleInitialize(IntPtr.Zero);System.Runtime.InteropServices.ComTypes.IDataObject old=null;uint after=0;try{OleGetClipboard(out old);Send(h,0x301);after=GetClipboardSequenceNumber();if(!OpenClipboard(IntPtr.Zero))throw new Exception("clipboard_busy");try{var handle=GetClipboardData(13);var p=GlobalLock(handle);try{copied=Marshal.PtrToStringUni(p);}finally{GlobalUnlock(handle);}}finally{CloseClipboard();}}catch(Exception e){failure=e;}finally{if(after!=0&&GetClipboardSequenceNumber()==after){OleSetClipboard(old);OleFlushClipboard();}if(old!=null)Marshal.ReleaseComObject(old);OleUninitialize();}});thread.SetApartmentState(ApartmentState.STA);thread.Start();thread.Join();if(failure!=null)throw failure;return copied;}
+ public static string CopySelection(IntPtr h){
+  string copied=null;Exception failure=null;
+  var thread=new Thread(()=>{
+   OleInitialize(IntPtr.Zero);System.Runtime.InteropServices.ComTypes.IDataObject old=null;uint after=0;
+   try{
+    int snapshot=0;for(int attempt=0;attempt<12;++attempt){snapshot=OleGetClipboard(out old);if(snapshot>=0)break;if(old!=null){Marshal.ReleaseComObject(old);old=null;}Thread.Sleep(25);}
+    if(snapshot<0)throw new Exception("clipboard_snapshot_failed_hresult_"+snapshot.ToString("X8"));
+    Send(h,0x301);after=GetClipboardSequenceNumber();
+    bool opened=false;int error=0;
+    for(int attempt=0;attempt<12&&!opened;++attempt){
+     if(GetClipboardSequenceNumber()!=after)throw new Exception("clipboard_changed_during_fixture");
+     opened=OpenClipboard(IntPtr.Zero);if(!opened){error=Marshal.GetLastWin32Error();Thread.Sleep(25);}
+    }
+    if(!opened)throw new Exception("clipboard_busy_win32_"+error);
+    try{
+     if(GetClipboardSequenceNumber()!=after)throw new Exception("clipboard_changed_during_fixture");
+     var handle=GetClipboardData(13);if(handle==IntPtr.Zero)throw new Exception("clipboard_text_unavailable");
+     var p=GlobalLock(handle);if(p==IntPtr.Zero)throw new Exception("clipboard_text_locked");
+     try{copied=Marshal.PtrToStringUni(p);}finally{GlobalUnlock(handle);}
+    }finally{CloseClipboard();}
+   }catch(Exception e){failure=e;}
+   finally{if(after!=0&&GetClipboardSequenceNumber()==after){OleSetClipboard(old);OleFlushClipboard();}if(old!=null)Marshal.ReleaseComObject(old);OleUninitialize();}
+  });
+  thread.SetApartmentState(ApartmentState.STA);thread.Start();thread.Join();if(failure!=null)throw failure;return copied;
+ }
 }

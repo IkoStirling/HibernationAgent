@@ -25,7 +25,7 @@ struct ContextControl {
         if(out.preset=="economy"){out.historyBytes=7000;out.reviewHistoryBytes=3000;out.oldReceiptBytes=2048;out.reviewAttempts=1;}
         else if(out.preset!="balanced"&&out.preset!="full")throw std::runtime_error("context_control_preset");
         if(value.contains("reviewLayout")){if(!value.at("reviewLayout").is_string())throw std::runtime_error("context_review_layout");out.reviewLayout=value.at("reviewLayout");}
-        if(out.reviewLayout!="direct"&&out.reviewLayout!="legacy"&&out.reviewLayout!="snapshots"&&out.reviewLayout!="events")throw std::runtime_error("context_review_layout");
+        if(out.reviewLayout!="direct"&&out.reviewLayout!="legacy"&&out.reviewLayout!="snapshots"&&out.reviewLayout!="events"&&out.reviewLayout!="prefix")throw std::runtime_error("context_review_layout");
         auto number=[&](const char* key,std::size_t fallback,std::size_t min,std::size_t max){if(!value.contains(key))return fallback;const auto& x=value.at(key);if(!x.is_number_integer()||x.get<double>()<static_cast<double>(min)||x.get<double>()>static_cast<double>(max))throw std::runtime_error("context_control_range");return x.get<std::size_t>();};
 
         out.reviewPolicy=value.value("reviewPolicy",std::string("classic"));
@@ -51,8 +51,8 @@ struct ContextControl {
 };
 inline bool readOnlyModelTool(const std::string& name){
     // Explicit allowlist. Unknown and new plugin tools retain semantic review.
-    static const std::set<std::string> names={"capabilities.list","workspace.list","workspace.read","workspace.view_image","computer.list_directory","computer.screenshot","observation.revisit","memory.search","memory.read","memory.archive_search","memory.archive_read","state.observe","stage.observe","body.observe","schedule.list","activity.status","widget.status","television.status","television.observe","television.observe_sequence","television.search","napcat.view_image"};
-    return name=="self.observe"||name=="habitat.observe"||name=="canteen.observe"||name=="canteen.inventory"||name=="atelier.list"||name=="atelier.read"||name=="pocket.observe"||names.contains(name);
+    static const std::set<std::string> names={"mentor.history","people.current","people.search","people.read","capabilities.list","shell.run","workspace.list","workspace.read","workspace.view_image","computer.list_directory","computer.screenshot","observation.revisit","memory.search","memory.read","memory.archive_search","memory.archive_read","state.observe","stage.observe","body.observe","schedule.list","activity.status","widget.status","television.status","television.page","video.web_observe","video.probe","video.storyboard","video.zoom","video.locate","video.notes","television.observe","television.observe_sequence","television.search","napcat.view_image","napcat.media_search"};
+    return name=="mind.observe"||name=="self.observe"||name=="habitat.observe"||name=="canteen.observe"||name=="canteen.inventory"||name=="atelier.list"||name=="atelier.read"||name=="pocket.observe"||names.contains(name);
 }
 inline bool readOnlyModelBatch(const nlohmann::json& candidate){
     if(candidate.value("kind",std::string{})!="call"||!candidate.contains("calls")||candidate.at("calls").empty())return false;

@@ -13,6 +13,16 @@ Use UTF-8. Build/output/temp files go to configured non-system storage. Run unit
 and separate-process integration checks before committing verified app changes.
 Keep local runtime archives/config and generated evidence out of source control.
 
+For XiaoAi backend rebuild/restart use `scripts/Restart.ps1` (optionally `-Rebuild`)
+so its existing NapCat process survives. Do not replace it with an unqualified
+Stop/Start pair. An older binary without the preservation protocol needs one
+reviewed initial upgrade. See `docs/desktop-startup-napcat.md`. Keep the installer
+provider boundary in `ComponentInstaller.h`; implement generic distribution in
+the engine, and never imply the unavailable adapter has installed a component.
+Use `NewEngineRelease.ps1` and `DeployEngineRelease.ps1` for engine-managed
+publication/deployment (see `docs/engine-installation.md`). Build candidates in
+a separate build tree; do not compile into an immutable installed version.
+
 ## Character actions and animation catalog
 
 `docs/character-action-catalog.md` is the canonical character-action and animation

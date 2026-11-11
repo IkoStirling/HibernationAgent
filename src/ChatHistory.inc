@@ -5,19 +5,23 @@ void ensureChatHistory(bool reconcile=false){
     std::vector<RecordMutation> updates;std::string previous=head.value.value("last",std::string{});std::size_t count=head.value.value("count",std::size_t(0));
     for(const auto& row:readIds(archiveScope,get("ha.index","recent",Json::array()).value)){
         const auto value=Json::parse(row.payload);const auto kind=value.value("kind",std::string{});
-        if((kind!="user_message"&&kind!="assistant_message")||get("ha.chat-links",row.id).revision)continue;
+        if((kind!="user_message"&&kind!="assistant_message")||!desktopDialogueRecord(value)||get("ha.chat-links",row.id).revision)continue;
         updates.push_back({"ha.chat-links",row.id,0,1,Json{{"previous",previous}}.dump(),"legacy-chat-index"});previous=row.id;++count;
     }
     if(updates.empty()&&head.revision)return;updates.push_back({"ha.chat-index","head",head.revision,1,Json{{"last",previous},{"count",count},{"legacy_window",true}}.dump(),"legacy-chat-index"});commit(std::move(updates),"chat-index-initialize");
 }
-void appendChatHistory(std::vector<RecordMutation>& updates,const std::string& message){
+void appendChatHistoryBatch(std::vector<RecordMutation>& updates,const std::vector<std::string>& messages){
+    if(messages.empty())return;
     ensureChatHistory();const auto head=get("ha.chat-index","head");
-    updates.push_back({"ha.chat-links",message,0,1,Json{{"previous",head.value.value("last",std::string{})}}.dump(),message});
-    updates.push_back(mutation("ha.chat-index","head",head,Json{{"last",message},{"count",head.value.value("count",std::size_t(0))+1},{"legacy_window",true}},message));
+    auto previous=head.value.value("last",std::string{});auto count=head.value.value("count",std::size_t(0));
+    for(const auto& message:messages){updates.push_back({"ha.chat-links",message,0,1,Json{{"previous",previous}}.dump(),message});previous=message;++count;}
+    updates.push_back(mutation("ha.chat-index","head",head,Json{{"last",previous},{"count",count},{"legacy_window",true}},messages.front()));
 }
+void appendChatHistory(std::vector<RecordMutation>& updates,const std::string& message){appendChatHistoryBatch(updates,{message});}
 Json chatMessage(const std::string& key,const Json& data){
     const bool user=data.value("kind",std::string{})=="user_message";Json message={{"id",key},{"role",user?"user":"assistant"},{"text",data.value("text",std::string{})},{"created_at",data.value("created_at",std::int64_t(0))},{"attachments",data.value("attachments",Json::array())}};
     if(!user){const auto it=speechPresentation.find(key);if(it!=speechPresentation.end())message["playback"]=it->second;else if(!historicalMessages.contains(key)&&automaticSpeech(data.value("presentation",Json::object())))message["playback"]={{"state","waiting"},{"visible_characters",0}};}
+    for(const auto* field:{"reply_bundle_id","message_index","message_count"})if(data.contains(field))message[field]=data.at(field);
     return message;
 }
 LocalReply chatPage(const Json& body){

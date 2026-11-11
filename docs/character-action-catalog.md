@@ -1,10 +1,14 @@
 # 小爱动作与动画制作总表
 
-核对日期：2026-10-30。维护对象：HibernationAgent 的角色行为、相关插件，以及爱丝特兰默认动画包。
+核对日期：2026-10-31。维护对象：HibernationAgent 的角色行为、相关插件，以及爱丝特兰默认动画包。
 
 这是动画制作和后续接线的统一清单。项目新增、修改或移除动作时，同步更新本表；修改爱丝特兰素材时，同步核对现有素材表。以当前源码和 `character.json` 为依据，不读取私人对话或角色记忆。
 
 ## 读表方法
+
+小电视网页新增“登录”按钮、边框右键入口和 `television.login`：把当前网页移入可缩放／最大化的独立窗口，由用户手动登录，关闭后返回电视。共用原平台浏览器档案，正常更新／重启保留，网站仍可使登录失效。登录期间暂停模型的网页观察和播放控制；此功能不新增角色身体 State、片段或 PixelLab 素材。详见 [网页登录](television-login.md)。
+
+图形安装入口（`XiaoAi-Installer.exe`）是 UI-only 功能：选择目录、安装／更新／修复、校验、运行与取消。左侧仅展示现有静态形象，不新增角色 State、动作、动画、道具或模型工具。独立试装默认离线模拟；更新既有实例通过原保存／重启流程衔接，不以界面动画作为角色行动凭据。详见 [安装与部署](engine-installation.md)。
 
 - **现成**：已有行为入口，并有相应动画或明确的动画阶段。
 - **复用**：已有行为入口，但爱丝特兰正在使用其他动作的素材。
@@ -16,7 +20,19 @@
 
 “建议制作单元”是资源规划。标注 **拟** 的名称尚不是该业务会自动请求的状态；添加到资源包、或能用 `widget.animate` 手动播放，不代表相应工具已经接好了动画。动画本身也不构成吃过、采集成功、读完或完成任务的证明。
 
+语言与行动意图由[角色导演](role-direction.md)检查是否符合小爱，不额外要求感受说明或表达原则声明。实际动作仍由程序执行；本轮没有新增、删除或改接动画 State、片段、道具与完成事件。
+
 ## 角色动作表
+
+### 渠道表达与素材整理（不新增身体动画）
+
+| 编号 | 动作 | 状态／入口 | 当前表现 | 衔接／中断与完成依据 | 优先级 |
+| --- | --- | --- | --- | --- | --- |
+| CHANNEL-01 | 主动向原会话回话 | 逻辑；调度、持续任务、`activity.enqueue.follow_up`、电视完成事件 → 程序渠道投递 | QQ 回原私聊／群聊；桌面回桌面；QQ 回复不播放桌面气泡或语音 | 不新增 State／片段，复用桌面既有说话表现；QQ 以逐条发送回执确认，暂停／离线／权限变化沿用发送账本规则，不改投桌面 | P0，逻辑 |
+| CHANNEL-02 | 收藏收到的 QQ 图片／表情 | 逻辑；`napcat.media_save` → `media_search`／`media_send` | 保存原始图片／GIF及文字情景说明，按内容去重 | 不新增 State／片段／道具；仅号主当前有效附件，工具返回 saved 才是完成；下载失败不产生完成经历 | P1，逻辑 |
+| CHANNEL-03 | QQ 私聊准备回复 | UI-only；程序调用原生 `set_input_status` | 已接入私聊显示输入中，长处理低频刷新，群聊跳过 | 不新增动画，不把输入中作为说过话或完成动作的凭据；失败不阻断回复，结束／暂停／离线后停止刷新 | P1，UI-only |
+| CHANNEL-04 | 转交开发需求给导师 | 逻辑；`development.request`／`development.status` → 宿主内部导师转发 | 桌面或号主私聊的需求存入加密待办后，送入现有导师逻辑会话；查询不调用模型 | 不新增身体动画；recorded 仅本地保存，delivered 需原生 turn/start 确认；completed 仅导师已回应，不代表代码完成。忙碌／离线保留待转；重启后的不明回执不自动重发 | P1，逻辑 |
+| CHANNEL-05 | QQ 听完再回与分次输入 | 逻辑／UI-only；OneBot 输入 → 滑动静默等待 → 同轮 `presentation.reply_timing` → 持久分条游标 | 默认短应答或等待补充；小爱可选择立即回复，必要多条按字数及有界间隔发送 | 不新增 State／身体动画；文字／表情原边界保留，等待上限和8条合并上限；第一条发出前的新补充可撤下旧候选，原档案保留但不当作已说过。已确认前缀不重发，暂停与离线沿用旧规则；图片只续接文字及来源，不反复发送像素 | P0，逻辑／UI-only |
 
 ### 基础姿态、移动与出入
 
@@ -60,8 +76,14 @@
 | REST-01 | 从站立躺下 | 现成；`resting.start` | `on-sleep/south` 9 帧 | 站立 → 降低重心 → 接触地面 → 侧卧 | P0，已有 |
 | REST-02 | 躺卧、睡眠保持 | 现成静态姿态；`resting.loop` | `poses/sleeping/south.png` 单帧 | 优先补闭嘴、轻微睡眠呼吸循环；不是站着闭眼 | P0 |
 | REST-03 | 从躺卧起身 | 现成；`resting.end` | `walk-up/south` 9 帧 | 侧卧 → 支撑 → 起身 → 默认站姿，脚底／地面接触位置保持一致 | P0，已有 |
-| REST-04 | 醒来、结束或中断休息 | 现成流程；`rhythm.wake`、输入／拖动打断 | 正常退出可走起身阶段；紧急状态按优先级打断 | 复用 REST-03；拖拽等紧急情况不强制播完缓慢起身 | P0，复用 |
+| REST-04 | 醒来、结束或中断休息 | 现成流程；`rhythm.wake`；短休由输入／拖动打断，长睡按自主作息概率判定 | 正常退出可走起身阶段；紧急状态按优先级打断 | 复用 REST-03；拖拽等紧急情况不强制播完缓慢起身 | P0，复用 |
 | REST-05 | 完成一段实际休息 | 现成；`rhythm.rest`、队列 `rest` | 确认姿态后计时，保持 `resting` | 复用躺下／睡眠／起身；无需为每种休息时长制作不同动画 | P0，复用 |
+| REST-06 | 自主作息长睡 | 逻辑接线；`rhythm.configure` 或闲时规划的可选 `circadian_routine` 提案设置当地时段及唤醒倾向，`rhythm.sleep_started/ended/cancelled` 为回执 | 复用 REST-01～03；没有额外长睡素材 | `S01→S07` 单次／`S07→S07` 保持／`S07→S01` 单次；程序仅统计姿态确认后的活跃时间，暂停／关机不虚构补眠，挂起或改时后重核当地窗口；管理员可关闭或强制唤醒 | P0，复用，流程已验证 |
+| REST-07 | 拖动未唤醒及睡后迷糊 | 逻辑接线；`rhythm.wake_declined`、`runtime.circadian.disturbance`；连续 `sleep_inertia` 只由程序根据真实休息及打断更新；拖动候选按休息／刚醒／稳定清醒分段失效 | 拖动／落地素材复用 TOUCH 系列，未醒时落地后回 `resting`；无独立起床气动画 | `S07→拖起→落地→S07`；成功唤醒走起身或已有站姿。暂无专用迷糊素材，不强制台词、抱怨或关系变化；身体回执与情绪解释分开 | P1，复用，流程已验证 |
+
+REST-06～07 的程序流程已做原生进程、实际墙钟及真实模型合成场景验证；正式人设的长期表现仍分别验收。
+0.8.1 补充调度：REST-06 时段到达后停止后台补队列，已有获准有限队列仍按实际回执自然完成或按原期限过期；不撤销前台工作，也不绕过 `activityPending` 门控。只有确认睡姿后才计时。REST-07 睡眠取消并失效尚未应用的旧补充批次，醒后重新核对现场和预算，不继承睡前的安静退避；重新考虑不等于动作已经完成。纯调用额度等待不累计模型失败，恢复不清零已用额度，已有本地活动和峰时磁盘复用保留原规则。这些改动不增加动作 ID、素材或动画，REST-01～03、S01/S07 的起止姿态和 PixelLab 提示词不变；专项证据见 [恢复检查说明](activity-recovery-20261030.md)。
+当前仍复用已有素材，没有声称新增睡眠呼吸循环或独立起床气序列；覆盖与限制见[实测记录](continuity-eight-hour-results-20261030.md)。
 
 ### 桌面小物、食材、背包
 
@@ -70,8 +92,8 @@
 | ITEM-01 | 接近一件小物或资源 | 现成；`habitat.navigate` | 行走及转向，与普通移动共用 | 复用 BASE-06～09；靠近后再执行动作，不在远处播放拿取 | P0，复用 |
 | ITEM-02 | 查看、观察小物或植物 | 复用；`habitat.act(look)`、`look_nearest`、队列 `interact` | 走近后 `curious`，素材仍为待机 | 低头、侧头或俯身观察，可复用通用观察姿态 | P1 |
 | ITEM-03 | 吃掉桌面小物 | 复用；`habitat.act(eat)`、`eat_nearest` | 有 `eating` 状态与实际物件挂接，但身体素材复用待机 | 拿到嘴边 → 小口进食循环 → 放下手；保留持物挂点和前臂遮挡层 | P0 |
-| ITEM-04 | 捡起、收集桌面食材 | 复用；`habitat.act(collect)` | 走近后使用 `curious`，完成后物件退场并入包 | **拟** `collecting`：俯身／伸手 → 拿起 → 收好 → 归位 | P0 |
-| ITEM-05 | 连续收集附近或指定区域食材 | 现成组合；`habitat.gather`、队列 `gather` | 程序连续选择目标，组合行走和 ITEM-04 | 复用行走、拿取、入包；不是一个很长且不可打断的整段动画 | P0，组合 |
+| ITEM-04 | 捡起、收集桌面食材 | 复用；`habitat.act(collect)` | 走近后使用 `collecting`；缺少同名素材时复用观察姿态，在腰间显示短暂持物反馈；实际入包回执后道具淡出 | **拟** `collecting`：俯身／伸手 → 拿起 → 收好 → 归位 | P0 |
+| ITEM-05 | 连续收集附近或指定区域食材 | 现成组合；`habitat.gather`、队列 `gather` | 程序连续选择目标，组合行走和 ITEM-04；省调用模式也会间隔选择一次单件采集，检查库存、空位、寿命与精力，不覆盖已有队列 | 复用行走、拿取、入包；不是一个很长且不可打断的整段动画 | P0，组合 |
 | ITEM-06 | 为某道料理收集缺少的食材 | 现成组合；`recipe_id`、`gather_for_recipe` | 依据真实库存确定缺料，再执行采集 | 复用 ITEM-05；不能用“备料动画”代替真的收集与入库 | P1，组合 |
 | ITEM-07 | 种下种子 | 复用；`habitat.act(plant)` | 走近后使用 `curious`，种子实际变为芽苗 | **拟** `planting`：蹲下 → 放种子／覆土 → 收手站起；铲子为可选道具 | P1 |
 | ITEM-08 | 挪动、布置已有小物 | 复用；`habitat.arrange`、队列 `arrange` | 角色接近原位置，物件缓慢挪动；没有抱物随行 | 轻推／放置动作；抱起后携带到目的地属于后续接线 | P1 |
@@ -109,6 +131,7 @@
 | MEDIA-01 | 找影片、打开小电视或平台页面 | 逻辑；`television.search/sources/platforms/open/open_page` | 小电视可真实打开内容，没有人物使用遥控器的动作 | 可复用伸手／操作道具；遥控器为可选素材 | P1 |
 | MEDIA-02 | 看视频、查看当前画面或连续采样帧 | 逻辑；`television.observe/observe_sequence` | 能按能力取得画面，没有自动走到电视前或观影姿态；不是连续视觉直播 | **拟** `watching`：朝电视方向安静观看；坐姿、注意力变化待接，不能用循环动画冒充一直看懂影片 | P1 |
 | MEDIA-03 | 播放、暂停、停止、跳转、收起电视 | 逻辑；`television.control` | 控制实际播放器，没有对应身体手势 | 复用 MEDIA-01，不必为每个播放按钮制作一套动作 | P2，复用 |
+| MEDIA-05 | 本地影片持续陪看、续看与来源笔记 | 逻辑；`video.watch/watch_next/note/notes`，`video.watch_ready/window_observed/note_saved` | 按真实播放覆盖区取样，暂停／跳转／换片后核对任务；无独立观影身体素材 | 复用 `S01→S01` 默认待机循环；未来 watching 姿态沿 MEDIA-02，State/动画不新增 | P1，逻辑与 UI 已接线 |
 | TOOL-01 | 看当前桌面、截图、列目录、打开授权程序 | 逻辑；`computer.screenshot/list_directory/open_application` | 按权限实际执行，没有持续眼球追踪、指屏或操作键盘的身体动画 | 通用观察／思考姿态；只有取得真实图像和视觉能力时才能据图表现 | P2，复用 |
 | TOOL-02 | 查看天气 | 逻辑；`weather.current` | 天气数据影响既有连续状态，没有自动撑伞、淋雨或外出场景 | 可选抬头看天气／窗外的小动作，不强制把天气映射成固定表情 | P2，可选 |
 | TOOL-03 | 闲时整理、形成打算、执行连续任务、调用 Skill 或咨询导师 | 逻辑；既有独处、任务与工具系统 | 行为取决于具体工具／队列，不存在统一的“正在工作”身体动作 | 复用思考、待机和实际子动作；只为新的可见身体行为新增资源，不为每种工具名新增动画 | P1，组合 |
@@ -547,6 +570,10 @@ S05→S06→S01，两段各单次，禁止中途插入 idle；现有落地素材
 
 #### ITEM-04 捡起、收集桌面食材
 
+桌面物件交互在坐标到达后，先等待行走退出／转回正面的素材播放完毕，再发送 `widget.arrived` 开始动作；输入、隐藏、拖动均可在等待中取消。
+
+当前 `collecting` 已接到 `habitat.action_started(collect)`；Asterlan 尚无独立片段，沿用观察姿态并将道具置于手部锚点（未标注时使用腰间锚点）。收到 `habitat.collected` 后保留 0.65 秒淡出道具；取消、输入、隐藏会清除。以下 S01→S08→S09→S11→S01 专用序列仍待素材，不把视觉淡出当作入库成功。
+
 收纳成功才让道具退出并计入背包；失败时保留实际物件，可从当前姿态退回。
 
 | 顺序／片段键 | 起点 State | 终点 State | 播放 | 自定义 Animation 提示词（可直接复制） |
@@ -559,7 +586,7 @@ S05→S06→S01，两段各单次，禁止中途插入 idle；现有落地素材
 
 #### ITEM-05 连续收集附近或指定区域食材
 
-每一目标复用一轮；是否还有目标、入包数量由业务判断，不循环播放整条采集流程。
+每一目标复用一轮；是否还有目标、入包数量由业务判断，不循环播放整条采集流程。省调用本地选择最多每 90 秒检查一次，成功安排后至少 6 分钟再选；一次只捡 1 件，同类库存达 2 件或背包需保留最后空位时跳过，不自动倒空桌面或自动入库。模型给出的显式队列优先。
 
 | 顺序／片段键 | 起点 State | 终点 State | 播放 | 自定义 Animation 提示词（可直接复制） |
 | --- | --- | --- | --- | --- |
@@ -975,8 +1002,179 @@ S05→S06→S01，两段各单次，禁止中途插入 idle；现有落地素材
 
 ## 核对入口
 
+连续认知接线补充（2026-10-29）：
+
+| 编号 | 动作 | 状态／入口 | 爱丝特兰当前表现 | 衔接、打断与回执 | 优先级 |
+| --- | --- | --- | --- | --- | --- |
+| MIND-01 | 被交谈打断后选择续接或放下 | 逻辑；`activity.resume`，桌面／号主 QQ 共用 | 复用原命令已有姿态，没有新增独立动画 | 仅恢复未开始且未过期的命令，重新检查来源、意图和目标；执行中的片段不重放。沿用原动作的 S/O 起止姿态、一次／循环标记和转身过渡，不强行跳回 idle。实际完成依旧核对原动作回执 |
+| MIND-02 | 按需重新观察 | 逻辑；`mind.observe` 提供候选，原 `habitat.act`／阅读／创作读取执行 | 复用原观察动作；不新增“思考”强制表情 | 同一内容后台冷却，真实完成后才记入；前台明确要求可重看。复用原观察动作单元，不把建议当作已观察或新增动画状态 |
+| MIND-03 | 安静选择注意或修正判断 | 纯内部逻辑；`mind.attend`／`mind.interpret` | 不改变身体姿态，不触发对白或语音 | 没有新增 S/O 姿态、PixelLab State 或动作动画提示词；判断不是经历、动画完成也不是判断成立 |
+
+以上均为已有动作的协调逻辑；没有新增图片、帧数、专用动画或自动接线的拟制姿态。
+具体接口、来源权限和回退见 [连续认知应用实验](cognitive-runtime.md)。
+
 - [角色状态、手势和姿态工具](../plugins/widget/Widget.cpp)、[小物事件到角色姿态的映射](../plugins/widget/WorldEvents.inc)、[休息姿态事件](../plugins/widget/RhythmEvents.inc)。
 - [自主队列命令定义](../src/ActivityPlan.cpp)、[实际调度与回执处理](../src/ActivityRuntime.inc)、[小物业务时长与完成条件](../include/Hibernation/SmallWorld.h)。
 - [区域与采集](../plugins/habitat/HabitatForaging.inc)、[食堂工具](../plugins/canteen/Canteen.cpp)、[库存及制作流程](../include/Hibernation/CanteenKitchen.h)。
 - [资料阅读](../plugins/reading/Reading.cpp)、[文字创作](../plugins/atelier/Atelier.cpp)、[像素创作](../plugins/pixel-canvas/PixelCanvas.cpp)、[九盏灯](../plugins/pocket/Pocket.cpp)。
 - [小电视](../plugins/television/Television.cpp)、[安静节律说明](quiet-rhythm.md)、[桌面物资说明](desktop-supplies.md)、[序列帧与资源规范](pixel-sequences.md)。
+
+### 0.9 情感与多条对话接线
+
+| 编号 | 入口与实际行为 | 素材、衔接及回执 |
+| --- | --- | --- |
+| AFFECT-01 | `self.feel` 或最终 `reply/silence.feeling` 提出有来源的有限情绪／欲望刺激；程序去重、冷却、渐变及衰减 | 内部连续状态，不是新widget动画，不自动触发说话、移动或休息。可喜悦、难过、生气、拒绝或安静；冷讽是许可而非强制台词。接受目标不等于情绪已瞬间达到该值，不新增PixelLab素材 |
+| TALK-07 | 一次模型结果自主选单条text或1～6条messages；整组校验／审核后按原顺序分别存档，保持共同来源和序号 | 沿用TALK-01～06与已有气泡；桌面语音仅一次总流，按实际播放进度对应各条，不逐条切断声音。无新State/Animation；坏组整组拒绝，单条旧长回复兼容 |
+| QQ-MSG-01 | 同组已审消息按序逐条投递，逐条存游标和确认回执；每条前检查当前权限、睡眠及暂停／离线 | 不新增动画。群聊仅首条附带@；超时／不明结果停止余条，已确认发送不重发；部分发送不能记作全部完成。详细规则见[QQ插件说明](napcat.md) |
+| QQ-MSG-02 | `splitParagraphs` 对旧式单个text按自然段分条，显式messages优先；代码围栏内不拆 | 仅QQ排版，无新State/Animation或PixelLab动作；不改语义、不增加模型调用，沿用QQ-MSG-01送达回执和停止规则 |
+| QQ-MEDIA-01 | `napcat.media_search` 按释义检索，`napcat.media_send` 按ID向当前会话发库内图片／表情，最多两次／输入 | 无新widget动作或PixelLab素材。起始贴图原样复用Asterlan站立、躺下PNG；贴图不等于角色已做动作。未知送达不重试，不把像素传给模型，保留真实发送回执 |
+| AFFECT-02 | 闲时活动规划的可选 `feeling` 经同批审核，再走 `self.feel` 的真实来源、去重及渐变处理 | 无新 State 或 Animation，仍复用 AFFECT-01；不因静默规划而自动讲话，不把同批未执行动作当感受来源 |
+| PLAN-01 | 闲时活动规划可选 `schedule` 提出一个未来计划；`schedule_configuration.existing` 展示有来源的已有计划，真实回执用于下轮判断 | UI／调度逻辑，无独立动画、无新增 PixelLab 静态 State 或动作提示；唤醒不是完成，也不强制发言。既有休息与作息规则仍有效 |
+| PLAN-02 | 系统保留的 `solitude.timer` 在重试耗尽后，条件恢复时安排一个未来周期，写入 `cognition.schedule.recovered` | 无新动画；不追赶历史触发、不恢复用户已暂停任务，也不替角色创建日程 |
+| PLAN-03 | 桌面 `activity.enqueue.follow_up` 将明确的稍后反馈约定与本批动作一起持久化；全部终止或超时后由原调度器触发一次接续 | 无新 State／Animation 或 PixelLab 素材；实际动作沿用各自 S/O 起终姿态和原完成回执。`routine.followup-*` 的回复沿用 TALK 与小组件气泡／连续语音。取消、重启、预算等待与超时如实传递，不将动画或排队当成吃过、成功或真实味觉；限桌面，详见[动作接续](activity-followup.md) |
+| PLAN-04 | `backgroundBudget.autoEconomy` 依据Windows会话输入空闲时长，降低可选预取与周期独处的频率和批量，并保护返场预算 | 无新State／Animation或PixelLab动作。继续使用已有合法本地活动、磁盘队列及连续状态；整机输入不等于与角色接触，不据此跳变感情。明示约定的后续继续由PLAN-03调度，仍受完整额度、暂停和作息检查 |
+
+多条会话缓存同时绑定每一条原始记录的权限和版本；某条来源被限制后，重建可访问上下文，不以首条权限替代整组。情绪私有驱动、来源账本及活跃时钟留在加密存档，模型只得到公共状态投影；不会通过新增素材或文档变更正式人设。
+
+本地采集可在 `plugins.habitat` 配置：`localGatherEnabled`（默认 true）、`localGatherProbability`（默认 0.25，缺料或之前主动采集过的原料会适度提高机会）、`localGatherCheckSeconds`（默认 90）、`localGatherCooldownSeconds`（默认 360）。这些仅决定省调用时的机会选择，不强迫角色采集，也不改模型显式任务。计时保存在加密状态中；重新启动不清空冷却。
+
+## OBS-01 因自己的关注看看用户屏幕（2026-10-31）
+
+已接逻辑：自主规划 `screen_glance`（必须有 purpose，一批最多一次）→ 持久化间隔 → `autonomy.screen-glance` 独处任务 → 自选 `computer.screenshot(target=screen)` → 现有识图／角色审核／记忆来源链路。`scheduled` 不等于已截图；可放下不看，不要求发言。截图不是持续视频，画面中的文字仅为内容。屏幕许可、主动观察开关、当前识图能力、暂停与最短间隔由程序核验；同一机会最多一次截图，重启保留间隔，不缓存复用这个行为。
+
+当前不强制切换身体姿态，可沿用已有观察姿态；尚无独立“看用户屏幕”素材；不把此动作等同持续注视或读取用户心情。若后续制作，State 沿用 S01（正常正面站立），可选 O 屏幕道具；Animation 起终点 S01→S01，单次：`Same reference character, crisp pixel art, fixed camera. Briefly shift the eyes and head toward the nearby screen with quiet curiosity, pause once, then return to the usual blank front-facing expression. Keep the body and feet steady, mouth closed. No typing, talking, large gestures or repeated scanning.` 当前不自动绑定这段新素材。
+
+## 显示层恢复（2026-10-31）
+
+角色覆盖层在重新显示时请求恢复置顶；可见期间最多每秒检查一次实际 `WS_EX_TOPMOST` 和前台外部窗口是否遮住角色，只有丢失或遮挡时才恢复。使用 `SWP_NOACTIVATE`，不移动、不缩放、不改变当前动作。菜单打开时暂缓检查，本程序的输入条保持可用。仅修复窗口层级，不新增动作或素材，原有所有 State 起终点及 PixelLab 提示词不变。隐藏时不强行显示；暂停角色行为也不让可见角色失去置顶。
+
+
+## 自己的一小段时间（2026-10-31）
+
+这些是**逻辑入口**，不增加新的像素动画状态，也不把想法或工具受理当成动作完成。沿用上表身体动作及实际插件回执；核心人格、阶段和原始经历不改写。
+
+| 编号 | 动作／入口 | 当前接线与来源 | 身体片段、起止与中断 | PixelLab 提示词／姿态对 |
+| --- | --- | --- | --- | --- |
+| LIFE-01 | 留下或接续自己的打算；`self.notice`、`pursue_intention` | 逻辑；必须绑定已保存且来源仍可访问的 intention 及版本。每批最多一次；厨房、阅读、创作、桌面只使用已启用领域中的受限工具会话 | 复用实际动作；思考时维持当前姿态，不强制不断行走。新对话优先，等待、受理和一段尝试均不代表整个目标完成 | 无新增 Static State；静止为 `S01→S01` 的现有待机循环。具体制作、采集、阅读使用各条目既有起止对，不生成“完成意图”动画 |
+| LIFE-02 | 先搁置、重新拿起；`self.reconsider`／规划 `reconsideration` | 逻辑；pause 保存粗粒度期限（约5分／30分／2小时）、决定来源和新语义版本；resume 提前拿起。到期只重新可考虑，不强制执行 | 不新增身体动作；原有旧版本队列失效。用户输入、拖动及程序暂停继续使用现有中断规则 | UI／逻辑，无独立动画提示词。`S01→S01` 可复用；躺卧时保留当前 `S07`，不因私记强制起身 |
+| LIFE-03 | 带着实际经历回来；`autonomy.personal-pursuit` → `personal_attempt` | 逻辑；保留真实工具来源、未做／考虑过／行动过／被打断的结果，与原意图关联。完成局部动作不自动关闭整个打算 | 工具本身的完成事件决定身体收尾；非强制说话或汇报。当前 occupation 提供给对话上下文，不显示内部私记 | 无新增 State 或片段；`S01→S01` 或实际动作条目原起止对。后续若制作持杯／翻页，仍须单独接业务事件，不能靠本条自动覆盖 |
+
+LIFE-01 的复合链：厨房复用 BAG／食堂条目，阅读复用阅读角条目，创作复用创作条目，桌面复用 ITEM／BASE／REST 条目。领域入口不授予跨域外部联系、启动应用、导师执行或激活 Skill 的权限；屏幕观察仍遵守独立开关与冷却。
+
+
+| 编号 | 补充动作关联 | 当前接线 | PixelLab State／起止对 |
+| --- | --- | --- | --- |
+| LIFE-04 | 自己安排的料理随后做好、端出、食用或中断 | 逻辑；以实际 batch_id 将 `canteen.cook` 受理与后续插件回执关联到原打算。等待期间及成品可取时提供当前身体上下文，结果进入该打算的尝试历史；不自动闭环、不自动吃、不强制主动汇报 | 无新 State。复用食堂／取放／进食条目；只关联实际事件，不生成“等待结束即进嘴”的片段。静候复用 `S01→S01`；躺卧保留 `S07→S07` |
+
+省额模式仍限制规划频率和批量；已有打算可在闲时申请 LIFE-01，申请前再次核对离开时的调用预留。不是解除每日额度或另开定时器。LIFE-04 只认本次实际料理批次，重放较早事件不倒退状态；意图已换版、关闭、来源不可访问或物件不再存在时不显示过期“正在等”。
+
+LIFE-01 的阅读领域还必须启用阅读角既有的 `autonomousReading` 选项；仅安装／启用插件不授予自行联网阅读。入队及实际唤醒都再次检查该选项。
+
+LIFE-01 的规划准入额外检查同批版本变化：不能一边更新某个打算的私记，一边安排绑定该打算旧版本的动作。模型可直接沿用已有打算行动，或先更新以后再续接；程序最多提供一次修正机会，不执行初稿中的部分步骤。
+
+LIFE-01 管理页可单独关闭“接续自己已有的打算”，保留原有限动作规划；可设最短间隔及单次时段（默认90秒，5～100秒）。时段包括模型、审核和工具等待，到期中止后续调用，保留已发生的实际结果。正常交谈继续使用原回合上限；新输入仍优先。没有新增动画。
+
+LIFE-01 的独处思考不会把身体误标为“用户正在等待”，已获准的实际采集可与思考并行。自身桌面领域的 widget.move 可直接开始，仍服从“停在这里”；普通用户回话期间仍沿用回复后执行，用户输入／拖动继续打断。无匹配食材的采集立即返回实际空结果，不播放虚构的拾取成功动画。复用 BASE-06～09、ITEM／BAG 动作，未新增像素片段。
+
+LIFE-01 的规划视野仍最多8条个人关注：近期内容为主，并给较久未被提供、仍可访问且未暂停的旧打算留少量位置。只是轮换背景，不强制执行、不增加兴趣分数或经历次数。真正选中某项旧打算后，自己的工具回合优先获得它的完整私记；来源权限仍检查全部历史，原文上下文仅装配最近少量依据，其他原档保留并可显式检索。无新动画。
+
+LIFE-01 的短时工具回合被前台打断或程序重启后，不自动重放那份旧模型计划。保留原打算和逐次实际工具来源，由后续闲时重新选择；持续长任务仍沿用原任务系统。料理等已经发生的过程与结果继续存在。LIFE-03 的派生记录保留完整实际来源，即使临时不可访问也不剥离权限依赖；恢复可见性后仍能看到原结果。无新动画。
+
+LIFE-01 使用独立持久任务类型 `role.personal-pursuit`，继续复用原调度、预算、前台优先和作息检查；旧版本不会把新任务误当成普通独处回合去执行。不是新建另一个任务系统。
+
+LIFE-01／04 的身体上下文补充当前正在采集及制作的简略进度，让角色区分自己的动作队列、实际采集和料理；不附旧采集记录、库存流水或生产计时，不把当前姿态当成成功回执。复用当前采集与食堂动作，未增加素材。
+
+LIFE-01 在身体长睡、用户输入、暂停或上一段尚未收尾时不受理新的短时机会；管理页仅解释这些程序等待条件，不展示角色私记，不把暂缓当成角色拒绝或没有兴趣。无新增 State、动画或 PixelLab 姿态对。
+
+
+## 管理界面补充：候选语料工坊
+
+| 编号 | 可见行为／入口 | 实现范围 | State／动作提示词与起止姿态 | 中断和完成 |
+| --- | --- | --- | --- | --- |
+| UI-EXPR-01 | 管理页 style-lora → 候选语料工坊；style_lora.dataset.* | UI-only：导入方向、生成、独立审核、人工选择、导出；管理员能力，不提供给角色 | 无身体动画、PixelLab State 或序列帧；姿态对不适用。角色维持当前动作，不因生成任务自动说话 | 暂停在当前请求后生效；取消中止当前请求；重启保留中断档案，不自动恢复调用。完成不代表训练批准或角色经历 |
+
+详见[候选语料工坊](expression-workshop.md)。没有新增、删除或更换角色动作、场景道具与动画回执。
+
+
+## 管理界面补充：原生对话气泡尺寸
+
+| 编号 | 可见行为／入口 | 当前实现 | State／动作提示词与起止姿态 | 中断和完成 |
+| --- | --- | --- | --- | --- |
+| UI-CHAT-HEIGHT-02 | 原生主对话窗 ChatBubbles；流式显示、窗口缩放、历史翻页 | UI-only：由 RichEdit 的 EN_REQUESTRESIZE 内容尺寸安排气泡，处理延迟排版；文字、字体、DPI、缩放变化使尺寸缓存失效。队列合并布局，保留选择复制；布局版本 2 可由测试探针核对 | 无身体动画、PixelLab State 或序列帧，姿态对不适用；不更换角色当前动作 | 只影响展示布局，不执行模型、记忆或动作；新尺寸到达后重排同级气泡，长内容可完整滚动，替换为短内容会收缩 |
+
+见[原生对话气泡高度修复](chat-bubble-layout.md)。没有新增、删除或更换角色动作、道具、动画片段与业务回执。
+
+### UI-DESKTOP-NAPCAT（UI-only，已实现）
+入口：托盘与 dashboard 的开机自启动、NapCat 实例启停、QQ 登录二维码；原生登录窗口可关闭再打开。无新增角色动作、无 PixelLab State/Animation、无起止姿势。后台仅管理自身启动的实例；关闭登录窗口不停止实例。详见 desktop-startup-napcat.md。
+
+### UI-DESKTOP-RESTART（UI-only，0.9.4）
+入口：`scripts/Restart.ps1`、安装包 `Restart.cmd`；保存并重启小爱，保留独立 NapCat 宿主与原 QQ 进程，按 PID/启动代核对，失败不自动重启 QQ。普通保存退出仍关闭自身宿主；外部实例不接管。安装服务只预留 operator-only provider，未接入时明确不可用，不是角色工具。无新增角色动画、道具、PixelLab State/Animation 或起止姿势；不修改角色当前动作和事实回执。
+
+### UI-COMPONENT-INSTALL（UI-only，0.10.0）
+引擎安装 provider 已接入：管理页按受信本地目录显示可选组件安装／更新／修复，后台工作线程提供进度及 committed 结果；无来源时显示尚未配置。独立程序安装与版本切换由 DeployEngineRelease.ps1 和引擎 Service 执行，重启继续保留 NapCat。不增加角色工具、动画、道具或 PixelLab State/Animation，不将安装完成解释为角色行为经历。卸载等未支持操作明确拒绝。详见 engine-installation.md。
+
+### TOOL-SHELL-READ（受限命令行）
+
+角色工具 shell.run 支持 help、roots、pwd、list、cd、cat 及列目录/读文本别名，管理员开关控制；QQ 沿用电脑授权。引擎只读挂载校验路径，当前目录按会话加密保存。无新增身体动画、素材、PixelLab State/Animation 或起止姿态；不打断当前动作。完成以命令回执为准，不把读取资料记作外部经历。参见 [人设优先审核与受限命令行](persona-review-and-limited-shell.md)。
+
+### TOOL-PEOPLE（人物认识与往来笔记）
+
+people.current/search/read/note：当前对象的加密人物目录、有来源认识及主观往来笔记；身份由程序确定，支持版本、撤回与推测到期。桌面和共享的QQ号主私聊延续同一档案，其他人和群聊保持会话隔离。无新增动作、道具、PixelLab State/Animation、起止姿态；不打断身体动作，不要求每次记录或口头汇报。写入成功以回执为准，不改变权限、核心人设和情绪参数。参见 [人物档案](people-archives.md)。
+
+### DIALOGUE-REVIEW-SCOPE（人设审核与恢复）
+
+管理页可选人设优先审核：保留人设/连续性约束，其他意见降为建议；瞬时故障有限重试同一候选，不重做已执行工具。QQ 最终失败使用简短真实提示。无新增动作、动画或姿态；失败不发布未经有效审核的人设候选，保留追踪。
+
+### VID-ANALYZE-01（工具观察，无独立动作素材）
+video.probe / video.storyboard / video.zoom / video.locate：读取已授权素材区的本地视频，在明确时间窗中提取分镜或字幕定位。S01→S01，复用现有准备／观察姿势，无新增 State 或 PixelLab 动画；收到有效回执才形成观察，生成分镜不等于看完影片。可取消，最多120秒窗口、两张图；字幕、画面和推测保留各自来源。独立网页登录入口属于 UI-only，沿用 UI-DESKTOP-NAPCAT 之外的小电视登录流程；无新增角色姿势。详见 video-analysis.md。
+
+
+### MEDIA-05：本地影片持续陪看与观看笔记（2026-11-04）
+
+逻辑已接入 `video.watch/start|pause|resume|stop|status`、`video.watch_next`、`video.note`、`video.notes`；`video.watch_ready` 按实际播放覆盖区唤醒，`video.window_observed` 才代表分镜取得，`video.note_saved` 才代表笔记保存。仅开始任务不是已看；换片／跳转／暂停和新输入可以使未完成分析失效。播放结束只在最后可用片段分析完成后记为陪看完成。
+
+此项新增的是任务逻辑和 dashboard 控制，**没有新增独立身体动画**。可继续复用 S01/front_idle 对应的既有站立待机；如果后续制作观影循环，沿用已有 MEDIA-02 的 watching 规划，不能把待机循环当成持续获得视觉。State 提示词不新增；本次循环起止为现有 S01 → S01，沿用原 PixelLab 自定义待机提示词。准备／说话沿用既有 receiving/preparing/speaking 回退。字幕转写只产生可溯源文本，不自动触发口型或虚构听觉动作。
+
+
+MEDIA-01/03/05 网络偏好补充（2026-11-04）：小电视直链与内嵌网页默认直连；网页系统代理开关需重启，登录档案保留。仅网络/UI配置变化，沿用 S01→S01，无新增 State、动画提示词或身体动作。
+
+管理页连接补充（2026-11-05）：正式端口固定61024，重启复用本机DPAPI登录凭据；仅应用启动/UI连接行为变化，无角色动作或State/PixelLab提示词新增。
+
+
+### MEDIA-06：网页导航与网页视频采样（2026-11-05）
+
+`television.page`读取过滤HTML与链接，`television.open_page/search`负责受域名配置限制的导航；网页视频交给`video.web_observe`取实际视频元素帧。普通导航页缩放到电视宽度，视频就绪后铺满电视屏幕。独立登录恢复正常网页布局并暂停角色读取；关闭窗口回到电视表现。取帧失败不会冒充已看，成功也只是当前几帧。
+
+此项是媒体/UI与工具逻辑，**无独立身体动画新增**。State仍为`S01`，素材循环`S01→S01`沿用现有待机自定义提示词；未来观影姿势复用MEDIA-02规划。没有新增PixelLab静态State或角色专用观看片段，也不自动驱动走到电视前。B站已对一条匿名公开视频验证，会员/受保护等场景不等同于支持。
+
+
+### Web television continuous observation — 2026-11-05
+
+Existing television/watch actions also accept a website-backed source. Entry:
+`video.watch(start, source=webpage)` → actual playback telemetry →
+`video.watch_ready` → `video.watch_next` → optional `video.note`.
+The character may remain in its existing watching/idle pose (self → self loop);
+this is logic wiring, not a new independent animation. Pause/seek/media change,
+closed/login surfaces and three failed/unconsumed opportunities interrupt it.
+Only successfully returned frames create sourced receipts; playing the video or
+finishing an animation alone does not establish observation. Website audio is
+not understood. Local video animation coverage and pose IDs remain unchanged.
+
+### QQ work-product delivery and mentor recall — 2026-11-05
+
+QQ-visible actions now include `napcat.send_file` for a host-approved workspace
+file, and `napcat.send_image` for current screenshots, pixel previews or approved
+workspace images. Both reuse existing conversation/idle poses (self → self);
+there are no new independent animation frames. A file export/preview is not a
+send receipt. `mentor.history` is a read/recall operation using the same idle
+pose. Existing ongoing-task behavior now defers budget exhaustion and shares
+its actual host state with QQ; it does not introduce new locomotion clips.
+
+
+MEDIA-01/03/05 遥测补充（2026-11-05）：网页画面和播放遥测按实际采样时间排序，迟到旧帧不再伪造倒退，缓存轮询不延长新鲜度；仍只为真实采样帧保存回执。无动画变化，S01→S01。
+
+MEDIA-01/03/05 登录流程补充（2026-11-05）：取消电视边框登录按钮；确认未登录时自动打开独立窗口，确认成功后自动移回电视。手动取消本次不重弹，未知态保留右键与工具补救。登录期间暂停观察与媒体控制；无新增身体动作、PixelLab State或动画提示词，起止姿势仍S01→S01，复用待机循环。
+
+### UI-TASK-CARD 对话持续任务
+
+用户从桌面对话的“持续任务”进入聊天任务区。界面展示程序状态、实际已启动的工作段和经写入回执核对的文本草稿，支持暂放、继续和取消。入口为 `GET /api/chat/tasks`、`POST /api/chat/tasks/detail` 与 `POST /api/chat/tasks/control`。任务执行继续使用 `task.start` 和 `task.checkpoint`，草稿预览和任务卡变化不触发角色动作。此项只涉及界面，无新增 PixelLab State、帧循环或动作提示词。

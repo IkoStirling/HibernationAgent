@@ -20,11 +20,23 @@ Json strictSchema(Json schema){
 nlohmann::json personalCarrySchema(){return Json::parse(R"({"type":"array","maxItems":2,"description":"可选，私下留给未来自己的具体关注、偏好或未完打算；不是思维过程或每轮总结。值得续接才填，否则省略或空数组。和self.notice相同的权限、来源、版本校验。","items":{"type":"object","additionalProperties":false,"required":["id","expected_revision","kind","topic","note","stance","source_ids"],"properties":{"id":{"type":"string","minLength":1,"maxLength":96},"expected_revision":{"type":"integer","minimum":0},"kind":{"type":"string","enum":["interest","preference","intention"]},"topic":{"type":"string","minLength":1,"maxLength":160},"note":{"type":"string","minLength":1,"maxLength":400},"stance":{"type":"string","enum":["curious","like","avoid","want"]},"source_ids":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"string","minLength":1,"maxLength":256}}}}})");}
 nlohmann::json personalCloseParameters(){return Json::parse(R"({"type":"object","additionalProperties":false,"required":["id","expected_revision","outcome","note","source_ids"],"properties":{"id":{"type":"string","minLength":1,"maxLength":256},"expected_revision":{"type":"integer","minimum":1},"outcome":{"type":"string","enum":["completed","abandoned","released"]},"note":{"type":"string","minLength":1,"maxLength":600},"source_ids":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"string","minLength":1,"maxLength":256}}}})");}
 nlohmann::json appraisalParameters(){return Json::parse(R"({"type":"object","additionalProperties":false,"required":["source_id","valence"],"properties":{"source_id":{"type":"string","minLength":1,"maxLength":256},"valence":{"type":"number","minimum":-1,"maximum":1,"description":"自己对这次真实经历的主观感受方向，负到正；0也可以。它只是有限情绪刺激，由程序渐变，不是直接设置心情、关系或偏好。"}}})");}
+nlohmann::json feelingProposalParameters(){
+    const auto axes=[](std::initializer_list<const char*> names){Json properties=Json::object();for(const auto* name:names)properties[name]={{"type","number"},{"minimum",-1},{"maximum",1}};return Json{{"type","object"},{"additionalProperties",false},{"properties",std::move(properties)}};};
+    // The bounded schema subset has no maxProperties. Sparse-axis count and
+    // absolute stimulus budget remain authoritative EmotionState checks.
+    Json stimulus={{"type","object"},{"additionalProperties",false},{"properties",{
+        {"emotions",axes({"joy","anger","sadness","worry","affection","disgust","surprise"})},
+        {"desires",axes({"rest","explore","company","express","play","replenish"})}
+    }}};
+    return {{"type","object"},{"additionalProperties",false},{"required",Json::array({"source_id","stimulus"})},{"properties",{
+        {"source_id",{{"type","string"},{"minLength",1},{"maxLength",256}}},{"stimulus",std::move(stimulus)}
+    }}};
+}
 std::string turnSchema(){auto schema=Json::parse(R"({"type":"object","additionalProperties":false,"required":["version","kind","text","calls"],"properties":{
 "version":{"enum":[1]},"kind":{"enum":["call","reply","silence"]},"text":{"anyOf":[{"type":"null"},{"type":"string","maxLength":6000}]},
 "calls":{"type":"array","maxItems":4,"items":{"type":"object","additionalProperties":false,"required":["id","tool","args"],"properties":{"id":{"type":"string","minLength":1,"maxLength":32},"tool":{"type":"string","minLength":1,"maxLength":96},"args":{"type":"object"}}}},
-"presentation":{"type":"object","additionalProperties":false,"properties":{"speech":{"type":"boolean"},"bubble":{"type":"boolean"}}}
-}})");schema["properties"]["carry_forward"]={{"anyOf",Json::array({personalCarrySchema(),{{"type","null"}}})}};schema["properties"]["appraisal"]={{"anyOf",Json::array({appraisalParameters(),{{"type","null"}}})}};return schema.dump();}
+"presentation":{"type":"object","additionalProperties":false,"properties":{"speech":{"type":"boolean"},"bubble":{"type":"boolean"},"reply_timing":{"type":"string","enum":["natural","immediate","wait_for_followup"]}}}
+}})");schema["properties"]["messages"]=replyMessagesSchema();schema["properties"]["carry_forward"]={{"anyOf",Json::array({personalCarrySchema(),{{"type","null"}}})}};schema["properties"]["appraisal"]={{"anyOf",Json::array({appraisalParameters(),{{"type","null"}}})}};schema["properties"]["feeling"]={{"anyOf",Json::array({feelingProposalParameters(),{{"type","null"}}})}};return schema.dump();}
 std::string turnProviderSchema(const nlohmann::json& catalog){
     auto schema=Json::parse(turnSchema());schema["required"].push_back("presentation");schema["properties"]["presentation"]["required"]=Json::array({"speech","bubble"});Json variants=Json::array();
     for(const auto& tool:catalog){auto call=schema["properties"]["calls"]["items"];call["properties"]["tool"]={{"type","string"},{"enum",Json::array({tool.at("name")})}};call["properties"]["args"]=strictSchema(tool.at("parameters"));variants.push_back(strictSchema(std::move(call)));}
@@ -40,14 +52,22 @@ nlohmann::json normalizeToolArguments(nlohmann::json args,const nlohmann::json& 
 }
 TurnValidation validateTurn(std::string_view text){
     if(text.size()>128*1024)return {false,"response_too_large",{}};const auto envelope=modelJsonEnvelope(text);if(!envelope)return {false,"invalid_turn_schema",{}};text=*envelope;
-    if(!ayt::serializer::validateJsonDocument(text,turnSchema()))return {false,"invalid_turn_schema",{}};
-    auto value=nlohmann::json::parse(text);for(const auto* key:{"carry_forward","appraisal"})if(value.contains(key)&&value.at(key).is_null())value.erase(key);const auto kind=value.at("kind").get<std::string>();
+    // Preserve raw duplicate-key/type checks before touching known optional
+    // sparse feeling fields returned as null by strict providers.
+    if(!ayt::serializer::validateJsonDocument(text,"{}"))return {false,"invalid_turn_schema",{}};
+    auto value=nlohmann::json::parse(text);if(value.is_object()&&value.contains("feeling")&&!value.at("feeling").is_null())value["feeling"]=normalizeToolArguments(value.at("feeling"),feelingProposalParameters());
+    if(value.is_object()&&value.contains("presentation")&&value.at("presentation").is_object())value["presentation"]=normalizeToolArguments(value.at("presentation"),Json::parse(turnSchema()).at("properties").at("presentation"));
+    if(!ayt::serializer::validateJsonDocument(value.dump(),turnSchema()))return {false,"invalid_turn_schema",{}};
+    for(const auto* key:{"carry_forward","appraisal","feeling"})if(value.contains(key)&&value.at(key).is_null())value.erase(key);const auto kind=value.at("kind").get<std::string>();
+    if(value.contains("messages")&&value.at("messages").is_null())value.erase("messages");
+    if(kind!="reply"&&value.contains("messages"))return {false,"messages_require_reply",{}};
     if(kind=="call"&&(value.at("calls").empty()||!value.at("text").is_null()))return {false,"call_shape",{}};
-    if(kind=="reply"&&(!value.at("calls").empty()||!value.at("text").is_string()||value.at("text").get<std::string>().empty()))return {false,"reply_shape",{}};
-    if(kind=="reply"){const auto text=value.at("text").get<std::string>();if(text.find_first_not_of(" \t\r\n")==std::string::npos||std::any_of(text.begin(),text.end(),[](unsigned char c){return c<32&&c!='\t'&&c!='\r'&&c!='\n';}))return {false,"reply_text",{}};}
+    if(kind=="reply"&&!value.at("calls").empty())return {false,"reply_shape",{}};
+    if(kind=="reply"){auto checked=normalizeReplyMessages(std::move(value));if(!checked.ok)return {false,checked.error,{}};value=std::move(checked.value);}
     if(kind=="silence"&&(!value.at("calls").empty()||!value.at("text").is_null()))return {false,"silence_shape",{}};
     if(kind=="call"&&value.contains("carry_forward")&&!value.at("carry_forward").empty())return {false,"carry_requires_final",{}};
     if(kind=="call"&&value.contains("appraisal"))return {false,"appraisal_requires_final",{}};
+    if(kind=="call"&&value.contains("feeling"))return {false,"feeling_requires_final",{}};
     std::set<std::string> ids;
     auto valid=[](const std::string& s,bool dotted){return std::all_of(s.begin(),s.end(),[&](unsigned char c){return std::isalnum(c)||c=='_'||c=='-'||(dotted&&c=='.');});};
     for(const auto& call:value.at("calls")){const auto id=call.at("id").get<std::string>(),tool=call.at("tool").get<std::string>();if(!ids.insert(id).second||!valid(id,false)||!valid(tool,true)||call.at("args").dump().size()>32*1024)return {false,"invalid_call_identity_or_size",{}};}

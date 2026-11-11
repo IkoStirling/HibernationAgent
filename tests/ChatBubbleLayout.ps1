@@ -10,6 +10,7 @@ try{
  $cfg=Get-Content (Join-Path $ProjectRoot config/example.json) -Raw|ConvertFrom-Json -AsHashtable;$cfg.dataRoot=Join-Path $root data;$cfg.characterRoot=Join-Path $ProjectRoot character;$cfg.uiRoot=Join-Path $ProjectRoot ui;$cfg.pluginRoot=Join-Path $BuildRoot plugins;$cfg.frontend=@{startupAnimation=$false;reducedMotion=$true};$cfg.profiles=@($cfg.profiles[0]);$cfg.plugins=@{};$cfg.solitudeIntervalMs=600000;$cfg.idleBeforeSolitudeMs=600000;$cfg|ConvertTo-Json -Depth 40|Set-Content (Join-Path $root config.json) -Encoding utf8
  $desktop=[PrivateDesktop]::new((Join-Path $BuildRoot hibernation-agent.exe),(Join-Path $root config.json),(Join-Path $root ready.json),$ProjectRoot);$service=$desktop.Child;Wait-For {if($service.HasExited){throw 'fixture exited'};Test-Path (Join-Path $root ready.json)} 'ready';$script:origin='http://127.0.0.1:'+((Get-Content (Join-Path $root ready.json) -Raw|ConvertFrom-Json).port)
  $null=Api '/api/desktop/show' @{}; $main=$desktop.Find('HibernationConversationV2');$viewport=[ChatWindowTest]::GetDlgItem($main,1203);[ChatWindowTest]::UseWindowCoordinates($main)
+ Check ([BubbleLayoutProbe]::LayoutVersion($viewport,$service.Id)-ge2) 'running desktop has the native-size renderer, not an older executable'
  foreach($short in @('短消息一','写进去吧，记得维护好它','短消息三','短消息四','短消息五','短消息六')){
   $null=Api '/api/message' @{request_id=[Guid]::NewGuid().ToString('N');text=$short};Wait-For {!(Api '/api/chat').busy} 'short reply'
  }

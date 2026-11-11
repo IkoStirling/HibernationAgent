@@ -1,4 +1,5 @@
 #include "../PluginCommon.h"
+#include "DatasetWorkshop.h"
 #include <AYPlatform/ManagedProcess.h>
 #include <fstream>
 #include <tuple>
@@ -17,7 +18,7 @@ std::string nonce(){GUID value{};if(FAILED(CoCreateGuid(&value)))throw std::runt
 class StyleLora final:public BasePlugin {
     mutable std::mutex mutex_;std::mutex startMutex_;PluginHostContext host_;PluginJson cfg_=PluginJson::object();
     std::atomic<bool> stopped_=false,paused_=false;
-    ayt::platform::ManagedProcess process_;std::string origin_,auth_,instance_,issue_;
+    ayt::platform::ManagedProcess process_;std::string origin_,auth_,instance_,issue_;std::shared_ptr<expression::DatasetWorkshop> workshop_;std::atomic<bool> datasetBlocked_=false;
     void stopService(){std::lock_guard start(startMutex_);stopped_=true;process_.stop();std::lock_guard lock(mutex_);origin_.clear();auth_.clear();}
     std::string ensure(){
         std::lock_guard start(startMutex_);if(paused_)return "runtime_paused";if(process_.snapshot().state==ayt::platform::ManagedProcessState::Stopping)process_.stop();PluginJson cfg;PluginHostContext host;
@@ -47,7 +48,7 @@ class StyleLora final:public BasePlugin {
 public:
     ~StyleLora()override{shutdown();}
     const char* getName()const override{return "style-lora";}
-    const char* getVersion()const override{return "0.1.0";}
+    const char* getVersion()const override{return "0.2.0";}
     const char* getDescription()const override{return "Operator-trained local LoRA for optional, semantically reviewed dialogue editing";}
     bool bind(PluginHostContext host,PluginJson cfg,std::string& issue)override{
         std::string stage="types";
@@ -64,6 +65,15 @@ public:
     }
     PluginJson tools()const override{
         return PluginJson::array({
+            tool("style_lora.dataset.status","管理员：查看候选语料批次和方向版本，不训练。",object()),
+            tool("style_lora.dataset.import","管理员：导入明确选择的方向示范包，不代表训练同意。",{{"type","object"},{"additionalProperties",true}}),
+            tool("style_lora.dataset.start","管理员：开始有预算的合成候选生成和独立审核，不执行角色动作。",{{"type","object"},{"additionalProperties",true}}),
+            tool("style_lora.dataset.pause","管理员：当前调用完成后暂停本批。",object()),
+            tool("style_lora.dataset.resume","管理员：继续当前暂停批次。",object()),
+            tool("style_lora.dataset.cancel","管理员：取消本批并保留已有结果。",object()),
+            tool("style_lora.dataset.get","管理员：读取合成候选与审核意见。",{{"type","object"},{"additionalProperties",true}}),
+            tool("style_lora.dataset.decide","管理员：保存人工选择或修改建议，不自动批准训练。",{{"type","object"},{"additionalProperties",true}}),
+            tool("style_lora.dataset.export","管理员：导出完整候选档案及调用记录，不训练。",{{"type","object"},{"additionalProperties",true}}),
             tool("style_lora.status","管理员：查看本地训练状态，不读取或返回语料正文。",object()),
             tool("style_lora.import","管理员明确认可后导入表达对照。不能由角色自我采纳历史对白。",object({{"consent",{{"type","boolean"}}},{"samples",{{"type","array"},{"minItems",1},{"maxItems",256},{"items",{{"type","object"},{"additionalProperties",true}}}}}},PluginJson::array({"consent","samples"}))),
             tool("style_lora.train","管理员：开始一批有界SFT LoRA训练，不自动启用结果。",object()),
@@ -72,6 +82,14 @@ public:
         });
     }
     PluginJson invoke(const std::string& name,const PluginJson& args,const std::function<bool()>& cancelled)override{
+        if(name.starts_with("style_lora.dataset.")){
+            if(cancelled&&cancelled())return toolFailure("cancelled");
+            const auto action=name.substr(std::string("style_lora.dataset.").size());
+            if(datasetBlocked_&&(action=="start"||action=="resume"))return toolFailure("runtime_paused");
+            std::shared_ptr<expression::DatasetWorkshop> workshop;
+            {std::lock_guard lock(mutex_);if(!workshop_)workshop_=std::make_shared<expression::DatasetWorkshop>(host_.dataRoot/"runtime"/"style-lora"/"datasets");workshop=workshop_;}
+            return workshop->invoke(action,args);
+        }
         if(!name.starts_with("style_lora."))return toolFailure("tool_not_available");
         if(cancelled&&cancelled())return toolFailure("cancelled");const auto problem=ensure();if(!problem.empty())return toolFailure(problem.c_str());
         PluginJson cfg;std::string origin,auth;{std::lock_guard lock(mutex_);cfg=cfg_;origin=origin_;auth=auth_;}
@@ -82,9 +100,9 @@ public:
         const auto result=ayt::net::http::perform(request);if(!result||result.httpStatus!=200){stopService();return toolFailure("style_service_unavailable",true);}
         try{auto response=PluginJson::parse(result.body);if(!response.is_object()||!response.contains("ok")||!response.at("ok").is_boolean())return toolFailure("style_service_response");return response;}catch(...){return toolFailure("style_service_response");}
     }
-    void event(const PluginJson& value)override{if(value.value("kind",std::string{})=="runtime.paused"){paused_=value.value("paused",false);if(paused_)process_.requestStop();}}
+    void event(const PluginJson& value)override{if(value.value("kind",std::string{})=="runtime.paused"){paused_=value.value("paused",false);datasetBlocked_=paused_||value.value("offline",false)||value.value("balance_offline",false);if(paused_)process_.requestStop();std::shared_ptr<expression::DatasetWorkshop> workshop;{std::lock_guard lock(mutex_);workshop=workshop_;}if(datasetBlocked_&&workshop)workshop->cancel();}}
     PluginJson snapshot()const override{const auto state=process_.snapshot();std::lock_guard lock(mutex_);const auto issue=!state.active&&state.hasResult?(state.result.cancelled?"style_service_stopped":"style_service_exited"):issue_;return {{"service_running",state.active},{"issue",issue},{"apply_enabled",cfg_.value("applyEnabled",false)},{"adapter_id",cfg_.value("adapterId",std::string{})},{"review_required",true},{"operator_only",true}};}
-    void shutdown()override{stopService();}
+    void shutdown()override{std::shared_ptr<expression::DatasetWorkshop> workshop;{std::lock_guard lock(mutex_);workshop=workshop_;}if(workshop)workshop->stop();stopService();}
 };
 }
 extern "C" __declspec(dllexport) ayt::plugin::IPlugin* CreatePlugin(){return new StyleLora;}

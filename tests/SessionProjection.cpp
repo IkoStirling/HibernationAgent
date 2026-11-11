@@ -1,9 +1,21 @@
 #include <Hibernation/SessionProjection.h>
 #include <Hibernation/FailureContinuation.h>
+#include <Hibernation/DialogueContext.h>
 #include <AYTestFixtures.h>
 using namespace hibernation;
 using Json=nlohmann::json;
 TEST_SUITE(SessionProjection)
+TEST_CASE(historical_channel_metadata_does_not_repeat_long_user_text){
+    const std::string longText(5000,'x');const Json raw={{"kind","user_message"},{"text",longText},{"channel_identity",{{"sender_user_id","owner"},{"sender_is_owner",true},{"received_images",Json::array()},{"input_turn",{{"parts",Json::array({{{"message_id","one"},{"text",longText},{"image_ids",Json::array({"picture"})}}})}}}}}};
+    const auto compact=compactChannelDialogue(raw);CHECK(compact.at("text")==longText&&raw.at("channel_identity").at("input_turn").at("parts")[0].at("text")==longText);const auto& part=compact.at("channel_identity").at("input_turn").at("parts")[0];CHECK(!part.contains("text")&&part.at("image_ids")[0]=="picture");CHECK(compact.dump().size()+4000<raw.dump().size());
+}
+TEST_CASE(image_turn_retains_text_and_receipts_without_replaying_pixels){
+    session::Message visual{"user",R"({"tool_results":[{"source_id":"image-observation","ok":true}]})"};visual.images.push_back({"data:image/png;base64,PRIVATE_PIXELS","low"});
+    session::Message assistant{"assistant",R"({"text":"当时看过这张图。"})"};const std::vector<session::Message> original={visual,assistant};
+    const auto retained=session::textOnlyHistory(original);CHECK(!session::images(retained)&&session::images(original));CHECK(retained[1].text==assistant.text);
+    const auto frame=Json::parse(retained[0].text);CHECK(frame.at("tool_results")[0].at("source_id")=="image-observation");CHECK(frame.at("historical_media").at("image_bytes_replayed")==false);CHECK(session::encode(retained).dump().find("PRIVATE_PIXELS")==std::string::npos);
+    const auto decoded=session::decode(session::encode(retained),10000);CHECK(decoded[0].text==retained[0].text);
+}
 TEST_CASE(delta_preserves_current_state_nulls_removals_and_source_order){
     const Json prior={{"event_kind","user_message"},{"event_id","one"},{"input","old"},{"body",{{"x",.1},{"old",true},{"catalog",std::string(6000,'c')}}},{"nullable","present"},{"authorized_context",Json::array({Json{{"id","z"},{"source","archive@1"},{"data",{{"text","first"}}}},Json{{"id","a"},{"source","archive@1"},{"data",{{"text","second"}}}}})}};
     auto now=prior;now["event_id"]="two";now["input"]="new";now["body"]["x"]=.9;now["body"].erase("old");now["nullable"]=nullptr;

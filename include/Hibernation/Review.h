@@ -11,5 +11,7 @@ std::string reviewerConduct();
 std::string toolFailureGuidance(std::string_view tool,std::string_view code);
 bool isLegacyMetaReply(const Json& record);
 std::string reviewSchema(bool withFocus=false,bool withContinuity=false);
+bool advisoryRoleReview(const Json& verdict,bool roleOnly);
+bool retryableReviewFailure(int status,int httpStatus);
 ValidatedOutput validateReview(std::string_view text,bool withFocus=false,bool withContinuity=false);
 }

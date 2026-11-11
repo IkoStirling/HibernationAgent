@@ -27,7 +27,12 @@ try{
  $receipt=$wire[1].messages|Where-Object role -eq tool|Select-Object -First 1;$laterReceipt=$wire[2].messages|Where-Object role -eq tool|Select-Object -First 1
  Check ($receipt.content.Length-gt8000-and$receipt.content-ceq$laterReceipt.content) 'an already sent eight-kilobyte receipt stays identical on the next action step'
  $reviewWire=Get-Content (Join-Path $providerRoot review-last-request.json) -Raw|ConvertFrom-Json -Depth 80;$reviewFrame=Model-ReviewEvent $reviewWire
- Check ($reviewFrame.event_context.StartsWith('{"event_kind"')) 'review projection retains cache ordering inside the nested serialized event'
+ $reviewEvent=$reviewFrame.event_context|ConvertFrom-Json -Depth 90;$actorEvent=Model-CurrentEvent $wire[-1]
+ $authorizedPosition=$reviewFrame.event_context.IndexOf('"authorized_context":');$kindPosition=$reviewFrame.event_context.IndexOf('"event_kind":')
+ Check ($authorizedPosition-ge0-and$kindPosition-gt$authorizedPosition) 'review projection keeps shared authorized evidence before the changing event kind'
+ Check ($reviewEvent.event_kind-eq'user_message'-and$reviewEvent.event_id-ceq$actorEvent.event_id) 'review projection preserves the actual event kind and event identity'
+ $reviewSources=[System.Text.Json.Nodes.JsonNode]::Parse((ConvertTo-Json -InputObject @($reviewEvent.authorized_context) -Depth 90 -Compress));$actorSources=[System.Text.Json.Nodes.JsonNode]::Parse((ConvertTo-Json -InputObject @($actorEvent.authorized_context) -Depth 90 -Compress))
+ Check ([System.Text.Json.Nodes.JsonNode]::DeepEquals($reviewSources,$actorSources)) 'review projection preserves the complete authorized source identities revisions and content in this fixture'
  Check ($trace.turns[0].usage.cached_input_tokens-eq80-and$trace.reviews[0].usage.uncached_input_tokens-eq20) 'actor streaming and reviewer usage reach encrypted traces'
  $system=$wire[0].messages[0].content;$frame=$wire[0].messages[1].content|ConvertFrom-Json -Depth 65
  Check (!$system.Contains('"observed_at_ms"')-and$frame.authoritative_state-and$frame.current_capabilities-and$trace.cache_layout.dynamic_state_in_system-eq$false) 'dynamic facts remain available outside the stable system prompt'

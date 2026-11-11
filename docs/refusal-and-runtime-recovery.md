@@ -1,0 +1,9 @@
+# 拒绝来源与主循环恢复
+
+普通有效对白由角色模型产生，trace.reply_origin=actor_model；review_applied记录是否实际发生过审核。关闭review.enabled及QQ reviewReplies后，人设提示词、工具格式和权限仍保留。不要按“不能、拒绝”等词自动认定供应商拒绝：这些也可能是角色普通选择。
+
+供应商明确返回拒绝标记时，failure.code=provider_refused、origin=model；审核不通过为review_rejected、origin=review、category=verdict；审核连接故障为review_unavailable、origin=review、category=connection_or_format；资料校验拦截为context_authorization_changed、origin=program、category=source_access。网络、余额和配置问题保持自身code，不能一律归入模型或审核拒绝。详细结果在本机追踪与管理状态中查看，不把供应商原始报错、提示词或密钥发到QQ。
+
+主循环曾在启动恢复ha.plugin-events时执行受保护的全文条件扫描，达到扫描预算后抛出world_outbox_read，阻断后续worker.poll，新聊天停留pending/attempts=0。现新增ha.world-outbox/current：新事件与待处理ID索引原子提交，确认事件与移除待处理索引原子提交。旧数据只在迁移阶段有界扫描，遇到上限留下诊断并延后，不阻止前台队列；既有事件不删除、不伪造journaled成功。重启可从索引恢复，事件事实仍以幂等world:key标识提交。
+
+tick异常按阶段及JSON异常编号存入加密ha.diagnostics/tick，避免只剩tick_failed泛化标签。诊断不写任意异常正文。生产存档的全部版本仍保留；本次隔离诊断副本仅提取各ID最新的加密记录，不是备份，不用于覆盖正式存档。

@@ -24,6 +24,7 @@ add_dependencies(Hibernation_Widget Hibernation_WidgetAssets)
 ha_role_plugin(habitat Hibernation_Habitat habitat/Habitat.cpp)
 target_link_libraries(Hibernation_Habitat PRIVATE user32 gdi32 BSimmerSupplies::Rules)
 ha_role_plugin(rhythm Hibernation_Rhythm rhythm/Rhythm.cpp)
+ha_role_plugin(speech-style Hibernation_SpeechStyle speech-style/SpeechStyle.cpp)
 ha_role_plugin(atelier Hibernation_Atelier atelier/Atelier.cpp)
 ha_role_plugin(pocket Hibernation_Pocket pocket/Pocket.cpp)
 ha_role_plugin(pixel-canvas Hibernation_PixelCanvas pixel-canvas/PixelCanvas.cpp)
@@ -37,7 +38,10 @@ add_custom_target(Hibernation_StyleLoraAssets
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/style-lora/worker.py" "${CMAKE_BINARY_DIR}/plugins/style-lora/worker.py"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/style-lora/requirements.txt" "${CMAKE_BINARY_DIR}/plugins/style-lora/requirements.txt")
 add_dependencies(Hibernation_StyleLora Hibernation_StyleLoraAssets)
-target_link_libraries(Hibernation_Mentor PRIVATE AYPlatform AYIO AYSerializer winhttp)
+target_link_libraries(Hibernation_Mentor PRIVATE AYPlatform AYIO AYSerializer winhttp ole32)
+add_custom_target(Hibernation_MentorAssets
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/mentor/session_worker.py" "${CMAKE_BINARY_DIR}/plugins/mentor/session_worker.py")
+add_dependencies(Hibernation_Mentor Hibernation_MentorAssets)
 target_link_libraries(Hibernation_Atelier PRIVATE AYIO)
 ha_role_plugin(tts Hibernation_Speech tts/Speech.cpp)
 target_link_libraries(Hibernation_Speech PRIVATE AYPlatform AYAudioPlayback sapi ole32 uuid winmm crypt32)
@@ -52,3 +56,10 @@ add_subdirectory(napcat)
 
 ha_role_plugin(canteen Hibernation_Canteen canteen/Canteen.cpp)
 target_link_libraries(Hibernation_Canteen PRIVATE BSimmerCuisine::Kitchen)
+ha_role_plugin(video-analysis Hibernation_VideoAnalysis video-analysis/VideoAnalysis.cpp)
+target_link_libraries(Hibernation_VideoAnalysis PRIVATE AYPlatform)
+add_custom_target(Hibernation_VideoAnalysisAssets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/video-analysis/vendor" "${CMAKE_BINARY_DIR}/plugins/video-analysis/vendor"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/video-analysis/worker.mjs" "${CMAKE_BINARY_DIR}/plugins/video-analysis/worker.mjs"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/video-analysis/transcribe.mjs" "${CMAKE_BINARY_DIR}/plugins/video-analysis/transcribe.mjs")
+add_dependencies(Hibernation_VideoAnalysis Hibernation_VideoAnalysisAssets)

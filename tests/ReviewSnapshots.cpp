@@ -41,4 +41,10 @@ TEST_CASE(view_only_retention_drops_old_candidates_and_keeps_current_permission_
     CHECK(session::encode(request.messages).dump().find("OLDER_REJECTED_CANDIDATE")==std::string::npos);
     CHECK(Json::parse(Json::parse(request.messages.back().text).at("review_snapshot").at("data").at("event_context").get<std::string>()).at("authorized_context").empty());
 }
+TEST_CASE(review_event_route_does_not_break_the_identical_authorized_prefix){
+    Json event={{"event_kind","user_message"},{"conversation_delivery",{{"mode","direct"}}},{"authorized_context",Json::array({{{"id","one-source"},{"scope","ha.archive"},{"revision",3},{"data",{{"text",std::string(18000,'p')}}}}})},{"authoritative_state",{{"energy",.3}}}};auto other=event;other["event_kind"]="task_complete";other["authoritative_state"]["energy"]=.5;
+    Json first={{"event_context",event.dump()},{"candidate",{{"text","first"}}}},next={{"event_context",other.dump()},{"candidate",{{"text","second"}}}};
+    const auto a=cacheOrderedReview(first),b=cacheOrderedReview(next);std::size_t prefix=0;while(prefix<a.size()&&prefix<b.size()&&a[prefix]==b[prefix])++prefix;CHECK(prefix>18000);auto decodedA=Json::parse(a),decodedB=Json::parse(b);CHECK(Json::parse(decodedA.at("event_context").get<std::string>())==event);CHECK(Json::parse(decodedB.at("event_context").get<std::string>())==other);CHECK(decodedA.at("candidate")==first.at("candidate")&&decodedB.at("candidate")==next.at("candidate"));
+    other["authorized_context"]=Json::array();next["event_context"]=other.dump();CHECK(cacheOrderedReview(next).find(std::string(100,'p'))==std::string::npos);
+}
 TEST_SUITE_END

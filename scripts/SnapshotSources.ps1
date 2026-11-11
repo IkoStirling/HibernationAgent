@@ -18,7 +18,7 @@ function Source-Files {
     ($bundled-or$_.FullName-notmatch'[\\/]runtime[\\/]')
    }
  })
- foreach($name in @('CMakeLists.txt','README.md','AGENTS.md','.gitignore','.gitattributes','engine-version.json','Start.cmd','Stop.cmd','config/example.json')){$items+=Get-Item -LiteralPath (Join-Path $ProjectRoot $name)}
+ foreach($name in @('CMakeLists.txt','README.md','AGENTS.md','.gitignore','.gitattributes','engine-version.json','Start.cmd','Stop.cmd','PreviewPixelCanvas.cmd','config/example.json')){$items+=Get-Item -LiteralPath (Join-Path $ProjectRoot $name)}
  @($items|Sort-Object FullName -Unique)
 }
 function Fingerprints {
@@ -48,7 +48,7 @@ $metadata=@{
  version=1;completed=$true;created_utc=[DateTime]::UtcNow.ToString('O');source_files=$fingerprints.Count
  application_head=$appHead;engine_head=$engineHead;engine_worktree_dirty=(@(& git -C $engineRoot status --porcelain).Count-gt0);shared_worktree=$true
  attribution='A local source snapshot including concurrent application changes; not an isolated commit or a distribution package.'
- included_roots=@('src','include','plugins','ui','scripts','tools','tests','docs','character','cmake','design','skills','engine-version.json','Start.cmd','Stop.cmd','config/example.json')
+ included_roots=@('src','include','plugins','ui','scripts','tools','tests','docs','character','cmake','design','skills','engine-version.json','Start.cmd','Stop.cmd','PreviewPixelCanvas.cmd','config/example.json')
  excluded_roots=@('config/local.json','config/ai-stage.pending.json','data','out','artifacts','.git','runtime')
  engine_dependencies='Pinned portable Git/7-Zip and licenses from tools/runtime are included. Engine source and installed engine dependencies are not bundled; use the recorded revision and matching local dependencies.'
 }

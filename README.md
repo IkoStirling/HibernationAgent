@@ -1,13 +1,14 @@
 # 小爱 · 桌面角色应用
 
-**Version:** 0.7.0 · **Tag:** V0.7 · **Date:** 2026-10-27 · **Status:** Windows 本地可运行版本
+**Version:** 0.8.0 · **Date:** 2026-10-30 · **Status:** Windows 本地运行版本
 
-仓库使用唯一的 `main` 分支。应用源码、插件、测试、脚本、界面、角色素材及便携工具均由 Git 管理；
+日常开发主线保留 `main`，稳定基线与实验使用独立本地引用，不切换主线或重置并行改动。
+应用源码、插件、测试、脚本、界面、角色素材及便携工具均由 Git 管理；
 `out/` 构建缓存、`artifacts/` 临时实验与诊断产物、本机配置、密钥和加密私人档案不进入版本库。
 
 默认构建会校验并复制 `tools/runtime/` 与工具入口到构建目录的 `tools/`。
-可以直接执行 `out/release/tools/bin/git.cmd --version`、`out/release/tools/bin/7z.cmd --help`，
-或在 PowerShell 中执行 `. ./out/release/tools/UseTools.ps1`，仅为当前进程启用工具路径。
+可以直接执行 `out/build/tools/bin/git.cmd --version`、`out/build/tools/bin/7z.cmd --help`，
+或在 PowerShell 中执行 `. ./out/build/tools/UseTools.ps1`，仅为当前进程启用工具路径。
 Git 支持本地仓库和常规远程操作（认证由用户配置）；7-Zip 支持 `.7z`、`.zip` 等格式的压缩、校验和解压。
 工具不会自动初始化构建仓库、提交数据或赋予角色任意命令执行权。
 如需手动管理构建产物，可使用其中的 Git 初始化独立仓库；应先排除本机配置、日志和私人数据。
@@ -16,7 +17,13 @@ Git 支持本地仓库和常规远程操作（认证由用户配置）；7-Zip �
 保留上游发行文件和许可证；引擎资源导入、Cook、Pak、音视频等继续使用 AliyatEngine，
 仅为引擎未提供的 Git 与通用压缩格式引入外部工具。
 
-本轮新增与当前验证范围见[2026-10-26 更新说明](docs/update-20261026.md)。
+0.8.0 增加[自主作息与加密执行轨迹](docs/circadian-routine.md)，由角色选择时段，程序核对
+实际睡姿、打扰与连续惯性；首次启用不强加作息。实现范围、真实模型合成场景、长时观察和
+未覆盖项目见[连续运行实测记录](docs/continuity-eight-hour-results-20261030.md)。
+后台日预算与接口余额分别管理，到限不会靠重启清零；管理页只展示有界轨迹元数据，
+私有记忆与判断正文仍加密保存。
+
+早期新增与验证范围见[2026-10-26 更新说明](docs/update-20261026.md)。
 后续新增[记忆浓缩检索、对话准备状态与自主活动队列](docs/memory-library-and-activities.md)。
 桌面玩法新增[角色创造食物、掉落物属性与渐变生命周期](docs/desktop-drops.md)。
 小组件新增[PNG 序列帧资源包、动作过渡与分层道具](docs/pixel-sequences.md)。
@@ -301,3 +308,19 @@ continuous_state 是实际连续状态；主对话和管理页不展示这些数
 可选的[对白风格 LoRA](docs/style-lora.md)提供认可语料导入、本地训练、版本选择和独立审核后的可控编辑；默认不启用，不自动读取记忆训练。
 
 可选[像素创作台](docs/pixel-canvas.md)支持有版本的像素画、短动画、实际PNG预览与桌面摆件；本轮[引擎回迁](docs/engine-return-candidates.md)已由应用实际使用。
+
+
+## 自己接续一件小事
+
+管理页「桌面小角色」中的「自主控制」开启后，可以启用「接续自己已有的打算」。小爱会围绕自己留下的念头，选择继续创作、采集、料理、阅读或桌面活动；也可以停留、改主意、先搁置，回复和安静都合适。阅读还需要在阅读角单独启用自主阅读。
+
+- `autonomyPursuitEnabled`：单独开关，默认 `true`；仍以 `autonomousMode` 已开启为前提。
+- `autonomyPursuitCooldownSeconds`：两次机会的最短间隔，默认 120 秒，范围 10～3600 秒。
+- `autonomyPursuitMaxSeconds`：一次机会的最长时段，默认 90 秒，范围 5～100 秒；模型、审核、工具及原有预算都在实际执行时继续检查。
+- `self.reconsider`：把自己的已有打算搁置或重新拿起，粗粒度期限由程序维护；到期只是重新可考虑。
+
+这段短时活动被用户输入或重启打断后，实际结果与原打算会保留，之后重新选择下一步。持续长任务继续沿用原任务系统。厨房的受理、做好、端出与实际食用按料理批次关联；原档保留，文件加密和访问权限检查继续生效。
+
+目前自动接续范围是已启用的厨房、阅读、创作与桌面工具；外部联系、应用启动、导师执行及临时激活 Skill 继续通过现有授权入口处理。已有的每小时／每日预算配置保持有效。动作及 PixelLab 素材入口见 `docs/character-action-catalog.md` 中 LIFE-01～04。
+
+打算、领域工具、上下文装配和中断恢复的完整说明见[自己的一小段时间](docs/autonomous-life.md)。

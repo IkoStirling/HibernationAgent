@@ -7,6 +7,12 @@ param(
  [string]$ProfileId='',
  [string]$NodeExecutable=$env:HA_NODE_RUNTIME,
  [string]$BudgetLedger='',
+ [string]$ExternalRelayFile='',
+ [ValidateSet('baseline','updated','probe','contrast')][string]$RelayBatch='baseline',
+ [switch]$PrivateReports,
+ [switch]$EnableCognition,
+ [switch]$SyntheticCharacter,
+ [switch]$PersonaOnly,
  [string]$DeadlineUtc='2026-10-28T00:37:47Z',
  [switch]$Serve,
  [string]$ServeUntilUtc='2026-10-27T23:52:47Z',
@@ -27,6 +33,8 @@ if(!$BudgetLedger.StartsWith($allowed,[StringComparison]::OrdinalIgnoreCase)){th
 $steps=Get-Content -LiteralPath $Episode -Raw|ConvertFrom-Json -AsHashtable
 if($steps.version-ne1-or!$steps.title-or$steps.turns-isnot[Array]-or$steps.turns.Count-lt$(if($Serve){0}else{1})-or$steps.turns.Count-gt20){throw 'Episode requires version 1, title and 1..20 meaningful turns; a continuing controller can resume with zero turns'}
 if($steps.ContainsKey('referenceReading')-and$steps.referenceReading-isnot[bool]){throw 'referenceReading must be an explicit boolean'}
+if($SyntheticCharacter-and$steps.referenceReading){throw 'Synthetic-only trials cannot import reference readings'}
+if($PersonaOnly-and($SyntheticCharacter-or$steps.referenceReading-or!$PrivateReports)){throw 'PersonaOnly requires private reports, no reference readings and no synthetic persona replacement'}
 if($steps.opportunitySeconds-and(!$steps.autonomy-or$steps.opportunitySeconds-lt1-or$steps.opportunitySeconds-gt45)){throw 'An independent activity opportunity requires autonomy and 1..45 seconds'}
 foreach($step in $steps.turns){if(!$step.text-or$step.text.Length-gt3000){throw 'Episode text must be 1..3000 characters'};if($step.settleSeconds-and($step.settleSeconds-lt0-or$step.settleSeconds-gt30)){throw 'Activity settlement is limited to 30 seconds'}}
 if($Serve){$serveUntil=[DateTime]::Parse($ServeUntilUtc).ToUniversalTime();if($serveUntil-le[DateTime]::UtcNow-or$serveUntil-gt[DateTime]::Parse($DeadlineUtc).ToUniversalTime()){throw 'Controller must end inside the authorized work window'}}
@@ -56,7 +64,14 @@ function AwaitIdle{
  while([DateTime]::UtcNow-lt$end){if($service.HasExited){throw 'Lab backend exited'};if(!(Api '/api/chat').busy){return};Start-Sleep -Milliseconds 100}
  throw 'Lab turn deadline reached'
 }
-function Save-LabReport{$report.updated_utc=[DateTime]::UtcNow.ToString('O');$report|ConvertTo-Json -Depth 85|Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM}
+function Save-LabReport{
+ $report.updated_utc=[DateTime]::UtcNow.ToString('O');$json=$report|ConvertTo-Json -Depth 85
+ if(!$PrivateReports){$json|Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM;return}
+ Add-Type -AssemblyName System.Security
+ $plain=[Text.Encoding]::UTF8.GetBytes($json)
+ try{$sealed=[Security.Cryptography.ProtectedData]::Protect($plain,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);$temporary=$reportPath+'.pending';[IO.File]::WriteAllBytes($temporary,$sealed);[IO.File]::Move($temporary,$reportPath,$true)}finally{[Array]::Clear($plain,0,$plain.Length)}
+ @{version=1;started_utc=$report.started_utc;updated_utc=$report.updated_utc;live=[bool]$Live;turns=$report.turns.Count;failed_turns=@($report.turns|Where-Object failed).Count;encrypted_report=$true;binary_sha256=$report.binary_sha256}|ConvertTo-Json|Set-Content -LiteralPath ($reportPath+'.metadata.json') -Encoding utf8NoBOM
+}
 function Run-LabTurn($Step,[string]$RequestIdentity=''){
  if($Serve-and[DateTime]::UtcNow-ge$serveUntil){throw 'Controller work window ended'}
  if($Step.text-isnot[string]-or![bool]$Step.text.Trim()-or$Step.text.Length-gt3000){throw 'Invalid dialogue input'}
@@ -70,7 +85,7 @@ function Run-LabTurn($Step,[string]$RequestIdentity=''){
  if($last.Count){$record=Api '/api/archive' @{id=$last[0].id};if($record.records[0].data.request_id-eq$requestId){$reply=$last[0].text}}
  $row=@{request_id=$requestId;input=$Step.text;reply=$reply;failed=$chat.call_failed;call_error=$chat.call_error;elapsed_ms=$watch.ElapsedMilliseconds;state_before=$before.continuous_state;state_after=$state.continuous_state;activities=(Api '/api/activities/status');trace=$trace}
  $report.turns+=,$row;Save-LabReport
- Write-Output ($Step.text+"`n小爱："+$reply)
+ if($PrivateReports){Write-Output ('Private turn completed: '+$requestId+'; reply_present='+[bool]$reply+'; failed='+$chat.call_failed)}else{Write-Output ($Step.text+"`n小爱："+$reply)}
  if($chat.call_failed){throw 'Episode paused after failed turn; inspect its trace before continuing the same archive'}
 }
 function Consider-OwnWork{
@@ -89,6 +104,7 @@ function Consider-OwnWork{
 }
 function Lab-Snapshot{
  $state=Api '/api/state';$surfaces=@((Api '/api/capabilities').plugins|Where-Object {$_.id-in@('widget','habitat','pocket','atelier','rhythm','reading')})
+ if($PrivateReports){$activity=Api '/api/activities/status';$mind=Api '/api/mind/status';return @{observed_utc=[DateTime]::UtcNow.ToString('O');backend_pid=$service.Id;busy=$state.busy;activity_queued=$activity.queued;activity_active=($null-ne$activity.active);activity_last_error=$activity.last_error;mind=$mind;circadian=(Api '/api/rhythm/status');report_path=$reportPath;turn_count=$report.turns.Count;dialogue_message_count=@((Api '/api/chat').messages).Count;persona_version=$state.persona_version;stage_id=$state.stage.id}}
   return @{observed_utc=[DateTime]::UtcNow.ToString('O');backend_pid=$service.Id;busy=$state.busy;continuous_state=$state.continuous_state;activities=(Api '/api/activities/status');surfaces=$surfaces;report_path=$reportPath;turn_count=$report.turns.Count;dialogue_message_count=@((Api '/api/chat').messages).Count;persona_version=$state.persona_version;stage_id=$state.stage.id}
 }
 try{
@@ -106,7 +122,29 @@ try{
  }
  $character=Join-Path $LabRoot character
  if($Serve-and!(Test-Path -LiteralPath (Join-Path $runtime plugins/rhythm/plugin.json))){throw 'RefreshRuntime is required before enabling this controller'}
- if(!(Test-Path -LiteralPath $character)){Copy-Item -LiteralPath (Join-Path $ProjectRoot character) -Destination $character -Recurse}
+ if($SyntheticCharacter){
+  # Literal synthetic definitions: do not read/copy the user's persona, novel
+  # reference files, existing memories, or ordinary character directory.
+  $syntheticPersona=@{schemaVersion=1;version=1;id='synthetic-continuity-fixture';displayName='测试角色 R';notice='完全合成的隔离技术试验。';identity='完全虚构的通用桌面实验角色，没有真实人物或作者设定。';attention=@('合成谜题','物件之间的因果','未完成的小计划');boundaries=@('区分合成经历、推测和未来计划。','仅按实际工具回执描述操作结果。','可以安静、拒绝或修正判断，不要求讨好，也不预设亲密关系。');character=@{dialogue=@('使用自然、简短的中文。','未被问及时不复述程序和实验设置。')}}
+  $syntheticStages=@{schemaVersion=1;version=1;initial='initial';stages=@(@{id='initial';name='合成初始阶段';description='只积累独立试验中的合成经历。';next='';minimumEvidence=0});reviewPolicy='本实验不自动改变阶段。'}
+  New-Item -ItemType Directory -Force $character|Out-Null
+  foreach($pair in @(@{name='persona.json';value=$syntheticPersona},@{name='stages.json';value=$syntheticStages})){
+   $target=Join-Path $character $pair.name;$expected=$pair.value|ConvertTo-Json -Depth 20 -Compress
+   if(Test-Path -LiteralPath $target){$actual=Get-Content -LiteralPath $target -Raw;if(![Text.Json.Nodes.JsonNode]::DeepEquals([Text.Json.Nodes.JsonNode]::Parse([string]$actual),[Text.Json.Nodes.JsonNode]::Parse([string]$expected))){throw 'Synthetic trial character changed or belongs to another scope'}}
+   else{$expected|Set-Content -LiteralPath $target -Encoding utf8NoBOM}
+  }
+ }elseif($PersonaOnly){
+  # The user-authorized persona is separate from formal memories, workspace
+  # contents and referenced novel material. Never copy a character directory.
+  New-Item -ItemType Directory -Force $character|Out-Null
+  foreach($leaf in @('persona.json','stages.json')){
+   $original=Join-Path $ProjectRoot ('character/'+$leaf);$target=Join-Path $character $leaf
+   if((Get-Item -LiteralPath $original).Attributes-band[IO.FileAttributes]::ReparsePoint){throw 'Linked persona input rejected'}
+   if(Test-Path -LiteralPath $target){if((Get-FileHash -LiteralPath $target).Hash-ne(Get-FileHash -LiteralPath $original).Hash){throw 'Isolated persona changed; use a fresh trial directory'}}
+   else{Copy-Item -LiteralPath $original -Destination $target}
+  }
+  if(@(Get-ChildItem -LiteralPath $character -Force|Where-Object {$_.PSIsContainer-or$_.Name-notin@('persona.json','stages.json')}).Count){throw 'PersonaOnly character directory contains unapproved material'}
+ }elseif(!(Test-Path -LiteralPath $character)){Copy-Item -LiteralPath (Join-Path $ProjectRoot character) -Destination $character -Recurse}
  $cfg.dataRoot=Join-Path $LabRoot data;$cfg.draftsRoot=Join-Path $cfg.dataRoot drafts;$cfg.materialsRoot=Join-Path $cfg.dataRoot materials
  $cfg.characterRoot=$character;$cfg.uiRoot=Join-Path $ProjectRoot ui;$cfg.pluginRoot=Join-Path $runtime plugins;$cfg.port=0
  $cfg.frontend.startupAnimation=$false;$cfg.computer=@{enabled=$false;allowScreenCapture=$false;readRoots=@()}
@@ -118,6 +156,7 @@ try{
   reading=@{enabled=[bool]$steps.referenceReading;autonomousReading=([bool]$steps.referenceReading-and([bool]$steps.autonomy-or[bool]$Serve));language='zh';maxRequestsPerHour=12;useSystemProxy=$true}
  }
  $cfg.maxStartsPerHour=600;$cfg.solitudeIntervalMs=604800000;$cfg.idleBeforeSolitudeMs=86400000;$cfg.reflectOnActivities=[bool]$steps.considerOwnWork
+ if($EnableCognition){$cfg.cognition=$source.cognition;if(!$cfg.cognition){$cfg.cognition=@{enabled=$true}}else{$cfg.cognition.enabled=$true};$cfg.contextControl=$source.contextControl}
  if($steps.autonomy){$cfg.plugins.widget.autonomousMode=$true;$cfg.plugins.widget.roam=$true;$cfg.plugins.widget.autonomyIdleSeconds=600;$cfg.plugins.widget.autonomyRefillSeconds=600}
  if($steps.opportunitySeconds){$cfg.plugins.widget.autonomyIdleSeconds=15;$cfg.plugins.widget.autonomyRefillSeconds=60}
  if($Serve){
@@ -126,12 +165,28 @@ try{
   $cfg.solitudeIntervalMs=900000;$cfg.idleBeforeSolitudeMs=120000;$cfg.reflectOnActivities=$true
  }
  $cfg.maxToolRounds=8;$cfg.skills=@{enabled=$true;useBuiltins=$true;root=(Join-Path $ProjectRoot skills);grants=@()}
+ if($SyntheticCharacter-or$PersonaOnly){$cfg.skills=@{enabled=$false;useBuiltins=$false;root=(Join-Path $LabRoot skills);grants=@()}}
+ if($EnableCognition){
+  $cfg.maxToolRounds=if($source.maxToolRounds){$source.maxToolRounds}else{6}
+  $cfg.backgroundBudget=@{enabled=$true;maxCallsPerDay=1000;maxInputTokensPerDay=16000000}
+  if($Live){$cfg.review=@{};foreach($key in $source.review.Keys){$cfg.review[$key]=$source.review[$key]}}
+ }
  $secretRoot=Join-Path $cfg.dataRoot runtime/secrets;New-Item -ItemType Directory -Force $secretRoot|Out-Null
  $runRoot=Join-Path $LabRoot ('episodes/'+[DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N').Substring(0,8));New-Item -ItemType Directory -Force $runRoot|Out-Null
- $reportPath=Join-Path $runRoot report.json
+ $reportPath=Join-Path $runRoot $(if($PrivateReports){'report.dpapi'}else{'report.json'})
  $report=@{version=1;title=$steps.title;started_utc=[DateTime]::UtcNow.ToString('O');live=[bool]$Live;production_archive_read=$false;continuing_archive=$true;binary_sha256=(Get-FileHash -LiteralPath (Join-Path $runtime hibernation-agent.exe) -Algorithm SHA256).Hash;persona_sha256=(Get-FileHash -LiteralPath (Join-Path $character persona.json) -Algorithm SHA256).Hash;turns=@()}
+ $report.character_scope=$(if($SyntheticCharacter){'literal_synthetic_only'}else{'application_persona'});$report.external_reference_reading=[bool]$steps.referenceReading
+ $report.persona_only_scope=[bool]$PersonaOnly
  if($Live){
   if([DateTime]::UtcNow-ge[DateTime]::Parse($DeadlineUtc).ToUniversalTime()){throw 'Authorized work window has ended'}
+  if($ExternalRelayFile){
+   # Preserve the explicit UTC suffix. PowerShell's automatic DateTime parsing
+   # followed by Parse(object) loses Kind and shifts this deadline by local TZ.
+   $shared=Get-Content -LiteralPath $ExternalRelayFile -Raw|ConvertFrom-Json -AsHashtable -DateKind String
+   if($shared.version-ne1-or[DateTime]::Parse($shared.deadline).ToUniversalTime()-lt[DateTime]::Parse($DeadlineUtc).ToUniversalTime()){throw 'Shared relay deadline mismatch'}
+   $relay=Get-Process -Id $shared.pid -ErrorAction Stop;$relayOrigin=$shared.origin
+   foreach($profile in $cfg.profiles){if($profile.protocol-eq'mock'){continue};$role=if($profile.id-eq$source.review.profileId){'review'}else{'actor'};$route=$shared.routes[$RelayBatch+'-'+$role];if(!$route){throw 'Shared relay route missing'};$profile.origin=$relayOrigin;$profile.basePath=$route.basePath;$profile.useSystemProxy=$false;$profile.proxyOrigin='';$protectedFile=Join-Path $source.dataRoot ('runtime/secrets/'+$profile.id+'.dpapi');if(Test-Path -LiteralPath $protectedFile){$destination=Join-Path $secretRoot ($profile.id+'.dpapi');Copy-Item -LiteralPath $protectedFile -Destination $destination;$copies+=$destination}}
+  }else{
   $relayCapability=[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24)).ToLowerInvariant();$routes=@{}
   foreach($profile in $cfg.profiles){
    if($profile.protocol-eq'mock'){continue}
@@ -147,6 +202,7 @@ try{
   $end=[DateTime]::UtcNow.AddSeconds(12);while(!(Test-Path -LiteralPath $relayReady)){if($relay.HasExited-or[DateTime]::UtcNow-ge$end){throw 'Budget relay did not start'};Start-Sleep -Milliseconds 100}
   $relayOrigin='http://127.0.0.1:'+((Get-Content -LiteralPath $relayReady -Raw|ConvertFrom-Json).port)
   foreach($profile in $cfg.profiles){if($profile.protocol-ne'mock'){$profile.origin=$relayOrigin;$profile.basePath='/'+$relayCapability+'/'+$profile.id}}
+  }
  }
  $configPath=Join-Path $runRoot config.json;$ready=Join-Path $runRoot ready.json
  $cfg|ConvertTo-Json -Depth 70|Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
@@ -174,7 +230,7 @@ try{
    Start-Sleep -Milliseconds 200
   }while([DateTime]::UtcNow-lt$end)
   $report.independent_activity=@{bounded_seconds=$steps.opportunitySeconds;choice_observed=$choice;status=$activity;actual_new_outcomes=$new;surfaces=(Api '/api/capabilities').plugins}
-  $report|ConvertTo-Json -Depth 85|Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM
+  Save-LabReport
   Write-Output ('Independent activity: choice='+$choice+', outcomes='+$new.Count+', error='+$activity.last_error)
  }
  if($steps.considerOwnWork){Consider-OwnWork}
@@ -200,11 +256,12 @@ try{
      $allowed=@('controller_id','action');if($command.action-eq'say'){$allowed+='text'}elseif($command.action-eq'episode'){$allowed+='turns'}
      foreach($key in $command.Keys){if($key-notin$allowed){throw 'Unknown controller field'}}
      switch($command.action){
-      'say' {Run-LabTurn @{text=$command.text} $commandFile.BaseName;$result=@{reply=$report.turns[-1].reply;failed=$report.turns[-1].failed;report_path=$reportPath}}
+      'say' {Run-LabTurn @{text=$command.text} $commandFile.BaseName;$result=@{reply=$report.turns[-1].reply;failed=$report.turns[-1].failed;report_path=$reportPath};if($PrivateReports){$result=@{reply_emitted=[bool]$report.turns[-1].reply;reply_characters=([string]$report.turns[-1].reply).Length;failed=$report.turns[-1].failed;report_path=$reportPath}}}
       'episode' {if($command.turns-isnot[Array]-or$command.turns.Count-lt1-or$command.turns.Count-gt12){throw 'Invalid conversation block'};$index=0;foreach($step in $command.turns){Run-LabTurn $step ($commandFile.BaseName+'-'+$index);++$index};$result=@{turn_count=$report.turns.Count;report_path=$reportPath}}
       'snapshot' {$result=Lab-Snapshot}
       'consider' {Consider-OwnWork;$result=@{status=$report.private_consideration.status;report_path=$reportPath}}
-      'rebuild_dialogue' {$result=Api '/api/dialogue/rebuild' @{};$report.interventions=@($report.interventions|Where-Object {$null-ne$_})+@(@{kind='working_dialogue_projection';at_utc=[DateTime]::UtcNow.ToString('O');receipt=$result});$report|ConvertTo-Json -Depth 85|Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM}
+      'rebuild_dialogue' {$result=Api '/api/dialogue/rebuild' @{};$report.interventions=@($report.interventions|Where-Object {$null-ne$_})+@(@{kind='working_dialogue_projection';at_utc=[DateTime]::UtcNow.ToString('O');receipt=$result});Save-LabReport}
+      'wake' {$result=Api '/api/rhythm/wake' @{};$report.interventions=@($report.interventions|Where-Object {$null-ne$_})+@(@{kind='administrator_wake';at_utc=[DateTime]::UtcNow.ToString('O');receipt=$result});Save-LabReport}
       'stop' {$stopRequested=$true;$result=@{stopping=$true;report_path=$reportPath}}
       default {throw 'Unknown controller action'}
      }
@@ -219,8 +276,8 @@ try{
  if($service){$service.Refresh();if(!$service.HasExited){try{$null=Api '/api/shutdown' @{};$null=$service.WaitForExit(12000)}catch{};$service.Refresh();if(!$service.HasExited){Stop-Process -Id $service.Id}}}
  if($desktop){$desktop.Dispose()}
  foreach($copy in $copies){Remove-Item -LiteralPath $copy -ErrorAction SilentlyContinue}
- if($relay){$relay.Refresh();if(!$relay.HasExited){try{$null=Invoke-RestMethod -Method Post -Uri ($relayOrigin+'/'+$relayCapability+'/stop') -TimeoutSec 10;$null=$relay.WaitForExit(5000)}catch{};$relay.Refresh();if(!$relay.HasExited){Stop-Process -Id $relay.Id}}}
- if($report){$report.ended_utc=[DateTime]::UtcNow.ToString('O');$report|ConvertTo-Json -Depth 85|Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM}
+ if($relay-and!$ExternalRelayFile){$relay.Refresh();if(!$relay.HasExited){try{$null=Invoke-RestMethod -Method Post -Uri ($relayOrigin+'/'+$relayCapability+'/stop') -TimeoutSec 10;$null=$relay.WaitForExit(5000)}catch{};$relay.Refresh();if(!$relay.HasExited){Stop-Process -Id $relay.Id}}}
+ if($report){$report.ended_utc=[DateTime]::UtcNow.ToString('O');Save-LabReport}
  if($controller){$controller.running=$false;$controller.ended_utc=[DateTime]::UtcNow.ToString('O');$controller|ConvertTo-Json|Set-Content -LiteralPath $controllerPath -Encoding utf8NoBOM}
  $env:TEMP=$saved.TEMP;$env:TMP=$saved.TMP;$env:HIBERNATION_SESSION_KEY=$saved.HIBERNATION_SESSION_KEY
  $lockStream.Dispose();Remove-Item -LiteralPath $runLock

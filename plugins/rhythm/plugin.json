@@ -1,13 +1,14 @@
 {
   "id":"rhythm","name":"安静节律","icon":"☾",
-  "description":"角色自己的短暂休息与安静共处，跟随实际活动时间。需要桌面小角色。",
-  "version":"0.1.0","api_version":2,"library":"Hibernation_Rhythm.dll",
+  "description":"角色自己的短休与可自主配置的作息，确认姿态后才统计休息。需要桌面小角色。",
+  "version":"0.2.0","api_version":2,"library":"Hibernation_Rhythm.dll",
   "dependencies":["widget"],"capabilities":["character.rest","character.rhythm"],
   "settings_ui":[
+    {"key":"circadianEnabled","label":"允许它自主配置作息长睡","type":"toggle","default":true},
     {"key":"automaticRest","label":"允许它自己选择短暂休息","type":"toggle","default":true},
     {"key":"idleBeforeRestSeconds","label":"空闲多久后才可能休息（秒）","type":"number","default":300,"min":5,"max":7200,"step":5},
     {"key":"restSeconds","label":"自主休息时长（秒）","type":"number","default":180,"min":15,"max":1800,"step":15},
     {"key":"automaticProbability","label":"每次考虑时休息的概率（0 至 1）","type":"number","default":0.3,"min":0,"max":1,"step":0.05}
   ],
-  "settings_note":"通常只在夜间或精力较低、没有交谈和朗读时考虑休息。休息不会改变系统声音，也不要求用户回应。"
+  "settings_note":"长睡时段及唤醒倾向由角色通过 rhythm.configure 选择；未配置时不自动长睡。普通消息或拖动可能未唤醒，消息仍保存；管理页可随时唤醒或关闭。短暂休息仍按原规则可直接打断。暂停及关机时间不计休息，不控制电脑或声音。"
 }
