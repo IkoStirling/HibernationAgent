@@ -30,7 +30,10 @@ struct DesktopServices::Impl {
         if(loginWindow||!view||!view->ready()||view->loading()||presentationPending||std::chrono::steady_clock::now()<nextPresentation)return;
         nextPresentation=std::chrono::steady_clock::now()+std::chrono::milliseconds(500);presentationPending=true;
         const auto epoch=loginEpoch;
-        view->script(std::string(televisionBridgeSource)+".present("+Json{{"layout_width",pageLayoutWidth}}.dump()+")",[this,epoch](bool ok,std::string text){
+        const auto operation=televisionVisible
+            ? ".present("+Json{{"layout_width",pageLayoutWidth}}.dump()+")"
+            : ".inspect()";
+        view->script(std::string(televisionBridgeSource)+operation,[this,epoch](bool ok,std::string text){
             if(epoch!=loginEpoch)return;presentationPending=false;if(loginWindow)return;
             auto result=Json::parse(text,nullptr,false);const auto now=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
             Json playback={{"mode","webpage"},{"state","unavailable"},{"sampled_at_ms",now}};
@@ -48,7 +51,14 @@ struct DesktopServices::Impl {
         const auto& a=command->args;const auto& op=command->operation;
         if(op=="close"){{std::lock_guard guard(mutex);webPlayback=Json::object();}finishTelevisionLogin(false);++loginEpoch;authPending=false;loginState="unknown";loginDismissed=false;if(view)view->close();view.reset();viewKey.clear();presentationPending=false;return toolSuccess();}
         if(op=="resize"){televisionWidth=a.at("width");televisionHeight=a.at("height");if(view&&!loginWindow)view->bounds(televisionWidth,televisionHeight);return toolSuccess();}
-        if(op=="visible"){televisionVisible=a.at("visible");if(view&&!loginWindow)view->visible(televisionVisible);return toolSuccess();}
+        if(op=="visible"){
+            televisionVisible=a.at("visible");
+            if(view&&!loginWindow){
+                view->visible(televisionVisible);
+                if(!televisionVisible)view->script(std::string(televisionBridgeSource)+".reset()",[](bool,std::string){});
+            }
+            return toolSuccess();
+        }
         if(op=="login")return showTelevisionLogin(a);
         if(op=="login_close"){finishTelevisionLogin();return toolSuccess({{"login_window_open",false}});}
         if(op=="login_status")return toolSuccess({{"login_window_open",loginWindow!=nullptr},{"login_state",loginState},{"detection_method",loginMethod},{"auto_prompt_dismissed",loginDismissed}});
@@ -65,8 +75,8 @@ struct DesktopServices::Impl {
             if(!view||key!=viewKey){if(view)view->close();view=std::make_unique<ayt::platform::WebView>();viewKey=key;parent=handle;if(!view->initialize(handle,cfg.dataRoot/"runtime"/"browser"/platform,allows,cfg.plugins.value("television",Json::object()).value("browserUseSystemProxy",false)))return toolFailure("webview_runtime_unavailable");televisionWidth=a.value("width",480);televisionHeight=a.value("height",280);view->bounds(televisionWidth,televisionHeight);}
             if(!view->error().empty())return toolFailure(view->error().c_str());if(!view->ready())return nullptr;
             loginDetection=Json::object();if(a.contains("login_detection")&&a.at("login_detection").is_object())for(const auto* key:{"signed_in_selector","signed_out_selector"})if(a.at("login_detection").contains(key)&&a.at("login_detection").at(key).is_string()&&a.at("login_detection").at(key).get<std::string>().size()<=256)loginDetection[key]=a.at("login_detection").at(key);
-            loginState="unknown";loginMethod.clear();loginDismissed=false;authPending=false;nextAuth={};televisionVisible=true;pageLayoutWidth=std::clamp(a.value("layout_width",1280),960,1920);++loginEpoch;presentationPending=false;{std::lock_guard guard(mutex);webPlayback=Json::object();}
-            if(!view->navigate(a.at("url")))return toolFailure("webpage_navigation_failed");view->visible(true);return toolSuccess({{"opened",true},{"mode","webpage"},{"loading",true},{"url",a.at("url")},{"platform",platform},{"login","user_managed_in_page"}});
+            loginState="unknown";loginMethod.clear();loginDismissed=false;authPending=false;nextAuth={};televisionVisible=a.value("visible",true);pageLayoutWidth=std::clamp(a.value("layout_width",1280),960,1920);++loginEpoch;presentationPending=false;{std::lock_guard guard(mutex);webPlayback=Json::object();}
+            if(!view->navigate(a.at("url")))return toolFailure("webpage_navigation_failed");view->visible(televisionVisible);return toolSuccess({{"opened",true},{"mode","webpage"},{"visible",televisionVisible},{"loading",true},{"url",a.at("url")},{"platform",platform},{"login","user_managed_in_page"}});
         }
         if(!view||!view->ready())return toolFailure("webpage_not_open");
         if(op=="observe"||op=="page"||op=="video_frame"){

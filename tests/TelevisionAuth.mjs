@@ -10,7 +10,8 @@ const ctx=vm.createContext({window:{},location:{hostname:'fixture.local',origin:
  if(fail)throw Error('synthetic offline');
  return {ok:true,json:async()=>({code:0,data:{isLogin:loggedIn,uname:'PRIVATE_SENTINEL',mid:'PRIVATE_SENTINEL'}})};
 }});
-const api=vm.runInContext(source,ctx);const options={signed_in_selector:'.yes',signed_out_selector:'.no'};
+const reader=fs.readFileSync(new URL('../ui/video-frame-reader.js',import.meta.url),'utf8');
+const api=vm.runInContext(source+'('+reader+')',ctx);const options={signed_in_selector:'.yes',signed_out_selector:'.no'};
 assert.equal(api.auth(options).state,'unknown');assert.equal(calls,0);
 visible.add('.no');assert.equal(api.auth(options).state,'signed_out');
 visible.add('.yes');assert.equal(api.auth(options).state,'unknown');

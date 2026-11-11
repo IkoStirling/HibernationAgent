@@ -1178,3 +1178,5 @@ MEDIA-01/03/05 登录流程补充（2026-11-05）：取消电视边框登录按�
 ### UI-TASK-CARD 对话持续任务
 
 用户从桌面对话的“持续任务”进入聊天任务区。界面展示程序状态、实际已启动的工作段和经写入回执核对的文本草稿，支持暂放、继续和取消。入口为 `GET /api/chat/tasks`、`POST /api/chat/tasks/detail` 与 `POST /api/chat/tasks/control`。任务执行继续使用 `task.start` 和 `task.checkpoint`，草稿预览和任务卡变化不触发角色动作。此项只涉及界面，无新增 PixelLab State、帧循环或动作提示词。
+
+MEDIA-01/03/05 网页取帧补充（2026-11-11）。`television.open_page` 可用 `visible: false` 进入后台取帧，`video.web_observe` 沿用实际视频元素和时间码。外部 Playwright 可绑定自己的当前标签页读取同样的画面。此项属于媒体读取与界面表现，无独立身体动画，沿用 S01→S01。

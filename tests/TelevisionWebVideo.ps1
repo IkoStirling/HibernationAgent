@@ -20,6 +20,12 @@ try{
  $c.plugins=@{television=@{enabled=$true;volume=0;wakeOnEnd=$false;platforms=@(@{id='fixture';name='Local fixture';enabled=$true;hosts=@('127.0.0.1');homeUrl=$site+'/page';searchUrl=$site+'/page?q={query}'},@{id='bilibili';name='Bilibili';enabled=$true;hosts=@('bilibili.com');homeUrl='https://www.bilibili.com/';searchUrl='https://search.bilibili.com/all?keyword={query}'})};'video-analysis'=@{enabled=$true;watchWindowSeconds=10}}
  $config=Join-Path $root config.json;$ready=Join-Path $root ready.json;$c|ConvertTo-Json -Depth 55|Set-Content $config -Encoding utf8
  $desktop=[PrivateDesktop]::new((Join-Path $BuildRoot hibernation-agent.exe),$config,$ready,$ProjectRoot);$service=$desktop.Child;Await {Test-Path $ready};$script:origin='http://127.0.0.1:'+(Get-Content $ready -Raw|ConvertFrom-Json).port
+ $hidden=Tool television.open_page @{url=$site+'/hidden';platform='fixture';visible=$false}
+ Check ($hidden.ok-and$hidden.result.visible-eq$false) 'web page can open without showing the television'
+ Await {$script:hiddenFrame=Tool video.web_observe;$script:hiddenFrame.ok}
+ $hiddenPage=Tool television.page
+ $hiddenTv=((Api '/api/capabilities').plugins|Where-Object id -eq television).current
+ Check ($hiddenFrame.result.frames[0].image.mime_type-eq'image/jpeg'-and$hiddenTv.visible-eq$false-and$hiddenPage.result.presentation-eq'pending') 'hidden WebView extracts actual frames without applying TV layout'
  Check (Tool television.open_page @{url=$site+'/page';platform='fixture'}).ok 'real native WebView opens fixture'
  $page=Tool television.page
  Check ($page.ok-and$page.result.html.Contains('视频素材目录')-and!$page.result.screenshot_used) 'HTML navigation returns live document without a screenshot'

@@ -41,3 +41,18 @@ foreground input retain their existing priority. `video.note` persists sourced
 notes. Restart requires explicit resume after opening the same media. Both QQ
 and desktop use the same tools and host-owned watch session; quiet watching does
 not require sending a message for every sample.
+
+## 后台取帧和 Playwright 接入
+
+取帧与媒体信息由 `ui/video-frame-reader.js` 提供。小电视把它和自己的布局桥组合使用。网页播放器已有解码帧时，即使视频元素不参与布局也能读取。可用 `television.open_page` 的 `visible: false` 在后台打开平台页，再用 `video.web_observe` 读取。后台只采集媒体信息，避免改写页面布局。需手动登录或播放的页面，可先通过小电视正常完成操作。
+
+外接时由调用者提供已连接的 Playwright Page。用 `bindVideoPage(page, expectedUrl, selector)` 核对完整地址并绑定视频元素，再用 `captureVideoPage(page, bindingId)` 取帧。selector 可省略，多视频页面可指定唯一选择器。绑定只在当前文档、当前地址和当前视频源内有效。关闭、刷新或切换内容后需重新绑定。
+
+Claude Code 已接入 Playwright MCP 时，可用 `browser_tabs` 选择目标标签页。运行下面的命令，将输出作为现有 `browser_evaluate` 的 `function` 参数。第一条返回 `binding_id`，第二条返回 JPEG 和播放时间。
+
+```powershell
+node tools/PlaywrightVideo.mjs bind "https://example.com/watch/123" "video"
+node tools/PlaywrightVideo.mjs frame "<binding_id>"
+```
+
+两个入口使用小爱仓库维护的同一份取帧代码。外接入口借用调用方已有的 Page，在对应文档里执行，浏览器进程与会话均由调用方管理。Playwright MCP 的通用求值接口返回结构化数据，JPEG 在 `image.base64`。使用 Node 的 Playwright 接口时，可将 JPEG 解码保存到工作区，再作为图像交给模型。

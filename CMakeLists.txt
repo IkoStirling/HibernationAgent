@@ -605,11 +605,19 @@ if(BUILD_TESTING AND WIN32 AND HA_PWSH)
  set_tests_properties(Hibernation_StableDashboard PROPERTIES TIMEOUT 110)
 endif()
 
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/television-bridge.js")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/ui/television-bridge.js"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ui/video-frame-reader.js")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/ui/television-bridge.js" HA_TV_BRIDGE_JS)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/ui/video-frame-reader.js" HA_VIDEO_FRAME_READER_JS)
+string(APPEND HA_TV_BRIDGE_JS "(${HA_VIDEO_FRAME_READER_JS})")
 configure_file(cmake/TelevisionPageScript.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/TelevisionPageScript.h" @ONLY)
 if(BUILD_TESTING AND HA_NODE)
  add_test(NAME Hibernation_TelevisionAuth COMMAND "${HA_NODE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/TelevisionAuth.mjs")
+endif()
+if(BUILD_TESTING AND HA_PIXEL_NODE AND EXISTS "${HA_PIXEL_PLAYWRIGHT}" AND EXISTS "${HA_PIXEL_BROWSER}")
+ add_test(NAME Hibernation_PlaywrightVideo COMMAND "${HA_PIXEL_NODE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/PlaywrightVideo.mjs")
+ set_tests_properties(Hibernation_PlaywrightVideo PROPERTIES TIMEOUT 55 ENVIRONMENT "PLAYWRIGHT_PACKAGE_PATH=${HA_PIXEL_PLAYWRIGHT};HIBERNATION_TEST_BROWSER=${HA_PIXEL_BROWSER}")
 endif()
 target_include_directories(HibernationCore PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
